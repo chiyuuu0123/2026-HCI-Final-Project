@@ -1,0 +1,28 @@
+{
+  "name": "mindstudy-desktop",
+  "version": "0.1.0",
+  "description": "MindStudy desktop prototype for multimodal AI study companion.",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "postinstall": "node scripts/copy-assets.js",
+    "prepare:assets": "node scripts/copy-assets.js",
+    "start": "electron .",
+    "dev": "electron .",
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check scripts/copy-assets.js"
+  },
+  "keywords": [
+    "electron",
+    "study",
+    "ai",
+    "hci"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^42.3.2"
+  },
+  "dependencies": {
+    "lucide": "^1.17.0"
+  }
+}
