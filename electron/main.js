@@ -1,7 +1,61 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
+const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const isWindows = process.platform === "win32";
+const maxImportBytes = 80 * 1024 * 1024;
+const supportedExtensions = new Set([".pdf", ".ppt", ".pptx", ".md"]);
+
+function getMimeType(extension) {
+  const normalized = extension.toLowerCase();
+
+  if (normalized === ".pdf") {
+    return "application/pdf";
+  }
+
+  if (normalized === ".pptx") {
+    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  }
+
+  if (normalized === ".ppt") {
+    return "application/vnd.ms-powerpoint";
+  }
+
+  if (normalized === ".md") {
+    return "text/markdown";
+  }
+
+  return "application/octet-stream";
+}
+
+async function readCourseFile(filePath) {
+  const extensionWithDot = path.extname(filePath).toLowerCase();
+
+  if (!supportedExtensions.has(extensionWithDot)) {
+    throw new Error("暂不支持该文件格式。请选择 PDF、PPT、PPTX 或 Markdown 文件。");
+  }
+
+  const stats = await fs.stat(filePath);
+
+  if (stats.size > maxImportBytes) {
+    throw new Error("文件过大，请选择 80MB 以内的课程资料。");
+  }
+
+  const buffer = await fs.readFile(filePath);
+  const base64 = buffer.toString("base64");
+  const mimeType = getMimeType(extensionWithDot);
+
+  return {
+    path: filePath,
+    name: path.basename(filePath),
+    extension: extensionWithDot.replace(".", "").toUpperCase(),
+    mimeType,
+    size: stats.size,
+    updatedAt: stats.mtimeMs,
+    base64,
+    dataUrl: `data:${mimeType};base64,${base64}`,
+  };
+}
 
 function createMainWindow() {
   const mainWindow = new BrowserWindow({
@@ -73,11 +127,12 @@ ipcMain.handle("dialog:open-course-file", async (event) => {
   const owner = BrowserWindow.fromWebContents(event.sender);
   const result = await dialog.showOpenDialog(owner, {
     title: "导入课程资料",
-    properties: ["openFile"],
+    properties: ["openFile", "multiSelections"],
     filters: [
-      { name: "课程资料", extensions: ["pdf", "ppt", "pptx"] },
+      { name: "课程资料", extensions: ["pdf", "ppt", "pptx", "md"] },
       { name: "PDF", extensions: ["pdf"] },
       { name: "PowerPoint", extensions: ["ppt", "pptx"] },
+      { name: "Markdown", extensions: ["md"] },
     ],
   });
 
@@ -85,11 +140,50 @@ ipcMain.handle("dialog:open-course-file", async (event) => {
     return null;
   }
 
-  const filePath = result.filePaths[0];
+  return Promise.all(result.filePaths.map((filePath) => readCourseFile(filePath)));
+});
+
+ipcMain.handle("file:read-course-file", async (event, filePath) => {
+  return readCourseFile(filePath);
+});
+
+ipcMain.handle("dialog:save-file", async (event, options) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showSaveDialog(owner, {
+    title: options.title || "保存文件",
+    defaultPath: options.defaultPath,
+    filters: options.filters || [{ name: "All Files", extensions: ["*"] }],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  const content =
+    options.encoding === "base64"
+      ? Buffer.from(options.data, "base64")
+      : options.data;
+
+  await fs.writeFile(result.filePath, content, options.encoding === "base64" ? undefined : "utf8");
+
+  return {
+    path: result.filePath,
+    name: path.basename(result.filePath),
+  };
+});
+
+ipcMain.handle("file:save-markdown", async (event, options) => {
+  const filePath = options.path;
+
+  if (path.extname(filePath).toLowerCase() !== ".md") {
+    throw new Error("只允许保存 Markdown 文件。");
+  }
+
+  await fs.writeFile(filePath, options.data || "", "utf8");
+
   return {
     path: filePath,
     name: path.basename(filePath),
-    extension: path.extname(filePath).replace(".", "").toUpperCase(),
   };
 });
 

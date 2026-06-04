@@ -1,7 +1,7 @@
 node_modules/
 dist/
 out/
-frontend/vendor/lucide.min.js
+frontend/vendor/*.js
 *.log
 .DS_Store
 Thumbs.db
