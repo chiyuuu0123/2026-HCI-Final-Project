@@ -1,24 +1,16 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const isWindows = process.platform === "win32";
 const maxImportBytes = 80 * 1024 * 1024;
-const supportedExtensions = new Set([".pdf", ".ppt", ".pptx", ".md"]);
+const supportedExtensions = new Set([".pdf", ".md"]);
 
 function getMimeType(extension) {
   const normalized = extension.toLowerCase();
 
   if (normalized === ".pdf") {
     return "application/pdf";
-  }
-
-  if (normalized === ".pptx") {
-    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-  }
-
-  if (normalized === ".ppt") {
-    return "application/vnd.ms-powerpoint";
   }
 
   if (normalized === ".md") {
@@ -32,7 +24,7 @@ async function readCourseFile(filePath) {
   const extensionWithDot = path.extname(filePath).toLowerCase();
 
   if (!supportedExtensions.has(extensionWithDot)) {
-    throw new Error("暂不支持该文件格式。请选择 PDF、PPT、PPTX 或 Markdown 文件。");
+    throw new Error("暂不支持该文件格式。请选择 PDF 或 Markdown 文件。");
   }
 
   const stats = await fs.stat(filePath);
@@ -117,6 +109,14 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function configurePermissions() {
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(permission === "media");
+  });
+
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => permission === "media");
+}
+
 ipcMain.handle("app:get-info", () => ({
   name: app.getName(),
   version: app.getVersion(),
@@ -129,9 +129,8 @@ ipcMain.handle("dialog:open-course-file", async (event) => {
     title: "导入课程资料",
     properties: ["openFile", "multiSelections"],
     filters: [
-      { name: "课程资料", extensions: ["pdf", "ppt", "pptx", "md"] },
+      { name: "课程资料", extensions: ["pdf", "md"] },
       { name: "PDF", extensions: ["pdf"] },
-      { name: "PowerPoint", extensions: ["ppt", "pptx"] },
       { name: "Markdown", extensions: ["md"] },
     ],
   });
@@ -188,6 +187,7 @@ ipcMain.handle("file:save-markdown", async (event, options) => {
 });
 
 app.whenReady().then(() => {
+  configurePermissions();
   buildMenu();
   createMainWindow();
 

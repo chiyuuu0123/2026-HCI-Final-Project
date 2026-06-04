@@ -342,6 +342,11 @@ h3 {
   color: #0b6f66;
 }
 
+.status-camera.active {
+  border-color: rgba(24, 143, 132, 0.32);
+  box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.1);
+}
+
 .calm {
   background: var(--indigo-soft);
   color: var(--indigo);
@@ -813,11 +818,43 @@ h3 {
   grid-template-columns: 230px minmax(420px, 1fr) 320px;
 }
 
+.reader-layout:fullscreen {
+  grid-template-columns: minmax(220px, 260px) minmax(520px, 1fr) minmax(300px, 360px);
+  width: 100vw;
+  min-height: 100vh;
+  padding: 18px;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.reader-layout:fullscreen .panel {
+  min-height: calc(100vh - 36px);
+  box-shadow: none;
+}
+
+.reader-layout:fullscreen .document-panel {
+  grid-template-rows: auto 1fr;
+}
+
+.reader-layout:fullscreen .pdf-frame,
+.reader-layout:fullscreen .markdown-preview,
+.reader-layout:fullscreen .empty-document {
+  min-height: calc(100vh - 128px);
+}
+
+.reader-layout:fullscreen .slide-canvas {
+  min-height: calc(100vh - 128px);
+}
+
 .chapter-panel,
 .insight-panel,
 .quiz-side,
 .node-detail {
   padding-bottom: 20px;
+}
+
+.insight-panel {
+  overflow: auto;
 }
 
 .library-heading {
@@ -1153,6 +1190,64 @@ h3 {
   line-height: 1.7;
 }
 
+.ai-reading-card {
+  margin: 18px 16px 16px;
+  padding: 16px;
+  border: 1px solid rgba(24, 143, 132, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(24, 143, 132, 0.09), transparent 46%),
+    #fbfcfa;
+}
+
+.compact-heading {
+  margin-bottom: 12px;
+  padding: 0;
+}
+
+.ai-reading-source {
+  display: block;
+  width: 100%;
+  min-height: 118px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  color: var(--ink);
+  line-height: 1.65;
+}
+
+.ai-reading-source:focus {
+  border-color: rgba(24, 143, 132, 0.5);
+  box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.1);
+}
+
+.ai-reading-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.ai-reading-actions .compact {
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.ai-reading-output {
+  min-height: 118px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
 .markdown-preview {
   min-height: 560px;
   margin: 22px;
@@ -1180,10 +1275,75 @@ h3 {
 }
 
 .doc-toolbar {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.pdf-toolbox {
+  margin: 16px 20px 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.pdf-page-control {
+  display: grid;
+  grid-template-columns: auto minmax(72px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pdf-page-control input {
+  height: 36px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+}
+
+.pdf-page-control input:focus {
+  border-color: rgba(24, 143, 132, 0.42);
+  box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.1);
+}
+
+.pdf-toolbox .full {
+  width: 100%;
+  margin: 0 0 10px;
+}
+
+.pdf-toolbox .full:last-child {
+  margin-bottom: 0;
+}
+
+.danger-action.full {
+  width: calc(100% - 40px);
+  margin: 0 20px 12px;
+}
+
+.pdf-toolbox .danger-action.full {
+  width: 100%;
+  margin: 0;
 }
 
 .slide-canvas {
@@ -1211,11 +1371,21 @@ h3 {
 .pptx-canvas {
   display: grid;
   align-content: start;
+  gap: 18px;
+  overflow: auto;
+  padding: 26px;
+  background:
+    linear-gradient(135deg, rgba(24, 143, 132, 0.08), transparent 46%),
+    #eef2f0;
 }
 
 .pptx-line-list {
   display: grid;
   gap: 10px;
+}
+
+.pptx-line-list.compact {
+  gap: 6px;
 }
 
 .pptx-line-list p {
@@ -1226,6 +1396,156 @@ h3 {
   background: #f7f9f6;
   color: var(--muted);
   line-height: 1.7;
+}
+
+.pptx-line-list.compact p {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.pptx-stage-shell {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 520px;
+  padding: 24px;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(24, 50, 45, 0.06), transparent 44%),
+    #dfe6df;
+}
+
+.pptx-stage-shell.powerpoint-exact {
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.48), transparent 62%),
+    #d7dfda;
+}
+
+.pptx-visual-stage {
+  position: relative;
+  container-type: inline-size;
+  width: min(100%, 980px);
+  max-height: calc(100vh - 230px);
+  overflow: hidden;
+  border: 1px solid rgba(31, 46, 39, 0.12);
+  border-radius: 4px;
+  background: #fff;
+  box-shadow:
+    0 20px 60px rgba(24, 43, 39, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.pptx-visual-stage.powerpoint-render {
+  display: block;
+  background: #fff;
+}
+
+.pptx-rendered-slide {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.pptx-shape,
+.pptx-image {
+  position: absolute;
+}
+
+.pptx-shape {
+  display: grid;
+  align-content: center;
+  overflow: hidden;
+  padding: 0.8% 1%;
+  border-radius: 3px;
+  white-space: pre-line;
+  font-size: clamp(10px, var(--pptx-font-size, 2.2cqw), 34px);
+  line-height: 1.35;
+}
+
+.pptx-shape.filled {
+  border: 1px solid rgba(31, 46, 39, 0.12);
+}
+
+.pptx-shape.text-box {
+  border: 0;
+}
+
+.pptx-shape.title {
+  align-content: start;
+  font-size: clamp(18px, var(--pptx-font-size, 4cqw), 44px);
+  line-height: 1.12;
+}
+
+.pptx-shape.empty {
+  opacity: 0.62;
+}
+
+.pptx-image {
+  object-fit: contain;
+}
+
+.pptx-text-summary {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.pptx-text-summary strong {
+  color: var(--deep);
+}
+
+.pptx-fallback-card {
+  min-height: 420px;
+}
+
+.pptx-visual-stage.generated {
+  background:
+    linear-gradient(135deg, rgba(24, 143, 132, 0.12), transparent 42%),
+    #fff;
+}
+
+.generated-slide-content {
+  display: grid;
+  align-content: center;
+  min-height: 100%;
+  padding: 7% 9%;
+}
+
+.generated-slide-content h2 {
+  max-width: 78%;
+  margin: 2.5% 0 4%;
+  font-size: clamp(28px, 5cqw, 54px);
+  line-height: 1.08;
+}
+
+.generated-bullets {
+  display: grid;
+  gap: 1.2cqw;
+  max-width: 74%;
+}
+
+.generated-bullets p {
+  position: relative;
+  margin: 0;
+  padding-left: 2cqw;
+  color: var(--muted);
+  font-size: clamp(15px, 2.2cqw, 28px);
+  line-height: 1.42;
+}
+
+.generated-bullets p::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 0.75cqw;
+  height: 0.75cqw;
+  border-radius: 50%;
+  background: var(--teal);
 }
 
 .slide-columns {
@@ -1476,6 +1796,60 @@ h3 {
 .music-panel,
 .gesture-panel {
   padding: 22px;
+}
+
+.camera-stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 230px;
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101815;
+}
+
+.camera-stage video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 230px;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.camera-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  background:
+    linear-gradient(135deg, rgba(24, 143, 132, 0.18), transparent 48%),
+    #182622;
+  color: rgba(247, 251, 248, 0.82);
+  text-align: center;
+}
+
+.camera-placeholder.hidden {
+  display: none;
+}
+
+.camera-placeholder svg {
+  width: 34px;
+  height: 34px;
+}
+
+.camera-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px 0 4px;
+}
+
+.camera-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .mood-orbit {

@@ -9,10 +9,6 @@ const assets = [
     target: path.join(targetDir, "lucide.min.js"),
   },
   {
-    source: path.join(root, "node_modules", "jszip", "dist", "jszip.min.js"),
-    target: path.join(targetDir, "jszip.min.js"),
-  },
-  {
     source: path.join(root, "node_modules", "pdf-lib", "dist", "pdf-lib.min.js"),
     target: path.join(targetDir, "pdf-lib.min.js"),
   },

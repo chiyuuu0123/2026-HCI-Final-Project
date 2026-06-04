@@ -6,7 +6,6 @@
     <title>MindStudy - 多模态智能学习伙伴</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="./vendor/lucide.min.js" defer></script>
-    <script src="./vendor/jszip.min.js" defer></script>
     <script src="./vendor/pdf-lib.min.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
@@ -66,9 +65,9 @@
             <button class="icon-button" title="搜索">
               <i data-lucide="search"></i>
             </button>
-            <button class="status-pill status-camera">
+            <button class="status-pill status-camera" id="toggle-camera">
               <i data-lucide="camera"></i>
-              <span>摄像头已连接</span>
+              <span id="camera-status-text">摄像头未开启</span>
             </button>
             <button class="primary-action" id="simulate-upload">
               <i data-lucide="upload-cloud"></i>
@@ -178,7 +177,7 @@
                 <span class="pulse-dot"></span>
               </div>
               <div class="chat-list" id="chat-list">
-                <div class="chat-bubble user">这页 PPT 可能怎么考？</div>
+                <div class="chat-bubble user">这段资料可能怎么考？</div>
                 <div class="chat-bubble ai">可能考察“可用性”的三个指标：有效性、效率、满意度。建议结合 SUS 量表理解。</div>
               </div>
               <div class="prompt-row">
@@ -445,17 +444,34 @@
               <div class="panel-heading">
                 <div>
                   <span class="tag muted">状态识别</span>
-                  <h3>当前状态：专注但略有疲劳</h3>
+                  <h3 id="camera-mood-title">当前状态：等待摄像头</h3>
                 </div>
-                <span class="status-pill calm">低干扰模式</span>
+                <span class="status-pill calm" id="camera-mode-badge">待开启</span>
+              </div>
+              <div class="camera-stage">
+                <video id="camera-preview" playsinline muted></video>
+                <div class="camera-placeholder" id="camera-placeholder">
+                  <i data-lucide="camera"></i>
+                  <span>摄像头未开启</span>
+                </div>
+              </div>
+              <div class="camera-controls">
+                <button class="primary-action" id="start-camera">
+                  <i data-lucide="video"></i>
+                  <span>开启摄像头</span>
+                </button>
+                <button class="ghost-action" id="stop-camera" disabled>
+                  <i data-lucide="video-off"></i>
+                  <span>停止</span>
+                </button>
               </div>
               <div class="mood-orbit">
                 <span class="orbit-dot focus"></span>
                 <span class="orbit-dot tired"></span>
                 <span class="orbit-dot calm-dot"></span>
                 <div class="mood-core">
-                  <strong>74</strong>
-                  <span>专注分</span>
+                  <strong id="camera-focus-score">--</strong>
+                  <span id="camera-focus-label">等待识别</span>
                 </div>
               </div>
             </section>
@@ -473,7 +489,7 @@
             </section>
             <section class="panel gesture-panel">
               <span class="tag muted">手势识别</span>
-              <h3>已识别：张手</h3>
+              <h3 id="gesture-status-title">等待摄像头</h3>
               <div class="gesture-grid">
                 <span class="active">张手<br />下一页</span>
                 <span>握拳<br />暂停</span>
