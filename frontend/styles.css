@@ -841,7 +841,7 @@ h3 {
 .reader-layout.reader-fullscreen-fallback {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 120;
   grid-template-columns: minmax(220px, 260px) minmax(520px, 1fr) minmax(300px, 360px);
   width: 100vw;
   min-height: 100vh;
@@ -1176,6 +1176,10 @@ h3 {
   cursor: crosshair;
 }
 
+.pdf-viewer.ink-eraser {
+  cursor: cell;
+}
+
 .pdf-render-state {
   display: grid;
   place-items: center;
@@ -1213,7 +1217,7 @@ h3 {
   box-shadow: 0 20px 48px rgba(24, 143, 132, 0.22);
 }
 
-.pdf-rendered-page canvas {
+.pdf-page-canvas {
   position: relative;
   z-index: 1;
   display: block;
@@ -1222,7 +1226,7 @@ h3 {
   background: #fff;
 }
 
-.pdf-rendered-page canvas[hidden] {
+.pdf-page-canvas[hidden] {
   display: none;
 }
 
@@ -1246,6 +1250,7 @@ h3 {
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
+  pointer-events: none;
   background:
     linear-gradient(90deg, rgba(24, 143, 132, 0.05), rgba(255, 255, 255, 0.22), rgba(24, 143, 132, 0.05)),
     #fff;
@@ -1254,10 +1259,16 @@ h3 {
 .pdf-ink-layer {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 30;
   pointer-events: none;
   touch-action: none;
-  background: transparent;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  opacity: 1;
+  mix-blend-mode: normal;
+  background: rgba(255, 255, 255, 0) !important;
 }
 
 .pdf-native-fallback {
@@ -1289,6 +1300,10 @@ h3 {
 .pdf-viewer.ink-active .pdf-ink-layer {
   pointer-events: auto;
   cursor: crosshair;
+}
+
+.pdf-viewer.ink-eraser .pdf-ink-layer {
+  cursor: cell;
 }
 
 .pdf-page-caption {
@@ -1575,6 +1590,10 @@ h3 {
   color: #fff;
 }
 
+.pdf-ink-tools .active svg {
+  color: #fff;
+}
+
 .pdf-ink-color,
 .pdf-ink-width {
   display: grid;
@@ -1608,10 +1627,19 @@ h3 {
   accent-color: var(--teal);
 }
 
+.pdf-ink-mode,
 .pdf-ink-count {
   grid-column: 1 / -1;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.pdf-ink-mode {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f3f6f4;
+  color: var(--deep);
+  font-weight: 800;
 }
 
 .slide-canvas {
@@ -2306,6 +2334,22 @@ h3 {
   .reader-layout {
     height: auto;
     overflow: visible;
+  }
+
+  .reader-layout:fullscreen,
+  .reader-layout.reader-fullscreen-fallback {
+    grid-template-columns: minmax(170px, 220px) minmax(0, 1fr) minmax(260px, 320px);
+    height: 100vh;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  .reader-layout:fullscreen .chapter-panel,
+  .reader-layout:fullscreen .insight-panel,
+  .reader-layout.reader-fullscreen-fallback .chapter-panel,
+  .reader-layout.reader-fullscreen-fallback .insight-panel {
+    display: block;
+    overflow: auto;
   }
 
   .pdf-viewer {

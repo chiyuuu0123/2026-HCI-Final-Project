@@ -46,10 +46,12 @@ const cameraState = {
 };
 const pdfInkState = {
   enabled: false,
+  tool: "pen",
   color: "#188f84",
   width: 4,
   currentStroke: null,
   pointerId: null,
+  activeCanvas: null,
 };
 
 let workspace = loadWorkspace();
@@ -489,21 +491,16 @@ async function toggleReaderFullscreen() {
   if (!readerLayout) return;
 
   if (document.fullscreenElement) {
-    await document.exitFullscreen();
-    syncFullscreenButton();
-    return;
+    try {
+      await document.exitFullscreen();
+    } catch {
+      // Keep the app-level reading mode responsive even when native fullscreen is blocked.
+    }
   }
 
   if (readerLayout.classList.contains("reader-fullscreen-fallback")) {
     exitReaderFullscreenFallback();
-    return;
-  }
-
-  try {
-    if (!readerLayout.requestFullscreen) throw new Error("Fullscreen API unavailable");
-    await readerLayout.requestFullscreen();
-    syncFullscreenButton();
-  } catch {
+  } else {
     enterReaderFullscreenFallback(readerLayout);
   }
 }
@@ -957,6 +954,8 @@ function drawPdfInkStroke(context, canvas, stroke) {
   context.save();
   context.lineCap = "round";
   context.lineJoin = "round";
+  context.globalAlpha = stroke.tool === "highlight" ? 0.38 : 0.92;
+  context.globalCompositeOperation = "source-over";
   context.strokeStyle = stroke.color || pdfInkState.color;
   context.lineWidth = Math.max(2, (stroke.widthRatio || 0.006) * canvas.width);
   context.beginPath();
@@ -979,6 +978,30 @@ function drawPdfInkStroke(context, canvas, stroke) {
 
   context.stroke();
   context.restore();
+}
+
+function getInkToolDefaults(tool = pdfInkState.tool) {
+  if (tool === "highlight") {
+    return {
+      color: "#f2c94c",
+      width: Math.max(10, pdfInkState.width),
+      label: "荧光笔",
+    };
+  }
+
+  if (tool === "eraser") {
+    return {
+      color: "#ffffff",
+      width: Math.max(18, pdfInkState.width * 2),
+      label: "橡皮擦",
+    };
+  }
+
+  return {
+    color: pdfInkState.color,
+    width: pdfInkState.width,
+    label: "画笔",
+  };
 }
 
 function drawPdfInkLayer(pageShell, doc) {
@@ -1007,9 +1030,11 @@ function redrawAllPdfInkLayers(doc = documentState.current) {
 function syncPdfInkUi(doc = documentState.current) {
   const viewer = document.querySelector("#pdf-viewer");
   viewer?.classList.toggle("ink-active", pdfInkState.enabled);
-  document.querySelectorAll("#toggle-pdf-ink").forEach((button) => {
-    button.classList.toggle("active", pdfInkState.enabled);
-    button.setAttribute("aria-pressed", String(pdfInkState.enabled));
+  viewer?.classList.toggle("ink-eraser", pdfInkState.enabled && pdfInkState.tool === "eraser");
+  document.querySelectorAll("[data-pdf-ink-tool]").forEach((button) => {
+    const isActive = pdfInkState.enabled && button.dataset.pdfInkTool === pdfInkState.tool;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
   });
 
   const colorInput = document.querySelector("#pdf-ink-color");
@@ -1017,11 +1042,43 @@ function syncPdfInkUi(doc = documentState.current) {
   const widthValue = document.querySelector("#pdf-ink-width-value");
   const strokeCount = getPdfInkStrokes(doc || { meta: {} }).length;
   const countLabel = document.querySelector("#pdf-ink-count");
+  const modeLabel = document.querySelector("#pdf-ink-mode");
+  const toolDefaults = getInkToolDefaults();
 
   if (colorInput) colorInput.value = pdfInkState.color;
   if (widthInput) widthInput.value = String(pdfInkState.width);
-  if (widthValue) widthValue.textContent = `${pdfInkState.width}px`;
+  if (widthValue) widthValue.textContent = `${toolDefaults.width}px`;
   if (countLabel) countLabel.textContent = strokeCount ? `${strokeCount} 笔待写入` : "暂无画笔批注";
+  if (modeLabel) modeLabel.textContent = pdfInkState.enabled ? `当前工具：${toolDefaults.label}` : "点击工具后在 PDF 上拖动批注";
+}
+
+function setPdfInkTool(tool) {
+  pdfInkState.tool = tool;
+  pdfInkState.enabled = true;
+  if (tool === "pen" && pdfInkState.color === "#f2c94c") {
+    pdfInkState.color = "#188f84";
+  }
+  if (tool === "highlight") {
+    pdfInkState.color = "#f2c94c";
+  }
+  syncPdfInkUi();
+}
+
+function removeInkStrokesNearPoint(doc, canvas, pageNumber, point) {
+  const radius = getInkToolDefaults("eraser").width / Math.max(1, canvas.getBoundingClientRect().width);
+  const strokes = getPdfInkStrokes(doc);
+  const remaining = strokes.filter((stroke) => {
+    if (Number(stroke.pageNumber) !== Number(pageNumber)) return true;
+
+    return !(stroke.points || []).some((strokePoint) => Math.hypot(strokePoint.x - point.x, strokePoint.y - point.y) <= radius);
+  });
+
+  if (remaining.length !== strokes.length) {
+    doc.meta.inkStrokes = remaining;
+    saveWorkspace();
+    redrawPdfInkPage(pageNumber);
+    syncPdfInkUi(doc);
+  }
 }
 
 function beginPdfInkStroke(event) {
@@ -1032,19 +1089,30 @@ function beginPdfInkStroke(event) {
   event.preventDefault();
   const pageShell = canvas.closest(".pdf-rendered-page");
   const point = getCanvasPoint(event, canvas);
+  const pageNumber = Number(pageShell.dataset.pageNumber);
   pdfInkState.currentStroke = {
     id: createId("ink"),
-    pageNumber: Number(pageShell.dataset.pageNumber),
-    color: pdfInkState.color,
-    widthRatio: pdfInkState.width / Math.max(1, canvas.getBoundingClientRect().width),
+    pageNumber,
+    tool: pdfInkState.tool,
+    color: getInkToolDefaults().color,
+    widthRatio: getInkToolDefaults().width / Math.max(1, canvas.getBoundingClientRect().width),
     points: [point],
     createdAt: Date.now(),
   };
   pdfInkState.pointerId = event.pointerId;
+  pdfInkState.activeCanvas = canvas;
   canvas.setPointerCapture?.(event.pointerId);
+
+  if (pdfInkState.tool === "eraser") {
+    pdfInkState.currentStroke = { pageNumber, points: [] };
+    removeInkStrokesNearPoint(doc, canvas, pageNumber, point);
+    setActivePdfPage(doc, pageNumber, false);
+    return;
+  }
+
   getPdfInkStrokes(doc).push(pdfInkState.currentStroke);
-  setActivePdfPage(doc, pdfInkState.currentStroke.pageNumber, false);
-  redrawPdfInkPage(pdfInkState.currentStroke.pageNumber);
+  setActivePdfPage(doc, pageNumber, false);
+  redrawPdfInkPage(pageNumber);
 }
 
 function updatePdfInkStroke(event) {
@@ -1052,11 +1120,16 @@ function updatePdfInkStroke(event) {
   const stroke = pdfInkState.currentStroke;
   if (!doc || !stroke || event.pointerId !== pdfInkState.pointerId) return;
 
-  const canvas = event.target.closest(".pdf-ink-layer");
+  const canvas = event.target.closest(".pdf-ink-layer") || pdfInkState.activeCanvas;
   if (!canvas) return;
 
   event.preventDefault();
   const point = getCanvasPoint(event, canvas);
+  if (pdfInkState.tool === "eraser") {
+    removeInkStrokesNearPoint(doc, canvas, stroke.pageNumber, point);
+    return;
+  }
+
   const lastPoint = stroke.points[stroke.points.length - 1];
   const distance = Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y);
   if (distance < 0.002) return;
@@ -1072,10 +1145,11 @@ function finishPdfInkStroke(event) {
 
   pdfInkState.currentStroke = null;
   pdfInkState.pointerId = null;
+  pdfInkState.activeCanvas = null;
   doc.meta.pdfEdited = true;
   saveWorkspace();
   syncPdfInkUi(doc);
-  setParseStatus("画笔批注已记录", "ready");
+  setParseStatus(pdfInkState.tool === "eraser" ? "橡皮擦已处理" : "批注已记录", "ready");
 }
 
 function undoPdfInkStroke() {
@@ -1126,6 +1200,7 @@ function drawInkStrokeOnPdfPage(page, stroke, rgb) {
   const { width, height } = page.getSize();
   const color = parseInkColor(stroke.color);
   const thickness = Math.max(0.8, (stroke.widthRatio || 0.006) * width);
+  const opacity = stroke.tool === "highlight" ? 0.35 : 0.92;
   const points = stroke.points || [];
   if (!points.length) return;
 
@@ -1136,6 +1211,7 @@ function drawInkStrokeOnPdfPage(page, stroke, rgb) {
       y: height - point.y * height,
       size: thickness / 2,
       color: rgb(color.r, color.g, color.b),
+      opacity,
     });
     return;
   }
@@ -1148,7 +1224,7 @@ function drawInkStrokeOnPdfPage(page, stroke, rgb) {
       end: { x: current.x * width, y: height - current.y * height },
       thickness,
       color: rgb(color.r, color.g, color.b),
-      opacity: 0.92,
+      opacity,
     });
   }
 }
@@ -1325,16 +1401,24 @@ function renderPdfInsightPanel(doc) {
         <span>删除当前页</span>
       </button>
       <div class="pdf-ink-tools">
-        <button class="ghost-action compact ${pdfInkState.enabled ? "active" : ""}" id="toggle-pdf-ink" aria-pressed="${pdfInkState.enabled}">
+        <button class="ghost-action compact" data-pdf-ink-tool="pen" aria-pressed="${pdfInkState.enabled && pdfInkState.tool === "pen"}">
           <i data-lucide="brush"></i>
           <span>画笔</span>
+        </button>
+        <button class="ghost-action compact" data-pdf-ink-tool="highlight" aria-pressed="${pdfInkState.enabled && pdfInkState.tool === "highlight"}">
+          <i data-lucide="highlighter"></i>
+          <span>荧光笔</span>
+        </button>
+        <button class="ghost-action compact" data-pdf-ink-tool="eraser" aria-pressed="${pdfInkState.enabled && pdfInkState.tool === "eraser"}">
+          <i data-lucide="eraser"></i>
+          <span>橡皮擦</span>
         </button>
         <button class="ghost-action compact" id="undo-pdf-ink">
           <i data-lucide="undo-2"></i>
           <span>撤销</span>
         </button>
         <button class="ghost-action compact" id="clear-pdf-ink-page">
-          <i data-lucide="eraser"></i>
+          <i data-lucide="trash-2"></i>
           <span>清空本页</span>
         </button>
         <button class="primary-action compact" id="apply-pdf-ink">
@@ -1349,6 +1433,7 @@ function renderPdfInsightPanel(doc) {
           <span>粗细 <b id="pdf-ink-width-value">${pdfInkState.width}px</b></span>
           <input id="pdf-ink-width" type="range" min="2" max="12" value="${pdfInkState.width}" />
         </label>
+        <small id="pdf-ink-mode" class="pdf-ink-mode">点击工具后在 PDF 上拖动批注</small>
         <small id="pdf-ink-count" class="pdf-ink-count">${getPdfInkStrokes(doc).length ? `${getPdfInkStrokes(doc).length} 笔待写入` : "暂无画笔批注"}</small>
       </div>
     </div>
@@ -1404,6 +1489,8 @@ async function renderPdfPageShell(pdf, pageShell, doc, viewer, renderToken) {
     inkCanvas.height = canvas.height;
     inkCanvas.style.width = canvas.style.width;
     inkCanvas.style.height = canvas.style.height;
+    inkCanvas.style.backgroundColor = "transparent";
+    inkCanvas.style.zIndex = "30";
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     await page.render({ canvasContext: context, viewport }).promise;
     if (renderToken !== pdfRenderToken || documentState.current?.meta?.id !== doc.meta.id) return;
@@ -3292,7 +3379,13 @@ document.addEventListener("click", (event) => {
   const slideButton = event.target.closest("[data-slide-index]");
   const slideMoveButton = event.target.closest("[data-slide-move]");
   const pdfPageStepButton = event.target.closest("[data-pdf-page-step]");
+  const pdfInkToolButton = event.target.closest("[data-pdf-ink-tool]");
   const actionButton = event.target.closest("button");
+
+  if (actionButton?.id === "toggle-reader-fullscreen") {
+    toggleReaderFullscreen();
+    return;
+  }
 
   if (modalCloseButton || modalBackdrop) {
     closeModal();
@@ -3342,11 +3435,15 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (pdfInkToolButton) {
+    setPdfInkTool(pdfInkToolButton.dataset.pdfInkTool);
+    return;
+  }
+
   if (!actionButton) return;
 
   if (actionButton.dataset.courseAction === "create") createCourse();
   if (actionButton.dataset.courseAction === "rename") renameCourse();
-  if (actionButton.id === "toggle-reader-fullscreen") toggleReaderFullscreen();
   if (actionButton.id === "toggle-camera") toggleCamera();
   if (actionButton.id === "start-camera") startCamera();
   if (actionButton.id === "stop-camera") stopCamera();
@@ -3356,10 +3453,6 @@ document.addEventListener("click", (event) => {
   if (actionButton.id === "insert-pdf-image") insertImageIntoPdf();
   if (actionButton.id === "add-pdf-page") addPdfPage();
   if (actionButton.id === "delete-pdf-page") openDeletePdfPageDialog();
-  if (actionButton.id === "toggle-pdf-ink") {
-    pdfInkState.enabled = !pdfInkState.enabled;
-    syncPdfInkUi();
-  }
   if (actionButton.id === "undo-pdf-ink") undoPdfInkStroke();
   if (actionButton.id === "clear-pdf-ink-page") clearCurrentPdfInkPage();
   if (actionButton.id === "apply-pdf-ink") applyPdfInkToCurrentPdf();
