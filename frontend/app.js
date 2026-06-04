@@ -35,14 +35,29 @@ const documentState = {
   current: null,
 };
 const supportedDocumentExtensions = new Set(["PDF", "MD"]);
+const PDF_TEXT_LIMIT = 60000;
+const PDF_PAGE_TEXT_LIMIT = 8000;
+const PDF_AI_PAGE_TEXT_LIMIT = 5000;
 const cameraState = {
   stream: null,
   sampleTimer: null,
   canvas: null,
   lastBrightness: 0,
 };
+const pdfInkState = {
+  enabled: false,
+  color: "#188f84",
+  width: 4,
+  currentStroke: null,
+  pointerId: null,
+};
 
 let workspace = loadWorkspace();
+let pdfJsLoadingPromise = null;
+let pdfPageObserver = null;
+let pdfLazyRenderObserver = null;
+let pdfRenderToken = 0;
+let pdfPageTextTimer = null;
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -202,6 +217,90 @@ async function dataUrlToArrayBuffer(dataUrl) {
   return response.arrayBuffer();
 }
 
+async function loadPdfJs() {
+  if (!pdfJsLoadingPromise) {
+    pdfJsLoadingPromise = import("./vendor/pdf.min.js").then((pdfjsLib) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.js", window.location.href).toString();
+      return pdfjsLib;
+    });
+  }
+
+  return pdfJsLoadingPromise;
+}
+
+function normalizeExtractedPdfText(text) {
+  return String(text || "")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n\s+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function extractTextFromPdfTextContent(textContent) {
+  const rows = [];
+  let currentY = null;
+  let currentLine = [];
+
+  const textItems = textContent.items
+    .map((item) => ({
+      text: item.str?.trim() || "",
+      x: Math.round(item.transform?.[4] || 0),
+      y: Math.round(item.transform?.[5] || 0),
+    }))
+    .filter((item) => item.text)
+    .sort((a, b) => {
+      if (Math.abs(a.y - b.y) > 4) return b.y - a.y;
+      return a.x - b.x;
+    });
+
+  textItems.forEach((item) => {
+    const y = item.y;
+
+    if (currentY !== null && Math.abs(y - currentY) > 4) {
+      rows.push(currentLine.join(" ").trim());
+      currentLine = [];
+    }
+
+    currentY = y;
+    currentLine.push(item.text);
+  });
+
+  if (currentLine.length) rows.push(currentLine.join(" ").trim());
+
+  return normalizeExtractedPdfText(rows.filter(Boolean).join("\n"));
+}
+
+async function extractPdfTextFromBytes(bytes) {
+  const pdfjsLib = await loadPdfJs();
+  const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+  const pages = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const pageText = extractTextFromPdfTextContent(textContent);
+    pages.push({
+      pageNumber,
+      text: pageText.slice(0, PDF_PAGE_TEXT_LIMIT),
+    });
+  }
+
+  const fullText = normalizeExtractedPdfText(
+    pages
+      .filter((page) => page.text)
+      .map((page) => `第 ${page.pageNumber} 页\n${page.text}`)
+      .join("\n\n"),
+  );
+
+  return {
+    pageCount: pdf.numPages,
+    pages,
+    text: fullText.slice(0, PDF_TEXT_LIMIT),
+    extractedAt: Date.now(),
+  };
+}
+
 function downloadInBrowser(fileName, content, mimeType) {
   const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -357,14 +456,32 @@ function getReaderFullscreenButtonMarkup() {
 }
 
 function syncFullscreenButton() {
-  const button = document.querySelector("#toggle-reader-fullscreen");
-  if (!button) return;
+  const readerLayout = document.querySelector(".reader-layout");
+  const buttons = document.querySelectorAll("#toggle-reader-fullscreen");
+  if (!buttons.length) return;
 
-  const isReaderFullscreen = document.fullscreenElement?.classList.contains("reader-layout");
-  button.innerHTML = isReaderFullscreen
+  const isReaderFullscreen =
+    document.fullscreenElement?.classList.contains("reader-layout") ||
+    readerLayout?.classList.contains("reader-fullscreen-fallback");
+  buttons.forEach((button) => {
+    button.innerHTML = isReaderFullscreen
     ? `<i data-lucide="minimize-2"></i><span>退出全屏</span>`
     : `<i data-lucide="maximize-2"></i><span>全屏阅读</span>`;
+  });
   window.lucide?.createIcons();
+}
+
+function exitReaderFullscreenFallback() {
+  const readerLayout = document.querySelector(".reader-layout");
+  readerLayout?.classList.remove("reader-fullscreen-fallback");
+  document.body.classList.remove("reader-fullscreen-lock");
+  syncFullscreenButton();
+}
+
+function enterReaderFullscreenFallback(readerLayout) {
+  readerLayout.classList.add("reader-fullscreen-fallback");
+  document.body.classList.add("reader-fullscreen-lock");
+  syncFullscreenButton();
 }
 
 async function toggleReaderFullscreen() {
@@ -373,10 +490,22 @@ async function toggleReaderFullscreen() {
 
   if (document.fullscreenElement) {
     await document.exitFullscreen();
+    syncFullscreenButton();
     return;
   }
 
-  await readerLayout.requestFullscreen();
+  if (readerLayout.classList.contains("reader-fullscreen-fallback")) {
+    exitReaderFullscreenFallback();
+    return;
+  }
+
+  try {
+    if (!readerLayout.requestFullscreen) throw new Error("Fullscreen API unavailable");
+    await readerLayout.requestFullscreen();
+    syncFullscreenButton();
+  } catch {
+    enterReaderFullscreenFallback(readerLayout);
+  }
 }
 
 function getCameraUi() {
@@ -539,10 +668,11 @@ function getPdfTargetPage(doc) {
   const rawValue = Number(input?.value || doc.activePdfPage || 1);
   const pageNumber = Math.min(pageCount, Math.max(1, Number.isFinite(rawValue) ? rawValue : 1));
   doc.activePdfPage = pageNumber;
+  doc.meta.activePdfPage = pageNumber;
   return pageNumber;
 }
 
-function updatePdfBytes(doc, bytes, pageCount) {
+function updatePdfBytes(doc, bytes, pageCount, options = {}) {
   if (doc.blobUrl) URL.revokeObjectURL(doc.blobUrl);
 
   doc.bytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -557,9 +687,881 @@ function updatePdfBytes(doc, bytes, pageCount) {
   doc.meta.pageCount = pageCount;
   doc.meta.size = doc.bytes.byteLength;
   doc.meta.pdfEdited = true;
+  doc.meta.pdfTextStale = !options.keepTextExtraction;
+  doc.pdfjsDocument = null;
+  if (!options.keepTextExtraction) {
+    doc.pdfText = null;
+    doc.meta.extractedText = "";
+    doc.meta.extractedPages = [];
+    doc.meta.extractedPageCount = 0;
+    doc.meta.aiSourcesByPage = {};
+    doc.meta.aiOutputsByPage = {};
+    doc.meta.aiSource = "";
+    doc.meta.aiOutput = "";
+  }
   doc.activePdfPage = Math.min(doc.activePdfPage || 1, pageCount);
   runtimeFiles.set(doc.meta.id, doc.file);
   saveWorkspace();
+}
+
+async function applyPdfTextExtraction(doc, shouldRender = true) {
+  if (!doc || doc.kind !== "pdf") return;
+
+  try {
+    setParseStatus("提取文字中", "working");
+    const extracted = await extractPdfTextFromBytes(doc.bytes);
+    const textPages = extracted.pages.filter((page) => page.text);
+    const storedPages = [];
+    let storedTextLength = 0;
+
+    for (const page of textPages) {
+      const text = page.text.slice(0, 1600);
+      if (storedTextLength + text.length > PDF_TEXT_LIMIT) break;
+      storedPages.push({
+        pageNumber: page.pageNumber,
+        text,
+      });
+      storedTextLength += text.length;
+    }
+
+    doc.pdfText = extracted;
+    doc.pageCount = extracted.pageCount || doc.pageCount;
+    doc.meta.pageCount = doc.pageCount;
+    doc.meta.extractedText = extracted.text;
+    doc.meta.extractedPages = storedPages;
+    doc.meta.extractedPageCount = textPages.length;
+    doc.meta.extractedAt = extracted.extractedAt;
+    doc.meta.pdfExtractError = "";
+    doc.meta.pdfTextStale = false;
+    doc.meta.aiSourcesByPage = {};
+    doc.meta.aiOutputsByPage = {};
+    doc.meta.aiSource = getCurrentReadingText(doc);
+    doc.meta.aiOutput = analyzeReadingText(doc.meta.aiSource);
+    saveWorkspace();
+    setParseStatus(textPages.length ? "文字已提取" : "未提取到文字", textPages.length ? "ready" : "working");
+  } catch (error) {
+    doc.meta.pdfExtractError = "PDF 文字提取失败，可能是扫描版或加密文档。可以手动复制文字到 AI 阅读窗口。";
+    doc.meta.pdfTextStale = false;
+    saveWorkspace();
+    setParseStatus("文字提取失败", "working");
+  }
+
+  if (shouldRender) {
+    renderPdfReader(doc);
+  } else if (documentState.current?.meta?.id === doc.meta.id) {
+    updatePdfAiReadingPanel(doc);
+    syncPdfPageControls(doc);
+  }
+}
+
+function hydrateStoredPdfText(doc) {
+  if (!doc || doc.kind !== "pdf" || !doc.meta.extractedText || doc.meta.pdfTextStale) return false;
+
+  doc.pdfText = {
+    pageCount: doc.meta.pageCount || doc.pageCount || 1,
+    pages: doc.meta.extractedPages || [],
+    text: doc.meta.extractedText,
+    extractedAt: doc.meta.extractedAt || Date.now(),
+  };
+
+  const pageKey = getPdfPageKey(doc);
+  const currentPageText = getPdfPageText(doc, Number(pageKey)).slice(0, 5000);
+
+  if (currentPageText && !doc.meta.aiSourcesByPage?.[pageKey]) {
+    doc.meta.aiSourcesByPage = doc.meta.aiSourcesByPage || {};
+    doc.meta.aiOutputsByPage = doc.meta.aiOutputsByPage || {};
+    doc.meta.aiSourcesByPage[pageKey] = currentPageText;
+    doc.meta.aiOutputsByPage[pageKey] = analyzeReadingText(currentPageText);
+    doc.meta.aiSource = currentPageText;
+    doc.meta.aiOutput = analyzeReadingText(doc.meta.aiSource);
+    saveWorkspace();
+  }
+
+  return true;
+}
+
+function upsertPdfExtractedPage(doc, pageNumber, text) {
+  const nextPage = {
+    pageNumber,
+    text: text.slice(0, PDF_PAGE_TEXT_LIMIT),
+  };
+  const pages = Array.isArray(doc.meta.extractedPages) ? [...doc.meta.extractedPages] : [];
+  const index = pages.findIndex((page) => Number(page.pageNumber) === Number(pageNumber));
+
+  if (index >= 0) {
+    pages[index] = nextPage;
+  } else {
+    pages.push(nextPage);
+  }
+
+  pages.sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber));
+  doc.meta.extractedPages = pages;
+  doc.meta.extractedPageCount = pages.filter((page) => page.text).length;
+  doc.meta.extractedText = normalizeExtractedPdfText(
+    pages
+      .filter((page) => page.text)
+      .map((page) => `第 ${page.pageNumber} 页\n${page.text}`)
+      .join("\n\n"),
+  ).slice(0, PDF_TEXT_LIMIT);
+  doc.meta.extractedAt = Date.now();
+  doc.meta.pdfExtractError = "";
+  doc.meta.pdfTextStale = false;
+  doc.pdfText = {
+    pageCount: doc.pageCount || doc.meta.pageCount || 1,
+    pages,
+    text: doc.meta.extractedText,
+    extractedAt: doc.meta.extractedAt,
+  };
+}
+
+async function getPdfRuntimeDocument(doc) {
+  if (doc.pdfjsDocument) return doc.pdfjsDocument;
+
+  const pdfjsLib = await loadPdfJs();
+  doc.pdfjsDocument = await pdfjsLib.getDocument({ data: doc.bytes.slice() }).promise;
+  doc.pageCount = doc.pdfjsDocument.numPages || doc.pageCount || doc.meta.pageCount || 1;
+  doc.meta.pageCount = doc.pageCount;
+  return doc.pdfjsDocument;
+}
+
+async function extractCurrentPdfPageText(doc, options = {}) {
+  if (!doc || doc.kind !== "pdf") return "";
+
+  const pageNumber = Math.min(doc.pageCount || doc.meta.pageCount || 1, Math.max(1, Number(options.pageNumber || doc.activePdfPage || 1)));
+  const pageKey = String(pageNumber);
+  const hasCachedPage = Boolean(getPdfPageText(doc, pageNumber));
+
+  if (hasCachedPage && !options.force) {
+    updatePdfAiReadingPanel(doc);
+    return getPdfPageText(doc, pageNumber);
+  }
+
+  try {
+    setParseStatus("提取当前页文字", "working");
+    const pdf = await getPdfRuntimeDocument(doc);
+    const page = await pdf.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const pageText = extractTextFromPdfTextContent(textContent);
+
+    upsertPdfExtractedPage(doc, pageNumber, pageText);
+    doc.meta.aiSourcesByPage = doc.meta.aiSourcesByPage || {};
+    doc.meta.aiOutputsByPage = doc.meta.aiOutputsByPage || {};
+
+    if (!Object.hasOwn(doc.meta.aiSourcesByPage, pageKey) || options.force) {
+      doc.meta.aiSourcesByPage[pageKey] = pageText.slice(0, PDF_AI_PAGE_TEXT_LIMIT);
+      doc.meta.aiOutputsByPage[pageKey] = analyzeReadingText(doc.meta.aiSourcesByPage[pageKey]);
+    }
+
+    doc.meta.aiSource = doc.meta.aiSourcesByPage[pageKey] || "";
+    doc.meta.aiOutput = doc.meta.aiOutputsByPage[pageKey] || "";
+    saveWorkspace();
+
+    if (documentState.current?.meta?.id === doc.meta.id && getActivePdfPageNumber(doc) === pageNumber) {
+      updatePdfAiReadingPanel(doc);
+    }
+
+    setParseStatus(pageText ? "当前页文字已提取" : "当前页无可选文字", pageText ? "ready" : "working");
+    return pageText;
+  } catch (error) {
+    doc.meta.pdfExtractError = "当前页文字提取失败，可能是扫描版或加密文档。";
+    saveWorkspace();
+    updatePdfAiReadingPanel(doc);
+    setParseStatus("当前页文字提取失败", "working");
+    return "";
+  }
+}
+
+function schedulePdfPageTextExtraction(doc, pageNumber = getActivePdfPageNumber(doc), delay = 180) {
+  window.clearTimeout(pdfPageTextTimer);
+  pdfPageTextTimer = window.setTimeout(() => {
+    if (documentState.current?.meta?.id === doc?.meta?.id) {
+      extractCurrentPdfPageText(doc, { pageNumber });
+    }
+  }, delay);
+}
+
+function getActivePdfPageNumber(doc) {
+  const pageCount = Math.max(1, doc?.pageCount || doc?.meta?.pageCount || 1);
+  const pageNumber = Math.min(pageCount, Math.max(1, Number(doc?.activePdfPage || doc?.meta?.activePdfPage || 1)));
+  if (doc) {
+    doc.activePdfPage = pageNumber;
+    doc.meta.activePdfPage = pageNumber;
+  }
+  return pageNumber;
+}
+
+function getPdfPageText(doc, pageNumber = getActivePdfPageNumber(doc)) {
+  const pages = doc?.pdfText?.pages?.length ? doc.pdfText.pages : doc?.meta?.extractedPages || [];
+  const page = pages.find((item) => Number(item.pageNumber) === Number(pageNumber));
+  return page?.text || "";
+}
+
+function getPdfPageKey(doc) {
+  return String(getActivePdfPageNumber(doc));
+}
+
+function getPdfAiSource(doc) {
+  const pageKey = getPdfPageKey(doc);
+  const pageSource = doc.meta.aiSourcesByPage?.[pageKey];
+
+  if (Object.hasOwn(doc.meta.aiSourcesByPage || {}, pageKey)) return pageSource;
+
+  return getPdfPageText(doc, Number(pageKey)) || "";
+}
+
+function getPdfAiOutput(doc, sourceText) {
+  const pageKey = getPdfPageKey(doc);
+  if (Object.hasOwn(doc.meta.aiOutputsByPage || {}, pageKey)) {
+    return doc.meta.aiOutputsByPage[pageKey];
+  }
+
+  return analyzeReadingText(sourceText);
+}
+
+function rememberCurrentAiReading() {
+  const doc = documentState.current;
+  const sourceInput = document.querySelector("#ai-reading-source");
+  const output = document.querySelector("#ai-reading-output");
+  if (!doc || !sourceInput) return;
+
+  if (doc.kind === "pdf") {
+    const pageKey = getPdfPageKey(doc);
+    doc.meta.aiSourcesByPage = doc.meta.aiSourcesByPage || {};
+    doc.meta.aiSourcesByPage[pageKey] = sourceInput.value;
+    doc.meta.aiSource = sourceInput.value;
+    if (output?.textContent) {
+      doc.meta.aiOutputsByPage = doc.meta.aiOutputsByPage || {};
+      doc.meta.aiOutputsByPage[pageKey] = output.textContent;
+      doc.meta.aiOutput = output.textContent;
+    }
+    saveWorkspace();
+  }
+}
+
+function getPdfInkStrokes(doc) {
+  doc.meta.inkStrokes = Array.isArray(doc.meta.inkStrokes) ? doc.meta.inkStrokes : [];
+  return doc.meta.inkStrokes;
+}
+
+function getCanvasPoint(event, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+    y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+  };
+}
+
+function drawPdfInkStroke(context, canvas, stroke) {
+  if (!stroke.points?.length) return;
+
+  context.save();
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.strokeStyle = stroke.color || pdfInkState.color;
+  context.lineWidth = Math.max(2, (stroke.widthRatio || 0.006) * canvas.width);
+  context.beginPath();
+  stroke.points.forEach((point, index) => {
+    const x = point.x * canvas.width;
+    const y = point.y * canvas.height;
+    if (index === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  });
+
+  if (stroke.points.length === 1) {
+    const point = stroke.points[0];
+    const radius = context.lineWidth / 2;
+    context.moveTo(point.x * canvas.width + radius, point.y * canvas.height);
+    context.arc(point.x * canvas.width, point.y * canvas.height, radius, 0, Math.PI * 2);
+  }
+
+  context.stroke();
+  context.restore();
+}
+
+function drawPdfInkLayer(pageShell, doc) {
+  const canvas = pageShell.querySelector(".pdf-ink-layer");
+  if (!canvas || !doc) return;
+
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  getPdfInkStrokes(doc)
+    .filter((stroke) => Number(stroke.pageNumber) === Number(pageShell.dataset.pageNumber))
+    .forEach((stroke) => drawPdfInkStroke(context, canvas, stroke));
+}
+
+function redrawPdfInkPage(pageNumber) {
+  const doc = documentState.current;
+  const pageShell = document.querySelector(`.pdf-rendered-page[data-page-number="${pageNumber}"]`);
+  if (!doc || !pageShell) return;
+  drawPdfInkLayer(pageShell, doc);
+}
+
+function redrawAllPdfInkLayers(doc = documentState.current) {
+  if (!doc || doc.kind !== "pdf") return;
+  document.querySelectorAll(".pdf-rendered-page").forEach((pageShell) => drawPdfInkLayer(pageShell, doc));
+}
+
+function syncPdfInkUi(doc = documentState.current) {
+  const viewer = document.querySelector("#pdf-viewer");
+  viewer?.classList.toggle("ink-active", pdfInkState.enabled);
+  document.querySelectorAll("#toggle-pdf-ink").forEach((button) => {
+    button.classList.toggle("active", pdfInkState.enabled);
+    button.setAttribute("aria-pressed", String(pdfInkState.enabled));
+  });
+
+  const colorInput = document.querySelector("#pdf-ink-color");
+  const widthInput = document.querySelector("#pdf-ink-width");
+  const widthValue = document.querySelector("#pdf-ink-width-value");
+  const strokeCount = getPdfInkStrokes(doc || { meta: {} }).length;
+  const countLabel = document.querySelector("#pdf-ink-count");
+
+  if (colorInput) colorInput.value = pdfInkState.color;
+  if (widthInput) widthInput.value = String(pdfInkState.width);
+  if (widthValue) widthValue.textContent = `${pdfInkState.width}px`;
+  if (countLabel) countLabel.textContent = strokeCount ? `${strokeCount} 笔待写入` : "暂无画笔批注";
+}
+
+function beginPdfInkStroke(event) {
+  const doc = documentState.current;
+  const canvas = event.target.closest(".pdf-ink-layer");
+  if (!doc || doc.kind !== "pdf" || !canvas || !pdfInkState.enabled) return;
+
+  event.preventDefault();
+  const pageShell = canvas.closest(".pdf-rendered-page");
+  const point = getCanvasPoint(event, canvas);
+  pdfInkState.currentStroke = {
+    id: createId("ink"),
+    pageNumber: Number(pageShell.dataset.pageNumber),
+    color: pdfInkState.color,
+    widthRatio: pdfInkState.width / Math.max(1, canvas.getBoundingClientRect().width),
+    points: [point],
+    createdAt: Date.now(),
+  };
+  pdfInkState.pointerId = event.pointerId;
+  canvas.setPointerCapture?.(event.pointerId);
+  getPdfInkStrokes(doc).push(pdfInkState.currentStroke);
+  setActivePdfPage(doc, pdfInkState.currentStroke.pageNumber, false);
+  redrawPdfInkPage(pdfInkState.currentStroke.pageNumber);
+}
+
+function updatePdfInkStroke(event) {
+  const doc = documentState.current;
+  const stroke = pdfInkState.currentStroke;
+  if (!doc || !stroke || event.pointerId !== pdfInkState.pointerId) return;
+
+  const canvas = event.target.closest(".pdf-ink-layer");
+  if (!canvas) return;
+
+  event.preventDefault();
+  const point = getCanvasPoint(event, canvas);
+  const lastPoint = stroke.points[stroke.points.length - 1];
+  const distance = Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y);
+  if (distance < 0.002) return;
+
+  stroke.points.push(point);
+  redrawPdfInkPage(stroke.pageNumber);
+}
+
+function finishPdfInkStroke(event) {
+  const doc = documentState.current;
+  const stroke = pdfInkState.currentStroke;
+  if (!doc || !stroke || event.pointerId !== pdfInkState.pointerId) return;
+
+  pdfInkState.currentStroke = null;
+  pdfInkState.pointerId = null;
+  doc.meta.pdfEdited = true;
+  saveWorkspace();
+  syncPdfInkUi(doc);
+  setParseStatus("画笔批注已记录", "ready");
+}
+
+function undoPdfInkStroke() {
+  const doc = documentState.current;
+  if (!doc || doc.kind !== "pdf") return;
+
+  const activePage = getActivePdfPageNumber(doc);
+  const strokes = getPdfInkStrokes(doc);
+  const index = strokes.map((stroke, strokeIndex) => ({ stroke, strokeIndex })).reverse().find(
+    ({ stroke }) => Number(stroke.pageNumber) === activePage,
+  )?.strokeIndex;
+
+  if (index === undefined) {
+    setParseStatus("当前页暂无画笔", "working");
+    return;
+  }
+
+  strokes.splice(index, 1);
+  saveWorkspace();
+  redrawPdfInkPage(activePage);
+  syncPdfInkUi(doc);
+  setParseStatus("已撤销一笔", "ready");
+}
+
+function clearCurrentPdfInkPage() {
+  const doc = documentState.current;
+  if (!doc || doc.kind !== "pdf") return;
+
+  const activePage = getActivePdfPageNumber(doc);
+  doc.meta.inkStrokes = getPdfInkStrokes(doc).filter((stroke) => Number(stroke.pageNumber) !== activePage);
+  saveWorkspace();
+  redrawPdfInkPage(activePage);
+  syncPdfInkUi(doc);
+  setParseStatus("已清空当前页画笔", "ready");
+}
+
+function parseInkColor(color) {
+  const hex = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color || "");
+  if (!hex) return { r: 0.09, g: 0.56, b: 0.52 };
+  return {
+    r: parseInt(hex[1], 16) / 255,
+    g: parseInt(hex[2], 16) / 255,
+    b: parseInt(hex[3], 16) / 255,
+  };
+}
+
+function drawInkStrokeOnPdfPage(page, stroke, rgb) {
+  const { width, height } = page.getSize();
+  const color = parseInkColor(stroke.color);
+  const thickness = Math.max(0.8, (stroke.widthRatio || 0.006) * width);
+  const points = stroke.points || [];
+  if (!points.length) return;
+
+  if (points.length === 1) {
+    const point = points[0];
+    page.drawCircle({
+      x: point.x * width,
+      y: height - point.y * height,
+      size: thickness / 2,
+      color: rgb(color.r, color.g, color.b),
+    });
+    return;
+  }
+
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    page.drawLine({
+      start: { x: previous.x * width, y: height - previous.y * height },
+      end: { x: current.x * width, y: height - current.y * height },
+      thickness,
+      color: rgb(color.r, color.g, color.b),
+      opacity: 0.92,
+    });
+  }
+}
+
+function drawInkStrokesOnPdf(pdfDoc, strokes, rgb) {
+  const pages = pdfDoc.getPages();
+  strokes.forEach((stroke) => {
+    const page = pages[Number(stroke.pageNumber) - 1];
+    if (page) drawInkStrokeOnPdfPage(page, stroke, rgb);
+  });
+}
+
+async function applyPdfInkToCurrentPdf() {
+  const doc = documentState.current;
+  if (!doc || doc.kind !== "pdf") return;
+
+  const strokes = getPdfInkStrokes(doc);
+  if (!strokes.length) {
+    setParseStatus("暂无画笔批注", "working");
+    return;
+  }
+
+  if (!window.PDFLib) throw new Error("PDF 编辑库未加载，请重新运行 npm install。");
+
+  rememberCurrentNotes();
+  setParseStatus("写入画笔中", "working");
+  const { PDFDocument, rgb } = window.PDFLib;
+  const pdfDoc = await PDFDocument.load(doc.bytes);
+  drawInkStrokesOnPdf(pdfDoc, strokes, rgb);
+  const editedBytes = await pdfDoc.save();
+  updatePdfBytes(doc, editedBytes, pdfDoc.getPageCount(), { keepTextExtraction: true });
+  doc.meta.inkStrokes = [];
+  doc.meta.pdfTextStale = false;
+  saveWorkspace();
+  setParseStatus("画笔已写入 PDF", "ready");
+  renderPdfReader(doc);
+}
+
+function setActivePdfPage(doc, pageNumber, shouldRender = true) {
+  if (!doc || doc.kind !== "pdf") return;
+
+  rememberCurrentAiReading();
+  rememberCurrentNotes();
+  const pageCount = Math.max(1, doc.pageCount || doc.meta.pageCount || 1);
+  const nextPage = Math.min(pageCount, Math.max(1, Number(pageNumber) || 1));
+  doc.activePdfPage = nextPage;
+  doc.meta.activePdfPage = nextPage;
+  saveWorkspace();
+
+  if (shouldRender) {
+    syncPdfPageControls(doc);
+    updatePdfAiReadingPanel(doc);
+    schedulePdfPageTextExtraction(doc, nextPage);
+    scrollPdfViewerToPage(nextPage);
+  }
+}
+
+function syncPdfActivePageFromViewer(doc, pageNumber) {
+  if (!doc || documentState.current?.meta?.id !== doc.meta.id) return;
+  if (pdfInkState.currentStroke) return;
+
+  const pageCount = Math.max(1, doc.pageCount || doc.meta.pageCount || 1);
+  const nextPage = Math.min(pageCount, Math.max(1, Number(pageNumber) || 1));
+  if (nextPage === doc.activePdfPage) return;
+
+  rememberCurrentAiReading();
+  rememberCurrentNotes();
+  doc.activePdfPage = nextPage;
+  doc.meta.activePdfPage = nextPage;
+  saveWorkspace();
+  syncPdfPageControls(doc);
+  updatePdfAiReadingPanel(doc);
+  schedulePdfPageTextExtraction(doc, nextPage);
+}
+
+function syncPdfPageControls(doc) {
+  const pageCount = Math.max(1, doc.pageCount || doc.meta.pageCount || 1);
+  const activePage = getActivePdfPageNumber(doc);
+  const input = document.querySelector("#pdf-target-page");
+  const previousButton = document.querySelector("[data-pdf-page-step='-1']");
+  const nextButton = document.querySelector("[data-pdf-page-step='1']");
+
+  if (input) {
+    input.max = String(pageCount);
+    input.value = String(activePage);
+  }
+
+  if (previousButton) previousButton.disabled = activePage <= 1;
+  if (nextButton) nextButton.disabled = activePage >= pageCount;
+
+  document.querySelectorAll(".pdf-rendered-page").forEach((page) => {
+    const isActive = Number(page.dataset.pageNumber) === activePage;
+    page.classList.toggle("active", isActive);
+    page.toggleAttribute("aria-current", isActive);
+  });
+}
+
+function scrollPdfViewerToPage(pageNumber) {
+  const page = document.querySelector(`.pdf-rendered-page[data-page-number="${pageNumber}"]`);
+  if (!page) return;
+  page.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+function showPdfNativeFallback(doc, viewer, message = "PDF 页面渲染失败，已切换到内置预览。") {
+  pdfLazyRenderObserver?.disconnect();
+  pdfPageObserver?.disconnect();
+  pdfLazyRenderObserver = null;
+  pdfPageObserver = null;
+  viewer.innerHTML = `
+    <div class="pdf-native-fallback">
+      <p>${escapeHtml(message)}</p>
+      <iframe class="pdf-native-frame" title="${escapeHtml(doc.meta.name)}" src="${doc.blobUrl}#page=${getActivePdfPageNumber(doc)}"></iframe>
+    </div>
+  `;
+  setParseStatus("已切换 PDF 预览", "ready");
+}
+
+function updatePdfAiReadingPanel(doc) {
+  if (!doc || doc.kind !== "pdf") return;
+
+  const sourceInput = document.querySelector("#ai-reading-source");
+  const output = document.querySelector("#ai-reading-output");
+  const status = document.querySelector("#ai-reading-status");
+  if (!sourceInput || !output) return;
+
+  const sourceText = getCurrentReadingText(doc);
+  sourceInput.value = sourceText;
+  sourceInput.placeholder = `这里会跟随当前第 ${getActivePdfPageNumber(doc)} 页显示 PDF 提取文字。如果该页是扫描图片，可以手动粘贴文字。`;
+  output.textContent = getPdfAiOutput(doc, sourceText);
+
+  if (status) {
+    const extractStatus = getPdfExtractionStatus(doc);
+    status.textContent = extractStatus.text;
+    status.className = `ai-reading-status ${extractStatus.tone}`;
+  }
+}
+
+function renderPdfInsightPanel(doc) {
+  const pageCount = Math.max(1, doc.pageCount || doc.meta.pageCount || 1);
+
+  readerPanels.insight.innerHTML = `
+    ${renderAiReadingWindow(doc)}
+    <div class="panel-heading">
+      <div>
+        <span class="tag muted">PDF 批注</span>
+        <h3>阅读与编辑</h3>
+      </div>
+    </div>
+    <p class="summary-text">已载入 PDF 阅读器。滚动到不同页面时，AI 阅读窗口会自动切换到当前页文字。</p>
+    <div class="pdf-toolbox">
+      <div class="pdf-page-jump">
+        <button class="mini-button" data-pdf-page-step="-1" ${doc.activePdfPage <= 1 ? "disabled" : ""} title="上一页">
+          <i data-lucide="chevron-left"></i>
+        </button>
+        <label class="pdf-page-control">
+          <span>当前页</span>
+          <input id="pdf-target-page" type="number" min="1" max="${pageCount}" value="${doc.activePdfPage}" />
+          <small>/ ${pageCount}</small>
+        </label>
+        <button class="mini-button" data-pdf-page-step="1" ${doc.activePdfPage >= pageCount ? "disabled" : ""} title="下一页">
+          <i data-lucide="chevron-right"></i>
+        </button>
+      </div>
+      <button class="ghost-action full" id="insert-pdf-image">
+        <i data-lucide="image-plus"></i>
+        <span>插入图片到当前页</span>
+      </button>
+      <button class="ghost-action full" id="add-pdf-page">
+        <i data-lucide="file-plus-2"></i>
+        <span>在当前页后加空白页</span>
+      </button>
+      <button class="danger-action full" id="delete-pdf-page">
+        <i data-lucide="trash-2"></i>
+        <span>删除当前页</span>
+      </button>
+      <div class="pdf-ink-tools">
+        <button class="ghost-action compact ${pdfInkState.enabled ? "active" : ""}" id="toggle-pdf-ink" aria-pressed="${pdfInkState.enabled}">
+          <i data-lucide="brush"></i>
+          <span>画笔</span>
+        </button>
+        <button class="ghost-action compact" id="undo-pdf-ink">
+          <i data-lucide="undo-2"></i>
+          <span>撤销</span>
+        </button>
+        <button class="ghost-action compact" id="clear-pdf-ink-page">
+          <i data-lucide="eraser"></i>
+          <span>清空本页</span>
+        </button>
+        <button class="primary-action compact" id="apply-pdf-ink">
+          <i data-lucide="check"></i>
+          <span>写入 PDF</span>
+        </button>
+        <label class="pdf-ink-color">
+          <span>颜色</span>
+          <input id="pdf-ink-color" type="color" value="${escapeHtml(pdfInkState.color)}" />
+        </label>
+        <label class="pdf-ink-width">
+          <span>粗细 <b id="pdf-ink-width-value">${pdfInkState.width}px</b></span>
+          <input id="pdf-ink-width" type="range" min="2" max="12" value="${pdfInkState.width}" />
+        </label>
+        <small id="pdf-ink-count" class="pdf-ink-count">${getPdfInkStrokes(doc).length ? `${getPdfInkStrokes(doc).length} 笔待写入` : "暂无画笔批注"}</small>
+      </div>
+    </div>
+    <textarea id="document-notes" class="document-editor" placeholder="在这里写 PDF 批注、复习重点或待提问的问题...">${escapeHtml(doc.meta.notes || "")}</textarea>
+    <button class="primary-action full" id="save-document-notes">
+      <i data-lucide="save"></i>
+      <span>保存学习笔记</span>
+    </button>
+    <button class="ghost-action full" id="export-annotated-pdf">
+      <i data-lucide="file-output"></i>
+      <span>导出当前 PDF 副本</span>
+    </button>
+    <p class="small-hint">说明：PDF 编辑会作用在当前副本上，导出后得到新 PDF；不会直接破坏原文件。</p>
+  `;
+  window.lucide?.createIcons();
+  syncPdfPageControls(doc);
+  syncPdfInkUi(doc);
+}
+
+async function renderPdfPageShell(pdf, pageShell, doc, viewer, renderToken) {
+  if (pageShell.dataset.rendered === "true") return true;
+  if (pageShell.dataset.rendering === "true") return false;
+
+  pageShell.dataset.rendering = "true";
+
+  try {
+    const pageNumber = Number(pageShell.dataset.pageNumber);
+    const page = await pdf.getPage(pageNumber);
+    if (renderToken !== pdfRenderToken || documentState.current?.meta?.id !== doc.meta.id) return;
+
+    const baseViewport = page.getViewport({ scale: 1 });
+    const availableWidth = Math.max(320, viewer.clientWidth - 72);
+    const scale = Math.min(1.45, Math.max(0.72, availableWidth / baseViewport.width));
+    const viewport = page.getViewport({ scale });
+    const stack = pageShell.querySelector(".pdf-canvas-stack");
+    const placeholder = pageShell.querySelector(".pdf-page-placeholder");
+    const canvas = pageShell.querySelector(".pdf-page-canvas");
+    const inkCanvas = pageShell.querySelector(".pdf-ink-layer");
+    const context = canvas.getContext("2d");
+    const pixelRatio = window.devicePixelRatio || 1;
+
+    stack.style.width = `${viewport.width}px`;
+    stack.style.minHeight = `${viewport.height}px`;
+    stack.style.height = `${viewport.height}px`;
+    canvas.hidden = false;
+    canvas.removeAttribute("hidden");
+    canvas.style.display = "block";
+    canvas.width = Math.floor(viewport.width * pixelRatio);
+    canvas.height = Math.floor(viewport.height * pixelRatio);
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+    inkCanvas.width = canvas.width;
+    inkCanvas.height = canvas.height;
+    inkCanvas.style.width = canvas.style.width;
+    inkCanvas.style.height = canvas.style.height;
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    await page.render({ canvasContext: context, viewport }).promise;
+    if (renderToken !== pdfRenderToken || documentState.current?.meta?.id !== doc.meta.id) return;
+
+    placeholder?.remove();
+    drawPdfInkLayer(pageShell, doc);
+    pageShell.classList.add("ready");
+    pageShell.dataset.rendered = "true";
+    return true;
+  } catch {
+    pageShell.dataset.rendered = "error";
+    const placeholder = pageShell.querySelector(".pdf-page-placeholder");
+    if (placeholder) placeholder.textContent = "该页渲染失败";
+    return false;
+  } finally {
+    pageShell.dataset.rendering = "false";
+  }
+}
+
+async function renderPdfPages(doc) {
+  const viewer = document.querySelector("#pdf-viewer");
+  if (!viewer || !doc?.bytes) return;
+
+  const renderToken = (pdfRenderToken += 1);
+  pdfPageObserver?.disconnect();
+  pdfLazyRenderObserver?.disconnect();
+  pdfPageObserver = null;
+  pdfLazyRenderObserver = null;
+  viewer.innerHTML = `<div class="pdf-render-state">正在准备 PDF 页面...</div>`;
+
+  try {
+    const pdf = await getPdfRuntimeDocument(doc);
+    if (renderToken !== pdfRenderToken) return;
+
+    const firstPage = await pdf.getPage(1);
+    const firstViewport = firstPage.getViewport({ scale: 1 });
+    const availableWidth = Math.max(320, viewer.clientWidth - 72);
+    const shellScale = Math.min(1.45, Math.max(0.72, availableWidth / firstViewport.width));
+    const shellWidth = Math.floor(firstViewport.width * shellScale);
+    const shellHeight = Math.floor(firstViewport.height * shellScale);
+
+    doc.pageCount = pdf.numPages;
+    doc.meta.pageCount = pdf.numPages;
+    doc.activePdfPage = Math.min(doc.activePdfPage || doc.meta.activePdfPage || 1, pdf.numPages);
+    doc.meta.activePdfPage = doc.activePdfPage;
+    const pdfTitle = document.querySelector(".pdf-doc-title");
+    if (pdfTitle) pdfTitle.textContent = `${doc.meta.name} · ${formatBytes(doc.meta.size)} · ${pdf.numPages} 页`;
+    viewer.innerHTML = "";
+
+    const pageShells = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const pageShell = document.createElement("section");
+      pageShell.className = "pdf-rendered-page";
+      pageShell.dataset.pageNumber = String(pageNumber);
+      pageShell.dataset.rendered = "false";
+      pageShell.innerHTML = `
+        <div class="pdf-canvas-stack" style="width:${shellWidth}px; min-height:${shellHeight}px; height:${shellHeight}px">
+          <div class="pdf-page-placeholder">第 ${pageNumber} 页</div>
+          <canvas class="pdf-page-canvas" aria-label="PDF 第 ${pageNumber} 页" hidden></canvas>
+          <canvas class="pdf-ink-layer" aria-label="第 ${pageNumber} 页画笔批注"></canvas>
+        </div>
+        <div class="pdf-page-caption">第 ${pageNumber} 页</div>
+      `;
+      viewer.append(pageShell);
+      pageShells.push(pageShell);
+    }
+
+    syncPdfPageControls(doc);
+    syncPdfInkUi(doc);
+    updatePdfAiReadingPanel(doc);
+
+    pdfLazyRenderObserver = new IntersectionObserver(
+      (entries) => {
+        entries
+          .filter((entry) => entry.isIntersecting)
+          .forEach((entry) => renderPdfPageShell(pdf, entry.target, doc, viewer, renderToken));
+      },
+      {
+        root: viewer,
+        rootMargin: "900px 0px",
+        threshold: 0.01,
+      },
+    );
+
+    pdfPageObserver = new IntersectionObserver(
+      (entries) => {
+        const visiblePage = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visiblePage) {
+          syncPdfActivePageFromViewer(doc, Number(visiblePage.target.dataset.pageNumber));
+        }
+      },
+      {
+        root: viewer,
+        threshold: [0.25, 0.5, 0.75],
+      },
+    );
+
+    pageShells.forEach((pageShell) => {
+      pdfLazyRenderObserver.observe(pageShell);
+      pdfPageObserver.observe(pageShell);
+    });
+
+    const firstPageRendered = await renderPdfPageShell(
+      pdf,
+      pageShells[Math.max(0, doc.activePdfPage - 1)],
+      doc,
+      viewer,
+      renderToken,
+    );
+    if (!firstPageRendered && renderToken === pdfRenderToken) {
+      showPdfNativeFallback(doc, viewer);
+      return;
+    }
+    scrollPdfViewerToPage(doc.activePdfPage);
+    schedulePdfPageTextExtraction(doc, doc.activePdfPage, 300);
+  } catch (error) {
+    showPdfNativeFallback(doc, viewer, "PDF.js 加载失败，已切换到内置 PDF 预览。");
+  }
+}
+
+function getPdfExtractionStatus(doc) {
+  const activePage = getActivePdfPageNumber(doc);
+  const activePageText = getPdfPageText(doc, activePage);
+
+  if (doc.meta.pdfTextStale && doc.meta.extractedText) {
+    return {
+      tone: "warning",
+      text: "PDF 内容已更新，建议重新提取文字后再解析当前页。",
+    };
+  }
+
+  if (activePageText) {
+    return {
+      tone: "ready",
+      text: `当前第 ${activePage} 页已提取文字，可直接解析或翻译。`,
+    };
+  }
+
+  if (doc.meta.extractedText) {
+    return {
+      tone: "warning",
+      text: `整份 PDF 已提取文字，但第 ${activePage} 页没有可选择文字。`,
+    };
+  }
+
+  if (doc.meta.pdfExtractError) {
+    return {
+      tone: "warning",
+      text: doc.meta.pdfExtractError,
+    };
+  }
+
+  return {
+    tone: "working",
+    text: "正在等待 PDF 文字提取",
+  };
 }
 
 function showView(viewName) {
@@ -771,6 +1773,10 @@ function getCurrentReadingText(doc) {
     return stripMarkdown(doc.editedText || doc.text || "").slice(0, 5000);
   }
 
+  if (doc.kind === "pdf") {
+    return getPdfAiSource(doc).slice(0, 5000);
+  }
+
   return doc.meta.aiSource || "";
 }
 
@@ -867,7 +1873,7 @@ function translateEnglishToChinese(text) {
 function analyzeReadingText(text) {
   const cleaned = stripMarkdown(text || "");
   if (!cleaned) {
-    return "请先输入或粘贴当前阅读内容。Markdown 会自动带入正文；PDF 可以复制当前页文字到这里。";
+    return "请先输入或粘贴当前阅读内容。Markdown 会自动带入正文；PDF 会自动提取可选择的文字。";
   }
 
   const sentences = cleaned
@@ -892,12 +1898,14 @@ function analyzeReadingText(text) {
 }
 
 function renderAiReadingWindow(doc) {
-  const sourceText = doc.meta.aiSource || getCurrentReadingText(doc);
-  const output = doc.meta.aiOutput || analyzeReadingText(sourceText);
+  const sourceText = doc.kind === "pdf" ? getCurrentReadingText(doc) : doc.meta.aiSource || getCurrentReadingText(doc);
+  const output = doc.kind === "pdf" ? getPdfAiOutput(doc, sourceText) : doc.meta.aiOutput || analyzeReadingText(sourceText);
   const placeholder =
     doc.kind === "pdf"
-      ? "PDF 页面文字无法稳定自动抓取。可以复制当前页的英文段落或重点内容粘贴到这里，AI 阅读窗口会帮你解析和翻译。"
+      ? `这里会跟随当前第 ${getActivePdfPageNumber(doc)} 页显示 PDF 提取文字。如果该页是扫描图片，可以手动粘贴文字。`
       : "这里会自动带入当前 Markdown 正文，也可以手动修改需要解析或翻译的段落。";
+  const extractStatus =
+    doc.kind === "pdf" ? getPdfExtractionStatus(doc) : null;
 
   return `
     <section class="ai-reading-card">
@@ -907,6 +1915,11 @@ function renderAiReadingWindow(doc) {
           <h3>解析与翻译</h3>
         </div>
       </div>
+      ${
+        extractStatus
+          ? `<p id="ai-reading-status" class="ai-reading-status ${escapeHtml(extractStatus.tone)}">${escapeHtml(extractStatus.text)}</p>`
+          : ""
+      }
       <textarea id="ai-reading-source" class="ai-reading-source" placeholder="${escapeHtml(placeholder)}">${escapeHtml(sourceText)}</textarea>
       <div class="ai-reading-actions">
         <button class="primary-action compact" id="ai-analyze-reading">
@@ -917,6 +1930,11 @@ function renderAiReadingWindow(doc) {
           <i data-lucide="languages"></i>
           <span>英文转中文</span>
         </button>
+        ${
+          doc.kind === "pdf"
+            ? `<button class="ghost-action compact wide" id="extract-pdf-text"><i data-lucide="scan-text"></i><span>重新提取当前页文字</span></button>`
+            : ""
+        }
       </div>
       <div class="ai-reading-output" id="ai-reading-output">${escapeHtml(output)}</div>
     </section>
@@ -931,8 +1949,18 @@ function updateAiReadingOutput(mode) {
 
   const source = sourceInput.value.trim();
   const result = mode === "translate" ? translateEnglishToChinese(source) : analyzeReadingText(source);
-  doc.meta.aiSource = source;
-  doc.meta.aiOutput = result;
+  if (doc.kind === "pdf") {
+    const pageKey = getPdfPageKey(doc);
+    doc.meta.aiSourcesByPage = doc.meta.aiSourcesByPage || {};
+    doc.meta.aiOutputsByPage = doc.meta.aiOutputsByPage || {};
+    doc.meta.aiSourcesByPage[pageKey] = source;
+    doc.meta.aiOutputsByPage[pageKey] = result;
+    doc.meta.aiSource = source;
+    doc.meta.aiOutput = result;
+  } else {
+    doc.meta.aiSource = source;
+    doc.meta.aiOutput = result;
+  }
   output.textContent = result;
   saveWorkspace();
 }
@@ -980,11 +2008,12 @@ function rememberCurrentNotes() {
 
 function renderPdfReader(doc) {
   const pageCount = Math.max(1, doc.pageCount || doc.meta.pageCount || 1);
-  doc.activePdfPage = Math.min(doc.activePdfPage || 1, pageCount);
+  doc.activePdfPage = Math.min(doc.activePdfPage || doc.meta.activePdfPage || 1, pageCount);
+  doc.meta.activePdfPage = doc.activePdfPage;
   renderDocumentLibrary();
   readerPanels.document.innerHTML = `
     <div class="doc-toolbar">
-      <span>${escapeHtml(doc.meta.name)} · ${escapeHtml(formatBytes(doc.meta.size))} · ${pageCount} 页</span>
+      <span class="pdf-doc-title">${escapeHtml(doc.meta.name)} · ${escapeHtml(formatBytes(doc.meta.size))} · ${pageCount} 页</span>
       <div class="toolbar-actions">
         <button class="mini-button" id="save-notes-top">
           <i data-lucide="save"></i>
@@ -993,49 +2022,12 @@ function renderPdfReader(doc) {
         ${getReaderFullscreenButtonMarkup()}
       </div>
     </div>
-    <iframe class="pdf-frame" title="${escapeHtml(doc.meta.name)}" src="${doc.blobUrl}"></iframe>
+    <div id="pdf-viewer" class="pdf-viewer" aria-label="${escapeHtml(doc.meta.name)}"></div>
   `;
-  readerPanels.insight.innerHTML = `
-    ${renderAiReadingWindow(doc)}
-    <div class="panel-heading">
-      <div>
-        <span class="tag muted">PDF 批注</span>
-        <h3>阅读与编辑</h3>
-      </div>
-    </div>
-    <p class="summary-text">已载入 PDF 阅读器。这里可以写批注，也可以对当前 PDF 副本插入图片、添加空白页或删除指定页面。</p>
-    <div class="pdf-toolbox">
-      <label class="pdf-page-control">
-        <span>目标页</span>
-        <input id="pdf-target-page" type="number" min="1" max="${pageCount}" value="${doc.activePdfPage}" />
-        <small>/ ${pageCount}</small>
-      </label>
-      <button class="ghost-action full" id="insert-pdf-image">
-        <i data-lucide="image-plus"></i>
-        <span>插入图片到目标页</span>
-      </button>
-      <button class="ghost-action full" id="add-pdf-page">
-        <i data-lucide="file-plus-2"></i>
-        <span>在目标页后加空白页</span>
-      </button>
-      <button class="danger-action full" id="delete-pdf-page">
-        <i data-lucide="trash-2"></i>
-        <span>删除目标页</span>
-      </button>
-    </div>
-    <textarea id="document-notes" class="document-editor" placeholder="在这里写 PDF 批注、复习重点或待提问的问题...">${escapeHtml(doc.meta.notes || "")}</textarea>
-    <button class="primary-action full" id="save-document-notes">
-      <i data-lucide="save"></i>
-      <span>保存学习笔记</span>
-    </button>
-    <button class="ghost-action full" id="export-annotated-pdf">
-      <i data-lucide="file-output"></i>
-      <span>导出当前 PDF 副本</span>
-    </button>
-    <p class="small-hint">说明：PDF 编辑会作用在当前副本上，导出后得到新 PDF；不会直接破坏原文件。</p>
-  `;
+  renderPdfInsightPanel(doc);
   window.lucide?.createIcons();
   syncFullscreenButton();
+  renderPdfPages(doc);
 }
 
 function renderMarkdownReader(doc) {
@@ -1595,15 +2587,6 @@ async function loadPdfDocument(file, meta) {
   const blobUrl = URL.createObjectURL(blob);
   let pageCount = meta.pageCount || 1;
 
-  if (window.PDFLib) {
-    try {
-      const pdfDoc = await window.PDFLib.PDFDocument.load(bytes);
-      pageCount = pdfDoc.getPageCount();
-    } catch {
-      pageCount = meta.pageCount || 1;
-    }
-  }
-
   documentState.current = {
     kind: "pdf",
     meta,
@@ -1611,11 +2594,12 @@ async function loadPdfDocument(file, meta) {
     bytes,
     blobUrl,
     pageCount,
-    activePdfPage: 1,
+    activePdfPage: Math.min(pageCount, Math.max(1, Number(meta.activePdfPage || 1))),
   };
 
   meta.pageCount = pageCount;
-  updateImportedFileCard(meta, ["PDF 阅读器", `${pageCount} 页`, "支持高级编辑", meta.path ? "已保存路径" : "临时导入"]);
+  updateImportedFileCard(meta, ["PDF 阅读器", `${pageCount} 页`, "自动提取文字", meta.path ? "已保存路径" : "临时导入"]);
+  hydrateStoredPdfText(documentState.current);
   renderPdfReader(documentState.current);
 }
 
@@ -1765,6 +2749,7 @@ async function exportAnnotatedPdf() {
     color: rgb(0.09, 0.32, 0.29),
     maxWidth: width - 72,
   });
+  drawInkStrokesOnPdf(pdfDoc, getPdfInkStrokes(doc), rgb);
 
   const editedBytes = await pdfDoc.save();
   const baseName = doc.meta.name.replace(/\.pdf$/i, "");
@@ -1801,7 +2786,6 @@ async function addPdfPage() {
   const editedBytes = await pdfDoc.save();
   updatePdfBytes(doc, editedBytes, pdfDoc.getPageCount());
   doc.activePdfPage = Math.min(targetIndex + 2, doc.pageCount);
-  setParseStatus("已编辑", "ready");
   renderPdfReader(doc);
 }
 
@@ -1864,7 +2848,6 @@ async function deletePdfPage() {
   updatePdfBytes(doc, editedBytes, pdfDoc.getPageCount());
   doc.activePdfPage = Math.min(targetIndex + 1, doc.pageCount);
   closeModal();
-  setParseStatus("已编辑", "ready");
   renderPdfReader(doc);
 }
 
@@ -1908,8 +2891,7 @@ async function insertImageIntoPdf() {
   });
 
   const editedBytes = await pdfDoc.save();
-  updatePdfBytes(doc, editedBytes, pdfDoc.getPageCount());
-  setParseStatus("已插入图片", "ready");
+  updatePdfBytes(doc, editedBytes, pdfDoc.getPageCount(), { keepTextExtraction: true });
   renderPdfReader(doc);
 }
 
@@ -2241,6 +3223,18 @@ document.addEventListener("change", (event) => {
   if (event.target.matches(".course-select")) {
     switchCourse(event.target.value);
   }
+
+  if (event.target.matches("#pdf-target-page")) {
+    const doc = documentState.current;
+    if (doc?.kind === "pdf") {
+      setActivePdfPage(doc, Number(event.target.value));
+    }
+  }
+
+  if (event.target.matches("#pdf-ink-color")) {
+    pdfInkState.color = event.target.value || pdfInkState.color;
+    syncPdfInkUi();
+  }
 });
 
 document.addEventListener("input", (event) => {
@@ -2252,17 +3246,33 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("#ai-reading-source")) {
     const doc = documentState.current;
     if (doc) {
-      doc.meta.aiSource = event.target.value;
+      if (doc.kind === "pdf") {
+        const pageKey = getPdfPageKey(doc);
+        doc.meta.aiSourcesByPage = doc.meta.aiSourcesByPage || {};
+        doc.meta.aiSourcesByPage[pageKey] = event.target.value;
+        doc.meta.aiSource = event.target.value;
+      } else {
+        doc.meta.aiSource = event.target.value;
+      }
       window.clearTimeout(event.target.dataset.saveTimer);
       event.target.dataset.saveTimer = window.setTimeout(saveWorkspace, 250);
     }
   }
 
-  if (event.target.matches("#pdf-target-page")) {
-    const doc = documentState.current;
-    if (doc?.kind === "pdf") {
-      doc.activePdfPage = getPdfTargetPage(doc);
-    }
+  if (event.target.matches("#pdf-ink-width")) {
+    pdfInkState.width = Number(event.target.value) || pdfInkState.width;
+    syncPdfInkUi();
+  }
+});
+
+document.addEventListener("pointerdown", beginPdfInkStroke);
+document.addEventListener("pointermove", updatePdfInkStroke);
+document.addEventListener("pointerup", finishPdfInkStroke);
+document.addEventListener("pointercancel", finishPdfInkStroke);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    exitReaderFullscreenFallback();
   }
 });
 
@@ -2281,6 +3291,7 @@ document.addEventListener("click", (event) => {
   const documentButton = event.target.closest("[data-document-id]");
   const slideButton = event.target.closest("[data-slide-index]");
   const slideMoveButton = event.target.closest("[data-slide-move]");
+  const pdfPageStepButton = event.target.closest("[data-pdf-page-step]");
   const actionButton = event.target.closest("button");
 
   if (modalCloseButton || modalBackdrop) {
@@ -2323,6 +3334,14 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (pdfPageStepButton) {
+    const doc = documentState.current;
+    if (doc?.kind === "pdf") {
+      setActivePdfPage(doc, (doc.activePdfPage || 1) + Number(pdfPageStepButton.dataset.pdfPageStep || 0));
+    }
+    return;
+  }
+
   if (!actionButton) return;
 
   if (actionButton.dataset.courseAction === "create") createCourse();
@@ -2337,8 +3356,19 @@ document.addEventListener("click", (event) => {
   if (actionButton.id === "insert-pdf-image") insertImageIntoPdf();
   if (actionButton.id === "add-pdf-page") addPdfPage();
   if (actionButton.id === "delete-pdf-page") openDeletePdfPageDialog();
+  if (actionButton.id === "toggle-pdf-ink") {
+    pdfInkState.enabled = !pdfInkState.enabled;
+    syncPdfInkUi();
+  }
+  if (actionButton.id === "undo-pdf-ink") undoPdfInkStroke();
+  if (actionButton.id === "clear-pdf-ink-page") clearCurrentPdfInkPage();
+  if (actionButton.id === "apply-pdf-ink") applyPdfInkToCurrentPdf();
   if (actionButton.id === "ai-analyze-reading") updateAiReadingOutput("analyze");
   if (actionButton.id === "ai-translate-reading") updateAiReadingOutput("translate");
+  if (actionButton.id === "extract-pdf-text") {
+    const doc = documentState.current;
+    if (doc?.kind === "pdf") extractCurrentPdfPageText(doc, { force: true });
+  }
   if (actionButton.id === "apply-slide-edit") applySlideEdit();
   if (actionButton.id === "export-edited-pptx") exportEditedPptx();
   if (actionButton.id === "apply-markdown-edit") applyMarkdownEdit();
