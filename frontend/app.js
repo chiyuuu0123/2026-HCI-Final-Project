@@ -53,6 +53,14 @@ const pdfInkState = {
   pointerId: null,
   activeCanvas: null,
 };
+const pdfImagePlacementState = {
+  current: null,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  startLeft: 0,
+  startTop: 0,
+};
 
 let workspace = loadWorkspace();
 let pdfJsLoadingPromise = null;
@@ -60,6 +68,7 @@ let pdfPageObserver = null;
 let pdfLazyRenderObserver = null;
 let pdfRenderToken = 0;
 let pdfPageTextTimer = null;
+let pdfReaderResizeRenderTimer = null;
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -473,17 +482,38 @@ function syncFullscreenButton() {
   window.lucide?.createIcons();
 }
 
+function rerenderCurrentPdfAfterReaderResize(delay = 120) {
+  const doc = documentState.current;
+  if (!doc || doc.kind !== "pdf") return;
+
+  window.clearTimeout(pdfReaderResizeRenderTimer);
+  pdfReaderResizeRenderTimer = window.setTimeout(() => {
+    const currentDoc = documentState.current;
+    if (!currentDoc || currentDoc.kind !== "pdf") return;
+
+    rememberCurrentNotes();
+    rememberCurrentAiReading();
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        renderPdfPages(currentDoc);
+      });
+    });
+  }, delay);
+}
+
 function exitReaderFullscreenFallback() {
   const readerLayout = document.querySelector(".reader-layout");
   readerLayout?.classList.remove("reader-fullscreen-fallback");
   document.body.classList.remove("reader-fullscreen-lock");
   syncFullscreenButton();
+  rerenderCurrentPdfAfterReaderResize();
 }
 
 function enterReaderFullscreenFallback(readerLayout) {
   readerLayout.classList.add("reader-fullscreen-fallback");
   document.body.classList.add("reader-fullscreen-lock");
   syncFullscreenButton();
+  rerenderCurrentPdfAfterReaderResize();
 }
 
 async function toggleReaderFullscreen() {
@@ -1237,6 +1267,127 @@ function drawInkStrokesOnPdf(pdfDoc, strokes, rgb) {
   });
 }
 
+function getPdfPageShell(pageNumber) {
+  return document.querySelector(`.pdf-rendered-page[data-page-number="${pageNumber}"]`);
+}
+
+function removePdfImagePlacement() {
+  document.querySelectorAll(".pdf-image-placement").forEach((element) => element.remove());
+}
+
+function renderPdfImagePlacement() {
+  const placement = pdfImagePlacementState.current;
+  removePdfImagePlacement();
+  if (!placement) return;
+
+  const pageShell = getPdfPageShell(placement.pageNumber);
+  const stack = pageShell?.querySelector(".pdf-canvas-stack");
+  if (!stack) return;
+
+  const placementElement = document.createElement("div");
+  placementElement.className = "pdf-image-placement";
+  placementElement.dataset.pdfImagePlacement = placement.id;
+  placementElement.style.left = `${placement.xRatio * 100}%`;
+  placementElement.style.top = `${placement.yRatio * 100}%`;
+  placementElement.style.width = `${placement.widthRatio * 100}%`;
+  placementElement.style.height = `${placement.heightRatio * 100}%`;
+  placementElement.innerHTML = `
+    <img src="${placement.dataUrl}" alt="${escapeHtml(placement.name)}" draggable="false" />
+    <div class="pdf-image-placement-toolbar">
+      <button class="mini-button" data-pdf-image-action="apply">写入 PDF</button>
+      <button class="mini-button light" data-pdf-image-action="cancel">取消</button>
+    </div>
+  `;
+  stack.append(placementElement);
+}
+
+function beginPdfImagePlacementDrag(event) {
+  const placementElement = event.target.closest(".pdf-image-placement");
+  const placement = pdfImagePlacementState.current;
+  if (!placementElement || !placement) return;
+  if (event.target.closest("[data-pdf-image-action]")) return;
+
+  event.preventDefault();
+  const stack = placementElement.closest(".pdf-canvas-stack");
+  const stackRect = stack.getBoundingClientRect();
+  pdfImagePlacementState.pointerId = event.pointerId;
+  pdfImagePlacementState.startX = event.clientX;
+  pdfImagePlacementState.startY = event.clientY;
+  pdfImagePlacementState.startLeft = placement.xRatio * stackRect.width;
+  pdfImagePlacementState.startTop = placement.yRatio * stackRect.height;
+  placementElement.setPointerCapture?.(event.pointerId);
+  placementElement.classList.add("dragging");
+}
+
+function updatePdfImagePlacementDrag(event) {
+  const placement = pdfImagePlacementState.current;
+  if (!placement || event.pointerId !== pdfImagePlacementState.pointerId) return;
+
+  const placementElement = document.querySelector(".pdf-image-placement");
+  const stack = placementElement?.closest(".pdf-canvas-stack");
+  if (!placementElement || !stack) return;
+
+  event.preventDefault();
+  const stackRect = stack.getBoundingClientRect();
+  const nextLeft = pdfImagePlacementState.startLeft + event.clientX - pdfImagePlacementState.startX;
+  const nextTop = pdfImagePlacementState.startTop + event.clientY - pdfImagePlacementState.startY;
+  const maxLeft = stackRect.width * (1 - placement.widthRatio);
+  const maxTop = stackRect.height * (1 - placement.heightRatio);
+
+  placement.xRatio = Math.min(1 - placement.widthRatio, Math.max(0, nextLeft / Math.max(1, stackRect.width)));
+  placement.yRatio = Math.min(1 - placement.heightRatio, Math.max(0, nextTop / Math.max(1, stackRect.height)));
+  placementElement.style.left = `${placement.xRatio * 100}%`;
+  placementElement.style.top = `${placement.yRatio * 100}%`;
+  placementElement.style.transform = nextLeft < 0 || nextTop < 0 || nextLeft > maxLeft || nextTop > maxTop ? "scale(0.995)" : "";
+}
+
+function finishPdfImagePlacementDrag(event) {
+  if (event.pointerId !== pdfImagePlacementState.pointerId) return;
+
+  document.querySelector(".pdf-image-placement")?.classList.remove("dragging");
+  pdfImagePlacementState.pointerId = null;
+}
+
+function cancelPdfImagePlacement() {
+  pdfImagePlacementState.current = null;
+  pdfImagePlacementState.pointerId = null;
+  removePdfImagePlacement();
+  setParseStatus("已取消插图", "ready");
+}
+
+async function applyPdfImagePlacement() {
+  const doc = documentState.current;
+  const placement = pdfImagePlacementState.current;
+  if (!doc || doc.kind !== "pdf" || !placement) return;
+  if (!window.PDFLib) throw new Error("PDF 编辑库未加载，请重新运行 npm install。");
+
+  rememberCurrentNotes();
+  setParseStatus("写入图片中", "working");
+
+  const { PDFDocument } = window.PDFLib;
+  const pdfDoc = await PDFDocument.load(doc.bytes);
+  const imageBytes = base64ToUint8Array(placement.base64);
+  const embeddedImage = placement.isPng ? await pdfDoc.embedPng(imageBytes) : await pdfDoc.embedJpg(imageBytes);
+  const page = pdfDoc.getPage(placement.pageNumber - 1);
+  const { width, height } = page.getSize();
+  const imageWidth = placement.widthRatio * width;
+  const imageHeight = placement.heightRatio * height;
+
+  page.drawImage(embeddedImage, {
+    x: placement.xRatio * width,
+    y: height - (placement.yRatio + placement.heightRatio) * height,
+    width: imageWidth,
+    height: imageHeight,
+  });
+
+  const editedBytes = await pdfDoc.save();
+  pdfImagePlacementState.current = null;
+  removePdfImagePlacement();
+  updatePdfBytes(doc, editedBytes, pdfDoc.getPageCount(), { keepTextExtraction: true });
+  setParseStatus("图片已写入 PDF", "ready");
+  renderPdfReader(doc);
+}
+
 async function applyPdfInkToCurrentPdf() {
   const doc = documentState.current;
   if (!doc || doc.kind !== "pdf") return;
@@ -1497,6 +1648,7 @@ async function renderPdfPageShell(pdf, pageShell, doc, viewer, renderToken) {
 
     placeholder?.remove();
     drawPdfInkLayer(pageShell, doc);
+    renderPdfImagePlacement();
     pageShell.classList.add("ready");
     pageShell.dataset.rendered = "true";
     return true;
@@ -1826,19 +1978,280 @@ function showReaderError(message) {
   `;
 }
 
-function renderMarkdownPreview(markdown) {
-  const lines = markdown.split(/\r?\n/);
-  return lines
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return "";
-      if (trimmed.startsWith("### ")) return `<h4>${escapeHtml(trimmed.slice(4))}</h4>`;
-      if (trimmed.startsWith("## ")) return `<h3>${escapeHtml(trimmed.slice(3))}</h3>`;
-      if (trimmed.startsWith("# ")) return `<h2>${escapeHtml(trimmed.slice(2))}</h2>`;
-      if (trimmed.startsWith("- ")) return `<p class="markdown-bullet">• ${escapeHtml(trimmed.slice(2))}</p>`;
-      return `<p>${escapeHtml(trimmed)}</p>`;
-    })
-    .join("");
+function markdownPathToFileUrl(filePath) {
+  if (!filePath) return "";
+
+  const normalized = String(filePath).replaceAll("\\", "/");
+  const trailingSlash = normalized.endsWith("/") ? "/" : "";
+  if (/^[a-z]:\//i.test(normalized)) {
+    const drive = normalized.slice(0, 2);
+    const rest = normalized
+      .slice(2)
+      .split("/")
+      .filter(Boolean)
+      .map(encodeURIComponent)
+      .join("/");
+    return `file:///${drive}/${rest}${trailingSlash}`;
+  }
+
+  if (normalized.startsWith("/")) {
+    const rest = normalized
+      .split("/")
+      .filter(Boolean)
+      .map(encodeURIComponent)
+      .join("/");
+    return `file:///${rest}${trailingSlash}`;
+  }
+
+  return "";
+}
+
+function getMarkdownBaseUrl(doc) {
+  const filePath = doc?.meta?.path || "";
+  if (!filePath) return "";
+
+  const normalized = filePath.replaceAll("\\", "/");
+  const directory = normalized.slice(0, normalized.lastIndexOf("/") + 1);
+  return markdownPathToFileUrl(directory);
+}
+
+function resolveMarkdownUrl(rawUrl, doc) {
+  const cleanUrl = String(rawUrl || "").trim().replace(/^['"]|['"]$/g, "");
+  if (!cleanUrl) return "";
+  if (/^(https?:|data:|blob:|file:|mailto:|#)/i.test(cleanUrl)) return cleanUrl;
+
+  const baseUrl = getMarkdownBaseUrl(doc);
+  if (!baseUrl) return cleanUrl;
+
+  try {
+    return new URL(cleanUrl.replaceAll("\\", "/"), baseUrl).href;
+  } catch {
+    return cleanUrl;
+  }
+}
+
+function parseMarkdownLinkTarget(rawTarget) {
+  const match = String(rawTarget || "").trim().match(/^<?([^>\s]+)>?(?:\s+["']([^"']+)["'])?$/);
+  return {
+    url: match?.[1] || String(rawTarget || "").trim(),
+    title: match?.[2] || "",
+  };
+}
+
+function renderMarkdownInline(text, doc) {
+  const source = String(text || "");
+  let html = "";
+  let index = 0;
+
+  const appendText = (value) => {
+    html += escapeHtml(value);
+  };
+
+  while (index < source.length) {
+    if (source[index] === "`") {
+      const endIndex = source.indexOf("`", index + 1);
+      if (endIndex !== -1) {
+        html += `<code>${escapeHtml(source.slice(index + 1, endIndex))}</code>`;
+        index = endIndex + 1;
+        continue;
+      }
+    }
+
+    if (source.startsWith("![", index)) {
+      const altEnd = source.indexOf("]", index + 2);
+      const targetStart = altEnd !== -1 ? source.indexOf("(", altEnd) : -1;
+      const targetEnd = targetStart !== -1 ? source.indexOf(")", targetStart) : -1;
+      if (altEnd !== -1 && targetStart === altEnd + 1 && targetEnd !== -1) {
+        const target = parseMarkdownLinkTarget(source.slice(targetStart + 1, targetEnd));
+        const src = resolveMarkdownUrl(target.url, doc);
+        const alt = source.slice(index + 2, altEnd);
+        html += `<img class="markdown-image" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" />`;
+        index = targetEnd + 1;
+        continue;
+      }
+    }
+
+    if (source[index] === "[") {
+      const textEnd = source.indexOf("]", index + 1);
+      const targetStart = textEnd !== -1 ? source.indexOf("(", textEnd) : -1;
+      const targetEnd = targetStart !== -1 ? source.indexOf(")", targetStart) : -1;
+      if (textEnd !== -1 && targetStart === textEnd + 1 && targetEnd !== -1) {
+        const target = parseMarkdownLinkTarget(source.slice(targetStart + 1, targetEnd));
+        const href = resolveMarkdownUrl(target.url, doc);
+        const title = target.title ? ` title="${escapeHtml(target.title)}"` : "";
+        html += `<a href="${escapeHtml(href)}"${title} target="_blank" rel="noreferrer">${renderMarkdownInline(source.slice(index + 1, textEnd), doc)}</a>`;
+        index = targetEnd + 1;
+        continue;
+      }
+    }
+
+    const strongMarker = source.startsWith("**", index) ? "**" : source.startsWith("__", index) ? "__" : "";
+    if (strongMarker) {
+      const endIndex = source.indexOf(strongMarker, index + 2);
+      if (endIndex !== -1) {
+        html += `<strong>${renderMarkdownInline(source.slice(index + 2, endIndex), doc)}</strong>`;
+        index = endIndex + 2;
+        continue;
+      }
+    }
+
+    if (source[index] === "*" || source[index] === "_") {
+      const marker = source[index];
+      const endIndex = source.indexOf(marker, index + 1);
+      if (endIndex !== -1 && endIndex > index + 1) {
+        html += `<em>${renderMarkdownInline(source.slice(index + 1, endIndex), doc)}</em>`;
+        index = endIndex + 1;
+        continue;
+      }
+    }
+
+    if (source.startsWith("~~", index)) {
+      const endIndex = source.indexOf("~~", index + 2);
+      if (endIndex !== -1) {
+        html += `<del>${renderMarkdownInline(source.slice(index + 2, endIndex), doc)}</del>`;
+        index = endIndex + 2;
+        continue;
+      }
+    }
+
+    appendText(source[index]);
+    index += 1;
+  }
+
+  return html;
+}
+
+function isMarkdownTableDivider(line) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function splitMarkdownTableRow(line) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function renderMarkdownTable(lines, doc) {
+  const header = splitMarkdownTableRow(lines[0]);
+  const rows = lines.slice(2).map(splitMarkdownTableRow);
+  return `
+    <div class="markdown-table-wrap">
+      <table>
+        <thead><tr>${header.map((cell) => `<th>${renderMarkdownInline(cell, doc)}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${rows
+            .map((row) => `<tr>${row.map((cell) => `<td>${renderMarkdownInline(cell, doc)}</td>`).join("")}</tr>`)
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderMarkdownPreview(markdown, doc = documentState.current) {
+  const lines = String(markdown || "").split(/\r?\n/);
+  const blocks = [];
+  let paragraph = [];
+  let listItems = [];
+  let listType = "";
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    blocks.push(`<p>${renderMarkdownInline(paragraph.join(" "), doc)}</p>`);
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (!listItems.length) return;
+    const tag = listType === "ol" ? "ol" : "ul";
+    blocks.push(`<${tag}>${listItems.map((item) => `<li>${renderMarkdownInline(item, doc)}</li>`).join("")}</${tag}>`);
+    listItems = [];
+    listType = "";
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (/^```/.test(trimmed)) {
+      flushParagraph();
+      flushList();
+      const language = trimmed.replace(/^```/, "").trim();
+      const codeLines = [];
+      index += 1;
+      while (index < lines.length && !/^```/.test(lines[index].trim())) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      const langLabel = language ? `<span>${escapeHtml(language)}</span>` : "";
+      blocks.push(`<pre class="markdown-code-block">${langLabel}<code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    if (index + 1 < lines.length && isMarkdownTableDivider(lines[index + 1])) {
+      flushParagraph();
+      flushList();
+      const tableLines = [line, lines[index + 1]];
+      index += 2;
+      while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+        tableLines.push(lines[index]);
+        index += 1;
+      }
+      index -= 1;
+      blocks.push(renderMarkdownTable(tableLines, doc));
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = Math.min(6, heading[1].length + 1);
+      blocks.push(`<h${level}>${renderMarkdownInline(heading[2], doc)}</h${level}>`);
+      continue;
+    }
+
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      flushParagraph();
+      flushList();
+      blocks.push("<hr />");
+      continue;
+    }
+
+    const quote = trimmed.match(/^>\s?(.*)$/);
+    if (quote) {
+      flushParagraph();
+      flushList();
+      blocks.push(`<blockquote>${renderMarkdownInline(quote[1], doc)}</blockquote>`);
+      continue;
+    }
+
+    const unordered = trimmed.match(/^[-*+]\s+(.*)$/);
+    const ordered = trimmed.match(/^\d+\.\s+(.*)$/);
+    if (unordered || ordered) {
+      flushParagraph();
+      const nextType = ordered ? "ol" : "ul";
+      if (listType && listType !== nextType) flushList();
+      listType = nextType;
+      listItems.push((unordered || ordered)[1]);
+      continue;
+    }
+
+    paragraph.push(trimmed);
+  }
+
+  flushParagraph();
+  flushList();
+  return blocks.join("") || `<p class="markdown-empty">当前 Markdown 没有可预览内容。</p>`;
 }
 
 function stripMarkdown(markdown) {
@@ -2131,7 +2544,7 @@ function renderMarkdownReader(doc) {
       </div>
     </div>
     <div class="markdown-preview">
-      ${renderMarkdownPreview(doc.editedText || doc.text)}
+      ${renderMarkdownPreview(doc.editedText || doc.text, doc)}
     </div>
   `;
   readerPanels.insight.innerHTML = `
@@ -2806,8 +3219,8 @@ async function saveDocumentNotes() {
   if (!doc) return;
 
   rememberCurrentNotes();
-  const baseName = doc.meta.name.replace(/\.[^.]+$/, "");
-  await saveTextFile(`${baseName}-MindStudy-notes.md`, buildDocumentMarkdown());
+  saveWorkspace();
+  setParseStatus("笔记已保存", "ready");
 }
 
 async function exportAnnotatedPdf() {
@@ -2942,8 +3355,6 @@ async function insertImageIntoPdf() {
   const doc = documentState.current;
   if (!doc || doc.kind !== "pdf") return;
 
-  if (!window.PDFLib) throw new Error("PDF 编辑库未加载，请重新运行 npm install。");
-
   const imageFile = await openImageFilePicker();
   if (!imageFile) return;
 
@@ -2956,30 +3367,53 @@ async function insertImageIntoPdf() {
   }
 
   rememberCurrentNotes();
-  setParseStatus("插入图片中", "working");
+  pdfInkState.enabled = false;
+  syncPdfInkUi(doc);
 
-  const { PDFDocument } = window.PDFLib;
-  const pdfDoc = await PDFDocument.load(doc.bytes);
-  const imageBytes = base64ToUint8Array(imageFile.base64);
-  const embeddedImage = isPng ? await pdfDoc.embedPng(imageBytes) : await pdfDoc.embedJpg(imageBytes);
-  const page = pdfDoc.getPage(getPdfTargetPage(doc) - 1);
-  const { width, height } = page.getSize();
-  const maxWidth = width * 0.56;
-  const maxHeight = height * 0.44;
-  const scale = Math.min(maxWidth / embeddedImage.width, maxHeight / embeddedImage.height, 1);
-  const imageWidth = embeddedImage.width * scale;
-  const imageHeight = embeddedImage.height * scale;
+  const pageNumber = getPdfTargetPage(doc);
+  const pageShell = getPdfPageShell(pageNumber);
+  const stack = pageShell?.querySelector(".pdf-canvas-stack");
+  if (!stack || pageShell.dataset.rendered !== "true") {
+    setParseStatus("请等当前页加载完成后再插图", "working");
+    return;
+  }
 
-  page.drawImage(embeddedImage, {
-    x: (width - imageWidth) / 2,
-    y: (height - imageHeight) / 2,
-    width: imageWidth,
-    height: imageHeight,
+  const image = new Image();
+  image.src = imageFile.dataUrl;
+  await new Promise((resolve) => {
+    if (image.complete) {
+      resolve();
+      return;
+    }
+
+    image.addEventListener("load", resolve, { once: true });
+    image.addEventListener("error", resolve, { once: true });
   });
 
-  const editedBytes = await pdfDoc.save();
-  updatePdfBytes(doc, editedBytes, pdfDoc.getPageCount(), { keepTextExtraction: true });
-  renderPdfReader(doc);
+  const stackRect = stack.getBoundingClientRect();
+  const maxWidth = stackRect.width * 0.56;
+  const maxHeight = stackRect.height * 0.44;
+  const naturalWidth = image.naturalWidth || maxWidth;
+  const naturalHeight = image.naturalHeight || maxHeight;
+  const scale = Math.min(maxWidth / naturalWidth, maxHeight / naturalHeight, 1);
+  const widthRatio = Math.max(0.08, (naturalWidth * scale) / Math.max(1, stackRect.width));
+  const heightRatio = Math.max(0.06, (naturalHeight * scale) / Math.max(1, stackRect.height));
+
+  pdfImagePlacementState.current = {
+    id: createId("pdf-image"),
+    pageNumber,
+    name: imageFile.name,
+    dataUrl: imageFile.dataUrl,
+    base64: imageFile.base64,
+    isPng,
+    widthRatio: Math.min(0.9, widthRatio),
+    heightRatio: Math.min(0.9, heightRatio),
+    xRatio: Math.max(0, (1 - Math.min(0.9, widthRatio)) / 2),
+    yRatio: Math.max(0, (1 - Math.min(0.9, heightRatio)) / 2),
+  };
+
+  renderPdfImagePlacement();
+  setParseStatus("拖动图片到目标位置后点击写入 PDF", "ready");
 }
 
 function applySlideEdit() {
@@ -3353,9 +3787,13 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("pointerdown", beginPdfInkStroke);
+document.addEventListener("pointerdown", beginPdfImagePlacementDrag);
 document.addEventListener("pointermove", updatePdfInkStroke);
+document.addEventListener("pointermove", updatePdfImagePlacementDrag);
 document.addEventListener("pointerup", finishPdfInkStroke);
+document.addEventListener("pointerup", finishPdfImagePlacementDrag);
 document.addEventListener("pointercancel", finishPdfInkStroke);
+document.addEventListener("pointercancel", finishPdfImagePlacementDrag);
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
@@ -3380,6 +3818,7 @@ document.addEventListener("click", (event) => {
   const slideMoveButton = event.target.closest("[data-slide-move]");
   const pdfPageStepButton = event.target.closest("[data-pdf-page-step]");
   const pdfInkToolButton = event.target.closest("[data-pdf-ink-tool]");
+  const pdfImageActionButton = event.target.closest("[data-pdf-image-action]");
   const actionButton = event.target.closest("button");
 
   if (actionButton?.id === "toggle-reader-fullscreen") {
@@ -3440,6 +3879,12 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (pdfImageActionButton) {
+    if (pdfImageActionButton.dataset.pdfImageAction === "apply") applyPdfImagePlacement();
+    if (pdfImageActionButton.dataset.pdfImageAction === "cancel") cancelPdfImagePlacement();
+    return;
+  }
+
   if (!actionButton) return;
 
   if (actionButton.dataset.courseAction === "create") createCourse();
@@ -3486,5 +3931,11 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-document.addEventListener("fullscreenchange", syncFullscreenButton);
+document.addEventListener("fullscreenchange", () => {
+  syncFullscreenButton();
+  rerenderCurrentPdfAfterReaderResize();
+});
+window.addEventListener("resize", () => {
+  rerenderCurrentPdfAfterReaderResize(220);
+});
 window.addEventListener("beforeunload", stopCamera);
