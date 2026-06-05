@@ -1,7 +1,16 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 contextBridge.exposeInMainWorld("mindStudy", {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
+  getZoomFactor: () => webFrame.getZoomFactor(),
+  setZoomFactor: (factor) => {
+    const numericFactor = Number(factor);
+    if (!Number.isFinite(numericFactor)) return webFrame.getZoomFactor();
+
+    const nextFactor = Math.min(1.4, Math.max(0.75, numericFactor));
+    webFrame.setZoomFactor(nextFactor);
+    return webFrame.getZoomFactor();
+  },
   selectCourseFile: () => ipcRenderer.invoke("dialog:open-course-file"),
   readCourseFile: (filePath) => ipcRenderer.invoke("file:read-course-file", filePath),
   saveFile: (options) => ipcRenderer.invoke("dialog:save-file", options),

@@ -29,6 +29,10 @@
             <i data-lucide="book-open"></i>
             <span>资料阅读</span>
           </button>
+          <button class="nav-item" data-view="planner">
+            <i data-lucide="list-todo"></i>
+            <span>TodoList</span>
+          </button>
           <button class="nav-item" data-view="map">
             <i data-lucide="network"></i>
             <span>知识图谱</span>
@@ -142,78 +146,66 @@
               </div>
             </section>
 
-            <section class="panel map-panel">
-              <div class="panel-heading">
+            <section class="panel planner-calendar-panel dashboard-calendar-panel">
+              <div class="planner-calendar-heading">
                 <div>
-                  <span class="tag muted">知识图谱</span>
-                  <h3>课程结构</h3>
+                  <span class="tag muted">重要日历</span>
+                  <h3 id="planner-calendar-title">2026 年 6 月</h3>
                 </div>
-                <button class="mini-button" data-view-jump="map">
-                  <i data-lucide="maximize-2"></i>
-                  <span>展开</span>
-                </button>
-              </div>
-              <div class="knowledge-map compact-map">
-                <button class="node root" data-node="人机交互">人机交互</button>
-                <button class="node node-a" data-node="可用性">可用性</button>
-                <button class="node node-b" data-node="用户体验">用户体验</button>
-                <button class="node node-c weak" data-node="评估方法">评估方法</button>
-                <button class="node node-d" data-node="Fitts 定律">Fitts 定律</button>
-                <button class="node node-e weak" data-node="SUS 量表">SUS 量表</button>
-                <span class="edge edge-1"></span>
-                <span class="edge edge-2"></span>
-                <span class="edge edge-3"></span>
-                <span class="edge edge-4"></span>
-                <span class="edge edge-5"></span>
-              </div>
-            </section>
-
-            <section class="panel assistant-panel">
-              <div class="panel-heading">
-                <div>
-                  <span class="tag muted">AI 助手</span>
-                  <h3>课程问答</h3>
-                </div>
-                <div class="assistant-tools">
-                  <button class="mini-button" data-ai-action="settings" title="设置 DeepSeek API Key">
-                    <i data-lucide="key-round"></i>
-                    <span>API Key</span>
+                <div class="calendar-controls">
+                  <button class="icon-button" data-calendar-month-step="-1" title="上个月">
+                    <i data-lucide="chevron-left"></i>
                   </button>
-                  <span class="pulse-dot"></span>
+                  <button class="mini-button" data-calendar-month-step="0">今天</button>
+                  <button class="icon-button" data-calendar-month-step="1" title="下个月">
+                    <i data-lucide="chevron-right"></i>
+                  </button>
                 </div>
               </div>
-              <div class="chat-list" id="chat-list">
-                <div class="chat-bubble user">这段资料可能怎么考？</div>
-                <div class="chat-bubble ai">可能考察“可用性”的三个指标：有效性、效率、满意度。建议结合 SUS 量表理解。</div>
-              </div>
-              <div class="prompt-row">
-                <button class="prompt-chip" data-prompt="帮我解释 SUS 量表">解释 SUS</button>
-                <button class="prompt-chip" data-prompt="生成 3 道练习题">生成练习</button>
-                <button class="prompt-chip" data-prompt="总结本章重点">总结重点</button>
-              </div>
-            </section>
 
-            <section class="panel focus-panel">
-              <div class="panel-heading">
-                <div>
-                  <span class="tag muted">学习状态</span>
-                  <h3>专注中</h3>
+              <div class="planner-calendar-layout">
+                <div class="planner-calendar-main">
+                  <div class="calendar-weekdays">
+                    <span>周一</span>
+                    <span>周二</span>
+                    <span>周三</span>
+                    <span>周四</span>
+                    <span>周五</span>
+                    <span>周六</span>
+                    <span>周日</span>
+                  </div>
+                  <div class="planner-calendar-grid" id="planner-calendar-grid"></div>
                 </div>
-                <span class="status-pill calm">轻音乐</span>
-              </div>
-              <div class="focus-meter" aria-label="专注度">
-                <div class="meter-ring">
-                  <strong>74</strong>
-                  <span>专注分</span>
-                </div>
-                <div class="state-lines">
-                  <span style="--h: 34%"></span>
-                  <span style="--h: 58%"></span>
-                  <span style="--h: 46%"></span>
-                  <span style="--h: 72%"></span>
-                  <span style="--h: 64%"></span>
-                  <span style="--h: 80%"></span>
-                </div>
+                <aside class="planner-event-side">
+                  <div>
+                    <span class="tag muted">考试 / DDL / 答辩</span>
+                    <h3>重要事件</h3>
+                  </div>
+                  <div class="planner-event-list" id="planner-event-list"></div>
+                  <form class="planner-event-form" id="planner-event-form">
+                    <input id="planner-event-title" name="title" type="text" placeholder="事件名称，例如 数据库考试" required />
+                    <div class="planner-form-grid">
+                      <input id="planner-event-date" name="date" type="date" required />
+                      <select id="planner-event-type" name="type" aria-label="事件类型">
+                        <option>考试</option>
+                        <option>DDL</option>
+                        <option>答辩</option>
+                        <option>面试</option>
+                        <option>复盘</option>
+                      </select>
+                    </div>
+                    <select id="planner-event-importance" name="importance" aria-label="重要程度">
+                      <option value="high">高优先级</option>
+                      <option value="medium">中优先级</option>
+                      <option value="low">普通提醒</option>
+                    </select>
+                    <textarea id="planner-event-note" name="note" rows="3" placeholder="备注，例如考试范围、提交材料、准备事项"></textarea>
+                    <button class="primary-action full" type="submit">
+                      <i data-lucide="calendar-plus"></i>
+                      <span>记录事件</span>
+                    </button>
+                  </form>
+                </aside>
               </div>
             </section>
           </div>
@@ -288,6 +280,82 @@
                 <i data-lucide="bookmark"></i>
                 <span>保存为笔记</span>
               </button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="planner">
+          <div class="planner-page">
+            <section class="panel planner-board">
+              <div class="planner-toolbar">
+                <div>
+                  <span class="tag muted">学习日程表</span>
+                  <h3>课程复习与项目推进</h3>
+                </div>
+                <div class="segmented planner-filter" aria-label="日程筛选">
+                  <button class="active" data-planner-filter="all">全部</button>
+                  <button data-planner-filter="doing">进行中</button>
+                  <button data-planner-filter="todo">待开始</button>
+                  <button data-planner-filter="done">已完成</button>
+                </div>
+              </div>
+
+              <div class="planner-stats" id="planner-stats"></div>
+
+              <div class="planner-table-wrap">
+                <table class="planner-table">
+                  <thead>
+                    <tr>
+                      <th>阶段</th>
+                      <th>类型</th>
+                      <th>学习内容</th>
+                      <th>状态</th>
+                      <th>时间线</th>
+                      <th>进度</th>
+                      <th>重要程度</th>
+                      <th>备注</th>
+                    </tr>
+                  </thead>
+                  <tbody id="planner-table-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <aside class="panel planner-side">
+              <div class="panel-heading">
+                <div>
+                  <span class="tag muted">Todo List</span>
+                  <h3>今日推进</h3>
+                </div>
+                <span class="progress-badge" id="planner-open-count">0 项</span>
+              </div>
+
+              <div class="planner-todo-list" id="planner-todo-list"></div>
+
+              <form class="planner-form" id="planner-form">
+                <span class="tag muted">新增任务</span>
+                <input id="planner-title-input" name="title" type="text" placeholder="学习内容，例如 Redis / 操作系统" required />
+                <div class="planner-form-grid">
+                  <select id="planner-type-select" name="type" aria-label="任务类型">
+                    <option>技术栈</option>
+                    <option>项目</option>
+                    <option>计算机基础</option>
+                    <option>算法</option>
+                    <option>八股</option>
+                  </select>
+                  <select id="planner-status-select" name="status" aria-label="任务状态">
+                    <option value="todo">待开始</option>
+                    <option value="doing">进行中</option>
+                    <option value="done">已完成</option>
+                  </select>
+                </div>
+                <input id="planner-timeline-input" name="timeline" type="text" placeholder="时间线，例如 2026.6.1-2026.6.10 / everyday" />
+                <textarea id="planner-note-input" name="note" rows="3" placeholder="备注，例如重点章节、复习策略、资料来源"></textarea>
+                <button class="primary-action full" type="submit">
+                  <i data-lucide="plus"></i>
+                  <span>加入日程</span>
+                </button>
+              </form>
             </aside>
           </div>
         </section>

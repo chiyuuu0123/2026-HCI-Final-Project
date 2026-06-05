@@ -1,8 +1,14 @@
 const STORAGE_KEY = "mindstudy.courseLibrary.v1";
+const PLANNER_STORAGE_KEY = "mindstudy.planner.v1";
+const APP_ZOOM_STORAGE_KEY = "mindstudy.appZoom.v1";
+const APP_ZOOM_MIN = 0.75;
+const APP_ZOOM_MAX = 1.4;
+const APP_ZOOM_STEP = 0.05;
 
 const viewTitles = {
   dashboard: "学习工作台",
   reader: "资料阅读",
+  planner: "TodoList",
   map: "知识图谱",
   quiz: "自动测验",
   report: "学习报告",
@@ -65,15 +71,97 @@ const pdfImagePlacementState = {
 };
 
 let workspace = loadWorkspace();
+let plannerState = loadPlannerState();
 let pdfJsLoadingPromise = null;
 let pdfPageObserver = null;
 let pdfLazyRenderObserver = null;
 let pdfRenderToken = 0;
 let pdfPageTextTimer = null;
 let pdfReaderResizeRenderTimer = null;
+let appZoom = loadAppZoom();
+let appZoomToastTimer = null;
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function clampAppZoom(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 1;
+  return Math.min(APP_ZOOM_MAX, Math.max(APP_ZOOM_MIN, numericValue));
+}
+
+function normalizeAppZoom(value) {
+  return Math.round(clampAppZoom(value) * 100) / 100;
+}
+
+function loadAppZoom() {
+  try {
+    const storedZoom = Number(localStorage.getItem(APP_ZOOM_STORAGE_KEY));
+    return normalizeAppZoom(storedZoom || 1);
+  } catch (error) {
+    return 1;
+  }
+}
+
+function saveAppZoom() {
+  try {
+    localStorage.setItem(APP_ZOOM_STORAGE_KEY, String(appZoom));
+  } catch (error) {
+    // 缩放只是体验增强，存储失败时保持本次会话可用即可。
+  }
+}
+
+function showAppZoomIndicator() {
+  let indicator = document.querySelector(".app-zoom-indicator");
+  if (!indicator) {
+    indicator = document.createElement("div");
+    indicator.className = "app-zoom-indicator";
+    document.body.appendChild(indicator);
+  }
+
+  indicator.textContent = `${Math.round(appZoom * 100)}%`;
+  indicator.classList.add("show");
+  window.clearTimeout(appZoomToastTimer);
+  appZoomToastTimer = window.setTimeout(() => {
+    indicator.classList.remove("show");
+  }, 820);
+}
+
+function applyAppZoom({ persist = false, announce = false, rerenderReader = false } = {}) {
+  document.documentElement.style.setProperty("--app-zoom", appZoom.toFixed(2));
+  document.documentElement.dataset.appZoom = String(Math.round(appZoom * 100));
+
+  if (typeof window.mindStudy?.setZoomFactor === "function") {
+    document.documentElement.classList.remove("css-app-zoom");
+    window.mindStudy.setZoomFactor(appZoom);
+  } else {
+    document.documentElement.classList.add("css-app-zoom");
+  }
+
+  if (persist) saveAppZoom();
+  if (announce) showAppZoomIndicator();
+  if (rerenderReader) rerenderCurrentPdfAfterReaderResize(90);
+}
+
+function setAppZoom(nextZoom, options = {}) {
+  const normalizedZoom = normalizeAppZoom(nextZoom);
+  if (Math.abs(normalizedZoom - appZoom) < 0.001 && !options.announce) return;
+
+  appZoom = normalizedZoom;
+  applyAppZoom(options);
+}
+
+function handleAppZoomWheel(event) {
+  if (!event.ctrlKey) return;
+
+  event.preventDefault();
+  const direction = event.deltaY > 0 ? -1 : 1;
+  setAppZoom(appZoom + direction * APP_ZOOM_STEP, {
+    persist: true,
+    announce: true,
+    rerenderReader: true,
+  });
 }
 
 function createDefaultCourse() {
@@ -85,6 +173,157 @@ function createDefaultCourse() {
     activeDocumentId: "",
     createdAt: Date.now(),
   };
+}
+
+function getDefaultPlannerSeeds() {
+  return [
+    { phase: "1", type: "技术栈", title: "JavaSE", status: "done", timeline: "2025.9.24-2026.1.2", progress: 100, importance: 5, note: "快速过，后续算法练习加背八股即可" },
+    { phase: "2", type: "技术栈", title: "MySQL", status: "done", timeline: "2026.4.24-2026.5.4", progress: 100, importance: 5, note: "数据库重点内容" },
+    { phase: "3", type: "技术栈", title: "JDBC", status: "done", timeline: "2026.5.17-2026.5.18", progress: 100, importance: 2, note: "" },
+    { phase: "4", type: "技术栈", title: "JavaWeb", status: "done", timeline: "2026.5.21-2026.5.31", progress: 100, importance: 4, note: "" },
+    { phase: "5", type: "项目", title: "天幕", status: "doing", timeline: "2026.5.31", progress: 46, importance: 5, note: "" },
+    { phase: "6", type: "技术栈", title: "Redis", status: "todo", timeline: "", progress: 0, importance: 5, note: "" },
+    { phase: "7", type: "技术栈", title: "SpringBoot", status: "todo", timeline: "", progress: 0, importance: 4, note: "" },
+    { phase: "8", type: "技术栈", title: "SSM框架", status: "done", timeline: "2026.5.28-2026.5.28", progress: 100, importance: 4, note: "快速看文档过" },
+    { phase: "9", type: "项目", title: "千言", status: "todo", timeline: "", progress: 0, importance: 5, note: "" },
+    { phase: "10", type: "技术栈", title: "Git版本项目", status: "done", timeline: "2026.6.1-2026.6.1", progress: 100, importance: 5, note: "" },
+    { phase: "11", type: "技术栈", title: "Linux基本命令", status: "done", timeline: "2026.6.1-2026.6.1", progress: 100, importance: 4, note: "" },
+    { phase: "12", type: "技术栈", title: "SpringCloud", status: "todo", timeline: "", progress: 0, importance: 4, note: "微服务框架快速过" },
+    { phase: "13", type: "技术栈", title: "RocketMQ", status: "todo", timeline: "", progress: 0, importance: 5, note: "" },
+    { phase: "14", type: "技术栈", title: "JVM虚拟机", status: "todo", timeline: "", progress: 0, importance: 5, note: "重点八股，没有天赋那就反复" },
+    { phase: "15", type: "技术栈", title: "JUC并发编程", status: "todo", timeline: "", progress: 0, importance: 2, note: "重点八股，没有天赋那就反复" },
+    { phase: "22", type: "计算机基础", title: "操作系统", status: "doing", timeline: "2026.3.2-", progress: 81, importance: 0, note: "" },
+    { phase: "23", type: "计算机基础", title: "计算机网络", status: "doing", timeline: "2026.3.2-", progress: 73, importance: 0, note: "" },
+    { phase: "17", type: "算法", title: "力扣 Hot 100", status: "doing", timeline: "everyday", progress: 38, importance: 5, note: "" },
+    { phase: "18", type: "八股", title: "JavaGuide", status: "doing", timeline: "everyday", progress: 20, importance: 5, note: "" },
+    { phase: "19", type: "八股", title: "小林Coding", status: "doing", timeline: "everyday", progress: 20, importance: 5, note: "" },
+  ];
+}
+
+function createDefaultPlannerItems() {
+  const now = Date.now();
+  return getDefaultPlannerSeeds().map((item, index) => ({
+    id: createId("plan"),
+    ...item,
+    order: index + 1,
+    createdAt: now + index,
+  }));
+}
+
+function createDefaultPlannerEvents() {
+  return [
+    {
+      id: createId("event"),
+      title: "用户交互技术项目展示",
+      date: "2026-06-10",
+      type: "答辩",
+      importance: "high",
+      note: "准备演示流程、README 和核心功能讲解。",
+      createdAt: Date.now(),
+    },
+    {
+      id: createId("event"),
+      title: "数据库重点复盘",
+      date: "2026-06-15",
+      type: "考试",
+      importance: "high",
+      note: "MySQL、JDBC、索引和事务重点复习。",
+      createdAt: Date.now() + 1,
+    },
+    {
+      id: createId("event"),
+      title: "操作系统阶段测验",
+      date: "2026-06-22",
+      type: "考试",
+      importance: "medium",
+      note: "进程、线程、内存管理和调度算法。",
+      createdAt: Date.now() + 2,
+    },
+  ];
+}
+
+function normalizePlannerItem(item, index) {
+  return {
+    id: item.id || createId("plan"),
+    phase: item.phase || String(index + 1),
+    order: Number(item.order) || index + 1,
+    type: item.type || "技术栈",
+    title: item.title || "未命名任务",
+    status: ["done", "doing", "todo"].includes(item.status) ? item.status : "todo",
+    timeline: item.timeline || "",
+    progress: Math.min(100, Math.max(0, Number(item.progress) || 0)),
+    importance: Math.min(5, Math.max(0, Number(item.importance) || 0)),
+    note: item.note || "",
+    createdAt: item.createdAt || Date.now() + index,
+  };
+}
+
+function normalizePlannerEvent(event, index) {
+  return {
+    id: event.id || createId("event"),
+    title: event.title || "重要事件",
+    date: event.date || new Date().toISOString().slice(0, 10),
+    type: event.type || "考试",
+    importance: ["high", "medium", "low"].includes(event.importance) ? event.importance : "medium",
+    note: event.note || "",
+    createdAt: event.createdAt || Date.now() + index,
+  };
+}
+
+function mergePlannerItemsWithDefaults(items) {
+  const normalized = items.map(normalizePlannerItem);
+  const byTitle = new Map(normalized.map((item) => [item.title.trim().toLowerCase(), item]));
+
+  createDefaultPlannerItems().forEach((defaultItem) => {
+    const key = defaultItem.title.trim().toLowerCase();
+    const existing = byTitle.get(key);
+    if (!existing) {
+      normalized.push(defaultItem);
+      byTitle.set(key, defaultItem);
+      return;
+    }
+
+    existing.phase = defaultItem.phase;
+    existing.order = defaultItem.order;
+    existing.type = existing.type || defaultItem.type;
+    existing.timeline = existing.timeline || defaultItem.timeline;
+    existing.note = existing.note || defaultItem.note;
+  });
+
+  return normalized.sort((a, b) => Number(a.order || 999) - Number(b.order || 999) || a.createdAt - b.createdAt);
+}
+
+function getCurrentCalendarMonth() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function loadPlannerState() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PLANNER_STORAGE_KEY));
+    if (Array.isArray(stored?.items)) {
+      return {
+        filter: stored.filter || "all",
+        calendarMonth: stored.calendarMonth || getCurrentCalendarMonth(),
+        items: mergePlannerItemsWithDefaults(stored.items),
+        events: Array.isArray(stored.events) && stored.events.length
+          ? stored.events.map(normalizePlannerEvent)
+          : createDefaultPlannerEvents(),
+      };
+    }
+  } catch {
+    localStorage.removeItem(PLANNER_STORAGE_KEY);
+  }
+
+  return {
+    filter: "all",
+    calendarMonth: getCurrentCalendarMonth(),
+    items: createDefaultPlannerItems(),
+    events: createDefaultPlannerEvents(),
+  };
+}
+
+function savePlannerState() {
+  localStorage.setItem(PLANNER_STORAGE_KEY, JSON.stringify(plannerState));
 }
 
 function loadWorkspace() {
@@ -2034,6 +2273,10 @@ function showView(viewName) {
       loadDocumentById(meta.id);
     }
   }
+
+  if (viewName === "planner") {
+    renderPlannerView();
+  }
 }
 
 function setParseStatus(text, tone = "ready") {
@@ -2111,6 +2354,358 @@ function updateDashboardForCourse() {
   updateImportedFileCard(activeMeta, activeMeta ? ["已加入课程资料库", activeMeta.path ? "已保存本机路径" : "临时导入"] : []);
 }
 
+function getPlannerStatusMeta(status) {
+  return {
+    done: { label: "已完成", next: "doing" },
+    doing: { label: "进行中", next: "todo" },
+    todo: { label: "待开始", next: "done" },
+  }[status] || { label: "待开始", next: "done" };
+}
+
+function getPlannerTypeClass(type) {
+  const typeMap = {
+    技术栈: "tech",
+    项目: "project",
+    计算机基础: "base",
+    算法: "algo",
+    八股: "interview",
+  };
+  return typeMap[type] || "default";
+}
+
+function getFilteredPlannerItems() {
+  const filter = plannerState.filter || "all";
+  return plannerState.items
+    .filter((item) => filter === "all" || item.status === filter)
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+function renderPlannerStars(item) {
+  return Array.from({ length: 5 }, (_, index) => {
+    const value = index + 1;
+    const active = value <= item.importance;
+    return `
+      <button class="planner-star ${active ? "active" : ""}" data-planner-star="${value}" data-planner-id="${item.id}" title="${value} 星">
+        <i data-lucide="star"></i>
+      </button>
+    `;
+  }).join("");
+}
+
+function renderPlannerStats() {
+  const stats = document.querySelector("#planner-stats");
+  if (!stats) return;
+
+  const total = plannerState.items.length;
+  const done = plannerState.items.filter((item) => item.status === "done").length;
+  const doing = plannerState.items.filter((item) => item.status === "doing").length;
+  const average = total
+    ? Math.round(plannerState.items.reduce((sum, item) => sum + Number(item.progress || 0), 0) / total)
+    : 0;
+
+  stats.innerHTML = `
+    <div><span>总任务</span><strong>${total}</strong></div>
+    <div><span>进行中</span><strong>${doing}</strong></div>
+    <div><span>已完成</span><strong>${done}</strong></div>
+    <div><span>平均进度</span><strong>${average}%</strong></div>
+  `;
+}
+
+function renderPlannerTable() {
+  const body = document.querySelector("#planner-table-body");
+  if (!body) return;
+
+  const rows = getFilteredPlannerItems();
+  body.innerHTML = rows.length
+    ? rows
+        .map((item, index) => {
+          const statusMeta = getPlannerStatusMeta(item.status);
+          return `
+            <tr data-planner-id="${item.id}">
+              <td class="planner-row-index">${escapeHtml(item.phase || index + 1)}</td>
+              <td><span class="planner-type ${getPlannerTypeClass(item.type)}">${escapeHtml(item.type)}</span></td>
+              <td class="planner-title-cell">${escapeHtml(item.title)}</td>
+              <td>
+                <button class="planner-status ${item.status}" data-planner-status="${item.id}">
+                  ${statusMeta.label}
+                </button>
+              </td>
+              <td class="planner-timeline">${escapeHtml(item.timeline || "未排期")}</td>
+              <td class="planner-progress-cell">
+                <input class="planner-progress" data-planner-progress="${item.id}" type="range" min="0" max="100" value="${item.progress}" />
+                <span>${item.progress}%</span>
+              </td>
+              <td class="planner-stars">${renderPlannerStars(item)}</td>
+              <td class="planner-note">${escapeHtml(item.note || "")}</td>
+            </tr>
+          `;
+        })
+        .join("")
+    : `<tr><td colspan="8" class="planner-empty">当前筛选下没有任务。</td></tr>`;
+}
+
+function renderPlannerTodos() {
+  const list = document.querySelector("#planner-todo-list");
+  const openCount = document.querySelector("#planner-open-count");
+  if (!list) return;
+
+  const todos = plannerState.items
+    .filter((item) => item.status !== "done")
+    .sort((a, b) => Number(b.importance) - Number(a.importance) || Number(b.progress) - Number(a.progress))
+    .slice(0, 8);
+
+  if (openCount) openCount.textContent = `${todos.length} 项`;
+
+  list.innerHTML = todos.length
+    ? todos
+        .map((item) => `
+          <article class="planner-todo-card">
+            <button class="planner-check" data-planner-toggle="${item.id}" title="标记完成">
+              <i data-lucide="check"></i>
+            </button>
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.type)} · ${escapeHtml(getPlannerStatusMeta(item.status).label)} · ${item.progress}%</span>
+              ${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}
+            </div>
+          </article>
+        `)
+        .join("")
+    : `<div class="planner-empty-card">今天没有待办，状态很好。</div>`;
+}
+
+function getPlannerMonthParts(monthKey = plannerState.calendarMonth) {
+  const [year, month] = String(monthKey || getCurrentCalendarMonth()).split("-").map(Number);
+  return {
+    year: Number.isFinite(year) ? year : new Date().getFullYear(),
+    month: Number.isFinite(month) ? month : new Date().getMonth() + 1,
+  };
+}
+
+function toPlannerDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getPlannerEventsForDate(dateKey) {
+  return (plannerState.events || []).filter((event) => event.date === dateKey);
+}
+
+function getPlannerEventImportanceLabel(importance) {
+  return {
+    high: "高",
+    medium: "中",
+    low: "普",
+  }[importance] || "中";
+}
+
+function renderPlannerCalendar() {
+  const grid = document.querySelector("#planner-calendar-grid");
+  const title = document.querySelector("#planner-calendar-title");
+  if (!grid) return;
+
+  const { year, month } = getPlannerMonthParts();
+  const monthIndex = month - 1;
+  const firstDate = new Date(year, monthIndex, 1);
+  const firstWeekday = (firstDate.getDay() + 6) % 7;
+  const startDate = new Date(year, monthIndex, 1 - firstWeekday);
+  const todayKey = toPlannerDateKey(new Date());
+
+  if (title) title.textContent = `${year} 年 ${month} 月`;
+
+  const cells = [];
+  for (let index = 0; index < 42; index += 1) {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + index);
+    const dateKey = toPlannerDateKey(date);
+    const events = getPlannerEventsForDate(dateKey);
+    const inMonth = date.getMonth() === monthIndex;
+    cells.push(`
+      <button class="calendar-day ${inMonth ? "" : "muted"} ${dateKey === todayKey ? "today" : ""}" data-calendar-date="${dateKey}">
+        <span class="calendar-day-number">${date.getDate()}</span>
+        <span class="calendar-day-events">
+          ${events
+            .slice(0, 3)
+            .map((event) => `<em class="${escapeHtml(event.importance)}">${escapeHtml(event.title)}</em>`)
+            .join("")}
+          ${events.length > 3 ? `<small>+${events.length - 3}</small>` : ""}
+        </span>
+      </button>
+    `);
+  }
+
+  grid.innerHTML = cells.join("");
+}
+
+function renderPlannerEventList() {
+  const list = document.querySelector("#planner-event-list");
+  if (!list) return;
+
+  const events = [...(plannerState.events || [])].sort((a, b) => a.date.localeCompare(b.date));
+  list.innerHTML = events.length
+    ? events
+        .map((event) => `
+          <article class="planner-event-card ${escapeHtml(event.importance)}">
+            <div>
+              <strong>${escapeHtml(event.title)}</strong>
+              <span>${escapeHtml(event.date)} · ${escapeHtml(event.type)} · ${getPlannerEventImportanceLabel(event.importance)}优先级</span>
+              ${event.note ? `<p>${escapeHtml(event.note)}</p>` : ""}
+            </div>
+            <button class="icon-button" data-planner-event-delete="${event.id}" title="删除事件">
+              <i data-lucide="x"></i>
+            </button>
+          </article>
+        `)
+        .join("")
+    : `<div class="planner-empty-card">还没有重要事件，可以记录考试、DDL 或答辩。</div>`;
+}
+
+function syncPlannerFilters() {
+  document.querySelectorAll("[data-planner-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.plannerFilter === (plannerState.filter || "all"));
+  });
+}
+
+function renderPlannerView() {
+  renderPlannerStats();
+  renderPlannerTable();
+  renderPlannerTodos();
+  renderPlannerCalendar();
+  renderPlannerEventList();
+  syncPlannerFilters();
+  window.lucide?.createIcons();
+}
+
+function findPlannerItem(itemId) {
+  return plannerState.items.find((item) => item.id === itemId);
+}
+
+function cyclePlannerStatus(itemId) {
+  const item = findPlannerItem(itemId);
+  if (!item) return;
+
+  const nextStatus = getPlannerStatusMeta(item.status).next;
+  item.status = nextStatus;
+  if (nextStatus === "done") item.progress = 100;
+  if (nextStatus === "todo" && item.progress === 100) item.progress = 0;
+  savePlannerState();
+  renderPlannerView();
+}
+
+function setPlannerDone(itemId) {
+  const item = findPlannerItem(itemId);
+  if (!item) return;
+
+  item.status = "done";
+  item.progress = 100;
+  savePlannerState();
+  renderPlannerView();
+}
+
+function setPlannerProgress(itemId, progress, shouldRender = true) {
+  const item = findPlannerItem(itemId);
+  if (!item) return;
+
+  item.progress = Math.min(100, Math.max(0, Number(progress) || 0));
+  if (item.progress >= 100) item.status = "done";
+  if (item.progress > 0 && item.progress < 100 && item.status === "todo") item.status = "doing";
+  savePlannerState();
+
+  if (shouldRender) {
+    renderPlannerView();
+  }
+}
+
+function setPlannerImportance(itemId, importance) {
+  const item = findPlannerItem(itemId);
+  if (!item) return;
+
+  item.importance = Math.min(5, Math.max(0, Number(importance) || 0));
+  savePlannerState();
+  renderPlannerView();
+}
+
+function addPlannerItem(event) {
+  event.preventDefault();
+  const form = event.target;
+  const titleInput = form.querySelector("#planner-title-input");
+  const titleValue = titleInput?.value.trim();
+  if (!titleValue) return;
+
+  plannerState.items.unshift({
+    id: createId("plan"),
+    type: form.querySelector("#planner-type-select")?.value || "技术栈",
+    title: titleValue,
+    status: form.querySelector("#planner-status-select")?.value || "todo",
+    timeline: form.querySelector("#planner-timeline-input")?.value.trim() || "",
+    progress: form.querySelector("#planner-status-select")?.value === "done" ? 100 : 0,
+    importance: 4,
+    note: form.querySelector("#planner-note-input")?.value.trim() || "",
+    order: plannerState.items.length + 1,
+    createdAt: Date.now(),
+  });
+
+  savePlannerState();
+  form.reset();
+  plannerState.filter = "all";
+  savePlannerState();
+  renderPlannerView();
+}
+
+function changePlannerCalendarMonth(step) {
+  const offset = Number(step) || 0;
+  if (offset === 0) {
+    plannerState.calendarMonth = getCurrentCalendarMonth();
+  } else {
+    const { year, month } = getPlannerMonthParts();
+    const nextDate = new Date(year, month - 1 + offset, 1);
+    plannerState.calendarMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  savePlannerState();
+  renderPlannerView();
+}
+
+function selectPlannerCalendarDate(dateKey) {
+  const dateInput = document.querySelector("#planner-event-date");
+  if (dateInput) {
+    dateInput.value = dateKey;
+  }
+  document.querySelector("#planner-event-title")?.focus();
+}
+
+function addPlannerEvent(event) {
+  event.preventDefault();
+  const form = event.target;
+  const titleValue = form.querySelector("#planner-event-title")?.value.trim();
+  const dateValue = form.querySelector("#planner-event-date")?.value;
+  if (!titleValue || !dateValue) return;
+
+  plannerState.events = plannerState.events || [];
+  plannerState.events.push({
+    id: createId("event"),
+    title: titleValue,
+    date: dateValue,
+    type: form.querySelector("#planner-event-type")?.value || "考试",
+    importance: form.querySelector("#planner-event-importance")?.value || "medium",
+    note: form.querySelector("#planner-event-note")?.value.trim() || "",
+    createdAt: Date.now(),
+  });
+  plannerState.calendarMonth = dateValue.slice(0, 7);
+
+  savePlannerState();
+  form.reset();
+  renderPlannerView();
+}
+
+function deletePlannerEvent(eventId) {
+  plannerState.events = (plannerState.events || []).filter((event) => event.id !== eventId);
+  savePlannerState();
+  renderPlannerView();
+}
+
 function renderDocumentLibrary() {
   const activeCourse = getActiveCourse();
   const activeDocId = activeCourse.activeDocumentId;
@@ -2121,7 +2716,7 @@ function renderDocumentLibrary() {
         <span class="tag muted">课程资料库</span>
         <h3>${escapeHtml(activeCourse.name)}</h3>
       </div>
-      <button class="icon-button" id="library-import" title="上传资料">
+      <button class="icon-button" data-library-import="true" title="上传资料">
         <i data-lucide="plus"></i>
       </button>
     </div>
@@ -2169,7 +2764,7 @@ function showReaderEmpty() {
       </div>
     </div>
     <p class="summary-text">当前资料库仅支持 PDF 阅读批注和 Markdown 阅读编辑。</p>
-    <button class="primary-action full" id="library-import">
+    <button class="primary-action full" data-library-import="true">
       <i data-lucide="upload-cloud"></i>
       <span>上传课程资料</span>
     </button>
@@ -4034,6 +4629,7 @@ function renderAllCourseViews() {
   renderCourseSwitcher();
   renderDocumentLibrary();
   updateDashboardForCourse();
+  renderPlannerView();
 }
 
 navItems.forEach((item) => {
@@ -4128,6 +4724,10 @@ document.addEventListener("change", (event) => {
     pdfInkState.color = event.target.value || pdfInkState.color;
     syncPdfInkUi();
   }
+
+  if (event.target.matches("[data-planner-progress]")) {
+    setPlannerProgress(event.target.dataset.plannerProgress, event.target.value);
+  }
 });
 
 document.addEventListener("input", (event) => {
@@ -4156,6 +4756,12 @@ document.addEventListener("input", (event) => {
     pdfInkState.width = Number(event.target.value) || pdfInkState.width;
     syncPdfInkUi();
   }
+
+  if (event.target.matches("[data-planner-progress]")) {
+    setPlannerProgress(event.target.dataset.plannerProgress, event.target.value, false);
+    const valueLabel = event.target.closest(".planner-progress-cell")?.querySelector("span");
+    if (valueLabel) valueLabel.textContent = `${event.target.value}%`;
+  }
 });
 
 document.addEventListener("pointerdown", beginPdfInkStroke);
@@ -4168,10 +4774,22 @@ document.addEventListener("pointercancel", finishPdfInkStroke);
 document.addEventListener("pointercancel", finishPdfImagePlacementDrag);
 
 document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "0") {
+    event.preventDefault();
+    setAppZoom(1, {
+      persist: true,
+      announce: true,
+      rerenderReader: true,
+    });
+    return;
+  }
+
   if (event.key === "Escape") {
     exitReaderFullscreenFallback();
   }
 });
+
+document.addEventListener("wheel", handleAppZoomWheel, { passive: false });
 
 document.addEventListener("submit", (event) => {
   if (event.target.matches("#ai-settings-form")) {
@@ -4180,6 +4798,14 @@ document.addEventListener("submit", (event) => {
 
   if (event.target.matches("#course-form")) {
     submitCourseForm(event);
+  }
+
+  if (event.target.matches("#planner-form")) {
+    addPlannerItem(event);
+  }
+
+  if (event.target.matches("#planner-event-form")) {
+    addPlannerEvent(event);
   }
 });
 
@@ -4197,6 +4823,13 @@ document.addEventListener("click", (event) => {
   const pdfPageStepButton = event.target.closest("[data-pdf-page-step]");
   const pdfInkToolButton = event.target.closest("[data-pdf-ink-tool]");
   const pdfImageActionButton = event.target.closest("[data-pdf-image-action]");
+  const plannerStatusButton = event.target.closest("[data-planner-status]");
+  const plannerToggleButton = event.target.closest("[data-planner-toggle]");
+  const plannerStarButton = event.target.closest("[data-planner-star]");
+  const plannerFilterButton = event.target.closest("[data-planner-filter]");
+  const calendarMonthButton = event.target.closest("[data-calendar-month-step]");
+  const calendarDateButton = event.target.closest("[data-calendar-date]");
+  const plannerEventDeleteButton = event.target.closest("[data-planner-event-delete]");
   const actionButton = event.target.closest("button");
 
   if (actionButton?.id === "toggle-reader-fullscreen") {
@@ -4273,6 +4906,43 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (plannerStatusButton) {
+    cyclePlannerStatus(plannerStatusButton.dataset.plannerStatus);
+    return;
+  }
+
+  if (plannerToggleButton) {
+    setPlannerDone(plannerToggleButton.dataset.plannerToggle);
+    return;
+  }
+
+  if (plannerStarButton) {
+    setPlannerImportance(plannerStarButton.dataset.plannerId, plannerStarButton.dataset.plannerStar);
+    return;
+  }
+
+  if (plannerFilterButton) {
+    plannerState.filter = plannerFilterButton.dataset.plannerFilter;
+    savePlannerState();
+    renderPlannerView();
+    return;
+  }
+
+  if (calendarMonthButton) {
+    changePlannerCalendarMonth(calendarMonthButton.dataset.calendarMonthStep);
+    return;
+  }
+
+  if (calendarDateButton) {
+    selectPlannerCalendarDate(calendarDateButton.dataset.calendarDate);
+    return;
+  }
+
+  if (plannerEventDeleteButton) {
+    deletePlannerEvent(plannerEventDeleteButton.dataset.plannerEventDelete);
+    return;
+  }
+
   if (!actionButton) return;
 
   if (actionButton.dataset.courseAction === "create") createCourse();
@@ -4280,7 +4950,7 @@ document.addEventListener("click", (event) => {
   if (actionButton.id === "toggle-camera") toggleCamera();
   if (actionButton.id === "start-camera") startCamera();
   if (actionButton.id === "stop-camera") stopCamera();
-  if (actionButton.id === "simulate-upload" || actionButton.id === "library-import") handleCourseImport();
+  if (actionButton.id === "simulate-upload" || actionButton.dataset.libraryImport === "true") handleCourseImport();
   if (actionButton.id === "save-document-notes" || actionButton.id === "save-notes-top") saveDocumentNotes();
   if (actionButton.id === "export-annotated-pdf") exportAnnotatedPdf();
   if (actionButton.id === "insert-pdf-image") insertImageIntoPdf();
@@ -4303,6 +4973,7 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("DOMContentLoaded", () => {
+  applyAppZoom();
   renderAllCourseViews();
   setCameraStatus("idle");
 
