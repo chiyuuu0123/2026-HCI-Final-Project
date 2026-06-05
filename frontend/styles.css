@@ -326,6 +326,12 @@ h3 {
   background: transparent;
 }
 
+.mini-button.ai-ready {
+  border-color: rgba(24, 143, 132, 0.32);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
 .full {
   width: 100%;
 }
@@ -437,6 +443,12 @@ h3 {
 .focus-panel,
 .map-panel {
   overflow: hidden;
+}
+
+.assistant-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .file-preview {
@@ -1119,6 +1131,30 @@ h3 {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 22px;
+}
+
+.ai-settings-note,
+.ai-status-line {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.ai-status-line {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f0f3ef;
+}
+
+.ai-status-line.ready {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.ai-status-line.warning {
+  background: var(--yellow-soft);
+  color: var(--yellow);
 }
 
 .primary-action.compact,
