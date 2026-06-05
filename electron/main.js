@@ -1,10 +1,12 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { createStudyAiService, getStudyAiStatus } = require("../b_deepseek_module");
 
 const isWindows = process.platform === "win32";
 const maxImportBytes = 80 * 1024 * 1024;
 const supportedExtensions = new Set([".pdf", ".md"]);
+const studyAi = createStudyAiService();
 
 function getMimeType(extension) {
   const normalized = extension.toLowerCase();
@@ -184,6 +186,18 @@ ipcMain.handle("file:save-markdown", async (event, options) => {
     path: filePath,
     name: path.basename(filePath),
   };
+});
+
+ipcMain.handle("b:ai:get-status", () => {
+  return getStudyAiStatus();
+});
+
+ipcMain.handle("b:ai:ask-question", async (event, request) => {
+  return studyAi.askCourseQuestion(request);
+});
+
+ipcMain.handle("b:ai:summarize-documents", async (event, request) => {
+  return studyAi.summarizeDocuments(request);
 });
 
 app.whenReady().then(() => {
