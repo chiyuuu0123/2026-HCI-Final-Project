@@ -8,7 +8,8 @@ module through a narrow IPC boundary.
 ## What it does
 
 - document normalization
-- chunk selection
+- local RAG retrieval over normalized chunks
+- PDF original text extraction from base64 payloads
 - course Q&A
 - document summarization
 - DeepSeek API access
@@ -17,7 +18,15 @@ module through a narrow IPC boundary.
 
 Do not write the key into source files.
 
-Recommended:
+Recommended for normal use:
+
+1. Open MindStudy.
+2. Click the `API Key` button in the AI assistant panel.
+3. Paste the DeepSeek key and save it.
+
+The key is saved in Electron's user data directory, not in this Git repository.
+
+Advanced override:
 
 ```powershell
 $env:DEEPSEEK_API_KEY="your_api_key_here"
@@ -43,6 +52,7 @@ Renderer code should call:
 - `window.mindStudy.ai.getStatus()`
 - `window.mindStudy.ai.askQuestion(payload)`
 - `window.mindStudy.ai.summarizeDocuments(payload)`
+- `window.mindStudy.ai.extractPdfText(payload)`
 
 ## Payload shapes
 
@@ -52,13 +62,18 @@ Renderer code should call:
 {
   question: "What is the main idea?",
   documents: [
-    { id: "doc-1", title: "chapter1.md", text: "..." }
+    { id: "doc-1", title: "chapter1.md", text: "..." },
+    { id: "doc-2", title: "lecture.pdf", mimeType: "application/pdf", extension: "PDF", base64: "..." }
   ],
   options: {
     model: "deepseek-v4-flash"
   }
 }
 ```
+
+Question answering uses local BM25-style RAG. The service normalizes documents,
+builds a temporary in-memory index, retrieves the most relevant chunks, and only
+sends those chunks to DeepSeek.
 
 ### Summarize
 
@@ -73,8 +88,21 @@ Renderer code should call:
 }
 ```
 
+### PDF text extraction
+
+```js
+{
+  base64: "...",
+  options: {
+    pageTextLimit: 8000,
+    totalTextLimit: 60000
+  }
+}
+```
+
+Returns `{ pageCount, extractedPageCount, pages, text, extractedAt }`.
+
 ## Note
 
-PDF text extraction can be added behind the same document contract later. This
-module already accepts normalized `text` and Markdown inputs, so the main app
-can stay loosely coupled.
+PDF extraction only works for PDFs that contain selectable text. Scanned image
+PDFs still need OCR from another module.

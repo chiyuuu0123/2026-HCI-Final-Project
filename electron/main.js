@@ -1,12 +1,122 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require("electron");
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const path = require("node:path");
-const { createStudyAiService, getStudyAiStatus } = require("../b_deepseek_module");
+const {
+  DEFAULT_BASE_URL,
+  DEFAULT_MODEL,
+  createStudyAiService,
+  extractPdfTextFromBase64,
+} = require("../b_deepseek_module");
 
 const isWindows = process.platform === "win32";
 const maxImportBytes = 80 * 1024 * 1024;
 const supportedExtensions = new Set([".pdf", ".md"]);
-const studyAi = createStudyAiService();
+
+function getDeepSeekConfigPath() {
+  return path.join(app.getPath("userData"), "deepseek-config.json");
+}
+
+function readDeepSeekLocalConfig() {
+  try {
+    return JSON.parse(fsSync.readFileSync(getDeepSeekConfigPath(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeDeepSeekLocalConfig(config) {
+  const configPath = getDeepSeekConfigPath();
+  fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
+  fsSync.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+}
+
+function getDeepSeekRuntimeConfig() {
+  const localConfig = readDeepSeekLocalConfig();
+  const envApiKey = process.env.DEEPSEEK_API_KEY || "";
+  const localApiKey = typeof localConfig.apiKey === "string" ? localConfig.apiKey : "";
+
+  return {
+    apiKey: envApiKey || localApiKey,
+    baseUrl: process.env.DEEPSEEK_BASE_URL || localConfig.baseUrl || DEFAULT_BASE_URL,
+    model: process.env.DEEPSEEK_MODEL || localConfig.model || DEFAULT_MODEL,
+    source: envApiKey ? "environment" : localApiKey ? "app-settings" : "missing",
+  };
+}
+
+function getDeepSeekStatus() {
+  const config = getDeepSeekRuntimeConfig();
+
+  return {
+    configured: Boolean(config.apiKey),
+    baseUrl: config.baseUrl,
+    model: config.model,
+    source: config.source,
+  };
+}
+
+function createCurrentStudyAiService() {
+  const config = getDeepSeekRuntimeConfig();
+
+  return createStudyAiService({
+    clientOptions: {
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+      model: config.model,
+    },
+  });
+}
+
+function saveDeepSeekApiKey(apiKey) {
+  const nextApiKey = String(apiKey || "").trim();
+
+  if (!nextApiKey) {
+    throw new Error("DeepSeek API key cannot be empty.");
+  }
+
+  const localConfig = readDeepSeekLocalConfig();
+  writeDeepSeekLocalConfig({
+    ...localConfig,
+    apiKey: nextApiKey,
+    updatedAt: Date.now(),
+  });
+
+  return getDeepSeekStatus();
+}
+
+function clearDeepSeekApiKey() {
+  const localConfig = readDeepSeekLocalConfig();
+  delete localConfig.apiKey;
+  localConfig.updatedAt = Date.now();
+  writeDeepSeekLocalConfig(localConfig);
+  return getDeepSeekStatus();
+}
+
+function getBase64Payload(payload) {
+  if (typeof payload === "string") {
+    return payload.trim();
+  }
+
+  if (typeof payload?.base64 === "string" && payload.base64.trim()) {
+    return payload.base64.trim();
+  }
+
+  if (typeof payload?.dataUrl === "string" && payload.dataUrl.includes(",")) {
+    return payload.dataUrl.split(",").pop().trim();
+  }
+
+  return "";
+}
+
+function getPdfExtractionOptions(payload) {
+  const options = payload && typeof payload === "object" && payload.options ? payload.options : {};
+
+  return {
+    maxPages: options.maxPages,
+    pageTextLimit: options.pageTextLimit,
+    totalTextLimit: options.totalTextLimit || options.maxPdfTextChars,
+  };
+}
 
 function getMimeType(extension) {
   const normalized = extension.toLowerCase();
@@ -189,15 +299,33 @@ ipcMain.handle("file:save-markdown", async (event, options) => {
 });
 
 ipcMain.handle("b:ai:get-status", () => {
-  return getStudyAiStatus();
+  return getDeepSeekStatus();
+});
+
+ipcMain.handle("b:ai:save-api-key", async (event, apiKey) => {
+  return saveDeepSeekApiKey(apiKey);
+});
+
+ipcMain.handle("b:ai:clear-api-key", () => {
+  return clearDeepSeekApiKey();
 });
 
 ipcMain.handle("b:ai:ask-question", async (event, request) => {
-  return studyAi.askCourseQuestion(request);
+  return createCurrentStudyAiService().askCourseQuestion(request);
 });
 
 ipcMain.handle("b:ai:summarize-documents", async (event, request) => {
-  return studyAi.summarizeDocuments(request);
+  return createCurrentStudyAiService().summarizeDocuments(request);
+});
+
+ipcMain.handle("b:ai:extract-pdf-text", async (event, payload) => {
+  const base64 = getBase64Payload(payload);
+
+  if (!base64) {
+    throw new Error("PDF text extraction requires base64 PDF data.");
+  }
+
+  return extractPdfTextFromBase64(base64, getPdfExtractionOptions(payload));
 });
 
 app.whenReady().then(() => {

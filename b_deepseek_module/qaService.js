@@ -1,7 +1,9 @@
 "use strict";
 
 const { DeepSeekClient } = require("./deepseekClient");
-const { collectLeadingChunks, selectRelevantChunks, toNormalizedDocuments } = require("./textChunker");
+const { collectLeadingChunks } = require("./textChunker");
+const { normalizeDocumentsForAi } = require("./documentNormalizer");
+const { buildRagIndex, queryRagIndex } = require("./ragIndex");
 
 function buildContext(chunks) {
   return chunks
@@ -20,6 +22,30 @@ function buildSources(chunks) {
     label: `S${index + 1}`,
     score: chunk.score,
   }));
+}
+
+function buildRetrievalMetadata(strategy, index, chunks) {
+  return {
+    strategy,
+    totalChunks: index && Number.isFinite(index.totalChunks) ? index.totalChunks : chunks.length,
+    selectedChunks: chunks.length,
+    sourceDocuments: new Set(chunks.map((chunk) => chunk.id)).size,
+  };
+}
+
+function getRequestOptions(request) {
+  return request && request.options ? request.options : {};
+}
+
+function selectRagChunks(query, documents, options = {}) {
+  const index = buildRagIndex(documents, options);
+  const chunks = queryRagIndex(index, query, options);
+
+  return {
+    chunks,
+    index,
+    retrieval: buildRetrievalMetadata(index.strategy || "local-bm25", index, chunks),
+  };
 }
 
 function buildQuestionMessages(question, chunks) {
@@ -96,38 +122,45 @@ function createStudyAiService(options = {}) {
     },
 
     async askCourseQuestion(request) {
-      const normalizedDocuments = toNormalizedDocuments(request && request.documents);
-
       if (!request || !request.question || !String(request.question).trim()) {
         throw new Error("askCourseQuestion requires a non-empty question.");
       }
 
-      const chunks = selectRelevantChunks(request.question, normalizedDocuments, request.options || {});
+      const options = getRequestOptions(request);
+      const normalizedDocuments = await normalizeDocumentsForAi(request.documents, options);
+      const { chunks, retrieval } = selectRagChunks(request.question, normalizedDocuments, options);
       const response = await client.chat({
         messages: buildQuestionMessages(request.question, chunks),
-        model: request.options && request.options.model,
-        temperature: request.options && request.options.temperature != null ? request.options.temperature : 0.2,
-        maxTokens: request.options && request.options.maxTokens != null ? request.options.maxTokens : 900,
-        signal: request.options && request.options.signal,
+        model: options.model,
+        temperature: options.temperature != null ? options.temperature : 0.2,
+        maxTokens: options.maxTokens != null ? options.maxTokens : 900,
+        signal: options.signal,
       });
 
       return {
         answer: response.content,
         sources: buildSources(chunks),
+        retrieval,
         model: response.model,
         usage: response.usage,
       };
     },
 
     async summarizeDocuments(request) {
-      const normalizedDocuments = toNormalizedDocuments(request && request.documents);
-      const chunks = collectLeadingChunks(normalizedDocuments, request && request.options ? request.options : {});
+      const options = getRequestOptions(request);
+      const topic = request && request.topic ? String(request.topic).trim() : "";
+      const normalizedDocuments = await normalizeDocumentsForAi(request && request.documents, options);
+      const index = buildRagIndex(normalizedDocuments, options);
+      const chunks = topic
+        ? queryRagIndex(index, topic, { ...options, topK: options.topK || options.maxChunks || 8 })
+        : collectLeadingChunks(normalizedDocuments, options);
+      const retrieval = buildRetrievalMetadata(topic ? index.strategy || "local-bm25" : "leading-chunks", index, chunks);
       const response = await client.chat({
-        messages: buildSummarizeMessages(request && request.topic, chunks),
-        model: request && request.options ? request.options.model : undefined,
-        temperature: request && request.options && request.options.temperature != null ? request.options.temperature : 0.2,
-        maxTokens: request && request.options && request.options.maxTokens != null ? request.options.maxTokens : 1200,
-        signal: request && request.options ? request.options.signal : undefined,
+        messages: buildSummarizeMessages(topic, chunks),
+        model: options.model,
+        temperature: options.temperature != null ? options.temperature : 0.2,
+        maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
+        signal: options.signal,
       });
 
       const parsed = extractJsonPayload(response.content);
@@ -138,6 +171,7 @@ function createStudyAiService(options = {}) {
         outline: parsed && Array.isArray(parsed.outline) ? parsed.outline : [],
         takeaways: parsed && Array.isArray(parsed.takeaways) ? parsed.takeaways : [],
         sources: buildSources(chunks),
+        retrieval,
         model: response.model,
         usage: response.usage,
         raw: response.content,

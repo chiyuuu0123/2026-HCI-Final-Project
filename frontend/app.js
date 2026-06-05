@@ -38,6 +38,8 @@ const supportedDocumentExtensions = new Set(["PDF", "MD"]);
 const PDF_TEXT_LIMIT = 60000;
 const PDF_PAGE_TEXT_LIMIT = 8000;
 const PDF_AI_PAGE_TEXT_LIMIT = 5000;
+const AI_CONTEXT_TEXT_LIMIT = 12000;
+const AI_READING_TEXT_LIMIT = 8000;
 const cameraState = {
   stream: null,
   sampleTimer: null,
@@ -283,6 +285,24 @@ function extractTextFromPdfTextContent(textContent) {
 }
 
 async function extractPdfTextFromBytes(bytes) {
+  if (window.mindStudy?.ai?.extractPdfText) {
+    try {
+      const extracted = await window.mindStudy.ai.extractPdfText({
+        base64: uint8ArrayToBase64(bytes),
+        options: {
+          pageTextLimit: PDF_PAGE_TEXT_LIMIT,
+          totalTextLimit: PDF_TEXT_LIMIT,
+        },
+      });
+
+      if (extracted?.text || extracted?.pages?.length) {
+        return extracted;
+      }
+    } catch (error) {
+      console.warn("Main-process PDF text extraction failed; falling back to renderer PDF.js.", error);
+    }
+  }
+
   const pdfjsLib = await loadPdfJs();
   const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
   const pages = [];
@@ -355,6 +375,199 @@ async function saveBinaryFile(defaultPath, bytes, filters) {
     : "application/vnd.openxmlformats-officedocument.presentationml.presentation";
   downloadInBrowser(defaultPath, new Blob([bytes], { type: mimeType }), mimeType);
   return { name: defaultPath };
+}
+
+function getAiBridge() {
+  return window.mindStudy?.ai || null;
+}
+
+function getAiErrorMessage(error) {
+  const message = error?.message || String(error || "AI 调用失败");
+
+  if (message.includes("DEEPSEEK_API_KEY") || message.includes("API key")) {
+    return "请先设置 DeepSeek API Key。";
+  }
+
+  return message;
+}
+
+async function getAiStatus() {
+  const bridge = getAiBridge();
+
+  if (!bridge?.getStatus) {
+    return {
+      configured: false,
+      source: "missing",
+      model: "",
+      baseUrl: "",
+      error: "当前环境没有 MindStudy AI 接口。",
+    };
+  }
+
+  try {
+    return await bridge.getStatus();
+  } catch (error) {
+    return {
+      configured: false,
+      source: "error",
+      model: "",
+      baseUrl: "",
+      error: getAiErrorMessage(error),
+    };
+  }
+}
+
+function getAiStatusText(status) {
+  if (status?.configured) {
+    const sourceText = status.source === "environment" ? "环境变量" : "软件内保存";
+    return `DeepSeek 已配置（${sourceText}，${status.model || "默认模型"}）`;
+  }
+
+  if (status?.error) {
+    return status.error;
+  }
+
+  return "DeepSeek API Key 尚未设置。";
+}
+
+async function syncAiStatusButtons() {
+  const status = await getAiStatus();
+
+  document.querySelectorAll("[data-ai-action='settings']").forEach((button) => {
+    button.classList.toggle("ai-ready", Boolean(status.configured));
+    button.title = getAiStatusText(status);
+  });
+
+  return status;
+}
+
+async function ensureAiConfigured() {
+  const status = await syncAiStatusButtons();
+
+  if (!status.configured) {
+    openAiSettingsDialog(status);
+    throw new Error("请先设置 DeepSeek API Key。");
+  }
+
+  return status;
+}
+
+function formatAiSources(sources = []) {
+  if (!sources.length) return "";
+
+  return `\n\n来源：${sources.map((source) => `[${source.label}] ${source.title}`).join("；")}`;
+}
+
+function formatAiAnswer(result) {
+  return `${result?.answer || "AI 没有返回内容。"}${formatAiSources(result?.sources)}`;
+}
+
+function formatAiSummary(result) {
+  const parts = [];
+
+  if (result?.summary) {
+    parts.push(`总结：${result.summary}`);
+  }
+
+  if (result?.keywords?.length) {
+    parts.push(`关键词：${result.keywords.join("、")}`);
+  }
+
+  if (result?.outline?.length) {
+    const outline = result.outline
+      .map((item) => {
+        if (typeof item === "string") return `- ${item}`;
+        const points = Array.isArray(item.points) ? item.points.map((point) => `  - ${point}`).join("\n") : "";
+        return [`- ${item.heading || "要点"}`, points].filter(Boolean).join("\n");
+      })
+      .join("\n");
+    parts.push(`大纲：\n${outline}`);
+  }
+
+  if (result?.takeaways?.length) {
+    parts.push(`可加入笔记：\n${result.takeaways.map((item) => `- ${item}`).join("\n")}`);
+  }
+
+  return `${parts.join("\n\n") || result?.raw || "AI 没有返回内容。"}${formatAiSources(result?.sources)}`;
+}
+
+function getRuntimeDocumentAiText(doc) {
+  if (!doc) return "";
+
+  if (doc.kind === "md") {
+    return stripMarkdown(doc.editedText || doc.text || "").slice(0, AI_CONTEXT_TEXT_LIMIT);
+  }
+
+  if (doc.kind === "pdf") {
+    return (doc.meta.extractedText || getCurrentReadingText(doc)).slice(0, AI_CONTEXT_TEXT_LIMIT);
+  }
+
+  return String(doc.meta.aiSource || "").slice(0, AI_CONTEXT_TEXT_LIMIT);
+}
+
+async function buildAiDocumentFromMeta(meta) {
+  if (!meta) return null;
+
+  const runtimeDoc = documentState.current?.meta?.id === meta.id ? documentState.current : null;
+  if (runtimeDoc) {
+    return {
+      id: meta.id,
+      title: meta.name,
+      text: getRuntimeDocumentAiText(runtimeDoc),
+      mimeType: meta.mimeType,
+      extension: meta.extension,
+    };
+  }
+
+  const file = await readStoredFile(meta);
+  const extension = String(file.extension || meta.extension || "").toUpperCase();
+
+  if (extension === "MD") {
+    return {
+      id: meta.id,
+      title: meta.name,
+      text: stripMarkdown(base64ToText(file.base64 || "")).slice(0, AI_CONTEXT_TEXT_LIMIT),
+      mimeType: file.mimeType,
+      extension,
+    };
+  }
+
+  if (extension === "PDF") {
+    const extracted = await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""));
+    return {
+      id: meta.id,
+      title: meta.name,
+      text: extracted.text.slice(0, AI_CONTEXT_TEXT_LIMIT),
+      mimeType: file.mimeType,
+      extension,
+    };
+  }
+
+  return null;
+}
+
+async function buildActiveAiDocuments(sourceOverride = "") {
+  const activeMeta = getActiveDocumentMeta();
+
+  if (sourceOverride.trim()) {
+    return [
+      {
+        id: activeMeta?.id || "manual-reading",
+        title: activeMeta?.name || "当前阅读内容",
+        text: sourceOverride.slice(0, AI_READING_TEXT_LIMIT),
+        mimeType: "text/plain",
+        extension: "TXT",
+      },
+    ];
+  }
+
+  const aiDocument = await buildAiDocumentFromMeta(activeMeta);
+
+  if (!aiDocument?.text?.trim()) {
+    throw new Error("当前课程还没有可用于 AI 的资料，请先导入或打开 PDF/Markdown。");
+  }
+
+  return [aiDocument];
 }
 
 function normalizeSelectedFiles(result) {
@@ -2414,6 +2627,10 @@ function renderAiReadingWindow(doc) {
           <span class="tag muted">AI 阅读窗口</span>
           <h3>解析与翻译</h3>
         </div>
+        <button class="mini-button" data-ai-action="settings" title="设置 DeepSeek API Key">
+          <i data-lucide="key-round"></i>
+          <span>Key</span>
+        </button>
       </div>
       ${
         extractStatus
@@ -2441,14 +2658,54 @@ function renderAiReadingWindow(doc) {
   `;
 }
 
-function updateAiReadingOutput(mode) {
+async function updateAiReadingOutput(mode) {
   const doc = documentState.current;
   const sourceInput = document.querySelector("#ai-reading-source");
   const output = document.querySelector("#ai-reading-output");
   if (!doc || !sourceInput || !output) return;
 
   const source = sourceInput.value.trim();
-  const result = mode === "translate" ? translateEnglishToChinese(source) : analyzeReadingText(source);
+  if (!source) {
+    output.textContent = analyzeReadingText(source);
+    return;
+  }
+
+  output.textContent = mode === "translate" ? "DeepSeek 正在翻译..." : "DeepSeek 正在解析...";
+
+  let result = "";
+
+  try {
+    await ensureAiConfigured();
+    const documents = await buildActiveAiDocuments(source);
+
+    if (mode === "translate") {
+      const response = await window.mindStudy.ai.askQuestion({
+        question: "请将当前阅读内容翻译成自然、准确的中文。只输出译文，必要时保留术语英文原文。",
+        documents,
+        options: {
+          maxChunks: 4,
+          maxContextChars: AI_READING_TEXT_LIMIT,
+          maxTokens: 1200,
+        },
+      });
+      result = formatAiAnswer(response);
+    } else {
+      const response = await window.mindStudy.ai.summarizeDocuments({
+        topic: "解析当前阅读内容，提炼学习要点、关键词和可加入笔记的内容",
+        documents,
+        options: {
+          maxChunks: 6,
+          maxContextChars: AI_READING_TEXT_LIMIT,
+          maxTokens: 1200,
+        },
+      });
+      result = formatAiSummary(response);
+    }
+  } catch (error) {
+    const fallback = mode === "translate" ? translateEnglishToChinese(source) : analyzeReadingText(source);
+    result = `${getAiErrorMessage(error)}\n\n本地备用结果：\n${fallback}`;
+  }
+
   if (doc.kind === "pdf") {
     const pageKey = getPdfPageKey(doc);
     doc.meta.aiSourcesByPage = doc.meta.aiSourcesByPage || {};
@@ -3500,6 +3757,100 @@ function closeModal() {
   document.querySelector(".modal-backdrop")?.remove();
 }
 
+async function openAiSettingsDialog(preloadedStatus = null) {
+  closeModal();
+
+  const status = preloadedStatus || (await getAiStatus());
+  const statusClass = status.configured ? "ready" : "warning";
+  const placeholder = status.configured ? "已配置，输入新的 Key 可覆盖" : "sk-...";
+
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    `
+      <div class="modal-backdrop" data-modal="ai-settings">
+        <section class="course-modal" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
+          <div class="modal-heading">
+            <div>
+              <span class="tag muted">DeepSeek</span>
+              <h2 id="ai-settings-title">AI API Key</h2>
+            </div>
+            <button class="icon-button light" data-modal-action="close" title="关闭">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <form class="course-form" id="ai-settings-form">
+            <label>
+              <span>DeepSeek API Key</span>
+              <input id="deepseek-api-key-input" name="apiKey" type="password" placeholder="${escapeHtml(placeholder)}" autocomplete="off" />
+            </label>
+            <p class="ai-settings-note">Key 会保存在本机应用数据目录，不会写入 Git 仓库。环境变量 DEEPSEEK_API_KEY 优先级更高。</p>
+            <p class="ai-status-line ${statusClass}" id="ai-settings-status">${escapeHtml(getAiStatusText(status))}</p>
+            <div class="modal-actions">
+              <button type="button" class="ghost-action compact" data-ai-action="clear-key">清除本地 Key</button>
+              <button type="button" class="ghost-action compact" data-modal-action="close">取消</button>
+              <button type="submit" class="primary-action compact">保存 Key</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    `,
+  );
+
+  window.lucide?.createIcons();
+  document.querySelector("#deepseek-api-key-input")?.focus();
+}
+
+async function submitAiSettingsForm(event) {
+  event.preventDefault();
+
+  const input = event.target.elements.apiKey;
+  const statusLine = document.querySelector("#ai-settings-status");
+  const apiKey = input.value.trim();
+
+  if (!apiKey) {
+    input.focus();
+    if (statusLine) {
+      statusLine.textContent = "请输入 DeepSeek API Key。";
+      statusLine.className = "ai-status-line warning";
+    }
+    return;
+  }
+
+  try {
+    const status = await window.mindStudy.ai.saveApiKey(apiKey);
+    if (statusLine) {
+      statusLine.textContent = getAiStatusText(status);
+      statusLine.className = `ai-status-line ${status.configured ? "ready" : "warning"}`;
+    }
+    input.value = "";
+    await syncAiStatusButtons();
+    window.setTimeout(closeModal, 450);
+  } catch (error) {
+    if (statusLine) {
+      statusLine.textContent = getAiErrorMessage(error);
+      statusLine.className = "ai-status-line warning";
+    }
+  }
+}
+
+async function clearAiApiKey() {
+  const statusLine = document.querySelector("#ai-settings-status");
+
+  try {
+    const status = await window.mindStudy.ai.clearApiKey();
+    if (statusLine) {
+      statusLine.textContent = getAiStatusText(status);
+      statusLine.className = `ai-status-line ${status.configured ? "ready" : "warning"}`;
+    }
+    await syncAiStatusButtons();
+  } catch (error) {
+    if (statusLine) {
+      statusLine.textContent = getAiErrorMessage(error);
+      statusLine.className = "ai-status-line warning";
+    }
+  }
+}
+
 function openCourseDialog(mode) {
   closeModal();
 
@@ -3694,16 +4045,37 @@ document.querySelectorAll("[data-view-jump]").forEach((item) => {
 });
 
 document.querySelectorAll(".prompt-chip").forEach((chip) => {
-  chip.addEventListener("click", () => {
+  chip.addEventListener("click", async () => {
     const chatList = document.querySelector("#chat-list");
     const userBubble = document.createElement("div");
     const aiBubble = document.createElement("div");
     userBubble.className = "chat-bubble user";
     aiBubble.className = "chat-bubble ai";
     userBubble.textContent = chip.dataset.prompt;
-    aiBubble.textContent = "已根据当前课程资料整理好回答，并自动标记可加入笔记的重点句。";
+    aiBubble.textContent = "DeepSeek 正在根据当前课程资料整理回答...";
     chatList.append(userBubble, aiBubble);
     chatList.scrollTop = chatList.scrollHeight;
+    chip.disabled = true;
+
+    try {
+      await ensureAiConfigured();
+      const documents = await buildActiveAiDocuments();
+      const response = await window.mindStudy.ai.askQuestion({
+        question: chip.dataset.prompt,
+        documents,
+        options: {
+          maxChunks: 6,
+          maxContextChars: AI_CONTEXT_TEXT_LIMIT,
+          maxTokens: 1000,
+        },
+      });
+      aiBubble.textContent = formatAiAnswer(response);
+    } catch (error) {
+      aiBubble.textContent = getAiErrorMessage(error);
+    } finally {
+      chip.disabled = false;
+      chatList.scrollTop = chatList.scrollHeight;
+    }
   });
 });
 
@@ -3802,6 +4174,10 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.matches("#ai-settings-form")) {
+    submitAiSettingsForm(event);
+  }
+
   if (event.target.matches("#course-form")) {
     submitCourseForm(event);
   }
@@ -3810,6 +4186,8 @@ document.addEventListener("submit", (event) => {
 document.addEventListener("click", (event) => {
   const modalCloseButton = event.target.closest("[data-modal-action='close']");
   const modalBackdrop = event.target.matches(".modal-backdrop");
+  const aiSettingsButton = event.target.closest("[data-ai-action='settings']");
+  const aiClearKeyButton = event.target.closest("[data-ai-action='clear-key']");
   const deleteDocumentButton = event.target.closest("[data-delete-document-id]");
   const confirmDeleteDocumentButton = event.target.closest("[data-confirm-delete-document]");
   const confirmDeletePdfPageButton = event.target.closest("[data-confirm-delete-pdf-page]");
@@ -3823,6 +4201,16 @@ document.addEventListener("click", (event) => {
 
   if (actionButton?.id === "toggle-reader-fullscreen") {
     toggleReaderFullscreen();
+    return;
+  }
+
+  if (aiSettingsButton) {
+    openAiSettingsDialog();
+    return;
+  }
+
+  if (aiClearKeyButton) {
+    clearAiApiKey();
     return;
   }
 
@@ -3925,6 +4313,7 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   window.lucide?.createIcons();
+  syncAiStatusButtons();
 
   window.mindStudy?.getAppInfo?.().then((info) => {
     document.body.dataset.platform = info.platform;

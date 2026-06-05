@@ -15,6 +15,18 @@ DeepSeek request details.
 }
 ```
 
+PDF documents may also be passed without pre-extracted text:
+
+```js
+{
+  id: "course-2",
+  title: "lecture.pdf",
+  base64: "...",
+  mimeType: "application/pdf",
+  extension: "PDF"
+}
+```
+
 ## AskCourseQuestion
 
 ```js
@@ -56,7 +68,38 @@ DeepSeek request details.
   sources: [
     { id: "course-1", title: "lecture.md", chunkIndex: 0, label: "S1" }
   ],
+  retrieval: {
+    strategy: "local-bm25",
+    totalChunks: 12,
+    selectedChunks: 6,
+    sourceDocuments: 1
+  },
   model: "deepseek-v4-flash",
   usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+}
+```
+
+## ExtractPdfText
+
+```js
+{
+  base64: "...",
+  options: {
+    maxPages: 30,
+    pageTextLimit: 8000,
+    totalTextLimit: 60000
+  }
+}
+```
+
+Returns:
+
+```js
+{
+  pageCount: 24,
+  extractedPageCount: 24,
+  pages: [{ pageNumber: 1, text: "..." }],
+  text: "Page 1\n...",
+  extractedAt: 1710000000000
 }
 ```
