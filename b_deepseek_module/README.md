@@ -10,6 +10,7 @@ module through a narrow IPC boundary.
 - document normalization
 - local RAG retrieval over normalized chunks
 - PDF original text extraction from base64 payloads
+- OCR recognition for scanned PDF pages rendered as images
 - course Q&A
 - document summarization
 - DeepSeek API access
@@ -53,6 +54,7 @@ Renderer code should call:
 - `window.mindStudy.ai.askQuestion(payload)`
 - `window.mindStudy.ai.summarizeDocuments(payload)`
 - `window.mindStudy.ai.extractPdfText(payload)`
+- `window.mindStudy.ai.recognizeImageText(payload)`
 
 ## Payload shapes
 
@@ -102,7 +104,27 @@ sends those chunks to DeepSeek.
 
 Returns `{ pageCount, extractedPageCount, pages, text, extractedAt }`.
 
+This direct PDF extractor reads the selectable text layer. In the app flow,
+scanned pages are rendered to PNG in the renderer process, sent through
+`recognizeImageText`, and merged back into the same `{ pages, text }` shape for
+AI reading and RAG learning.
+
+### OCR image recognition
+
+```js
+{
+  dataUrl: "data:image/png;base64,...",
+  options: {
+    languages: ["eng", "chi_sim"],
+    textLimit: 8000
+  }
+}
+```
+
+Returns `{ text, confidence, language, recognizedAt }`.
+
 ## Note
 
-PDF extraction only works for PDFs that contain selectable text. Scanned image
-PDFs still need OCR from another module.
+OCR can be slow on first use because Tesseract language data may need to be
+downloaded and cached. Page-range learning is the recommended path for large
+scanned PDFs.

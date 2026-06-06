@@ -7,6 +7,8 @@ const {
   DEFAULT_MODEL,
   createStudyAiService,
   extractPdfTextFromBase64,
+  recognizeImageTextFromBase64,
+  terminateOcrWorkers,
 } = require("../b_deepseek_module");
 
 const isWindows = process.platform === "win32";
@@ -123,6 +125,18 @@ function getPdfExtractionOptions(payload) {
     maxPages: options.maxPages,
     pageTextLimit: options.pageTextLimit,
     totalTextLimit: options.totalTextLimit || options.maxPdfTextChars,
+  };
+}
+
+function getOcrOptions(payload) {
+  const options = payload && typeof payload === "object" && payload.options ? payload.options : {};
+
+  return {
+    language: options.language,
+    languages: options.languages,
+    textLimit: options.textLimit,
+    pageNumber: options.pageNumber,
+    cachePath: path.join(app.getPath("userData"), "ocr-cache"),
   };
 }
 
@@ -669,6 +683,16 @@ ipcMain.handle("b:ai:extract-pdf-text", async (event, payload) => {
   return extractPdfTextFromBase64(base64, getPdfExtractionOptions(payload));
 });
 
+ipcMain.handle("b:ai:recognize-image-text", async (event, payload) => {
+  const base64 = getBase64Payload(payload);
+
+  if (!base64) {
+    throw new Error("OCR requires base64 image data.");
+  }
+
+  return recognizeImageTextFromBase64(base64, getOcrOptions(payload));
+});
+
 ipcMain.handle("b:rag:ask-library", async (event, request) => {
   const question = String(request?.question || "").trim();
   const documents = Array.isArray(request?.documents) ? request.documents : [];
@@ -728,4 +752,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  void terminateOcrWorkers();
 });

@@ -103,3 +103,29 @@ Returns:
   extractedAt: 1710000000000
 }
 ```
+
+## RecognizeImageText
+
+Used by the renderer after a scanned PDF page has been rendered to an image.
+
+```js
+{
+  dataUrl: "data:image/png;base64,...",
+  options: {
+    languages: ["eng", "chi_sim"],
+    pageNumber: 3,
+    textLimit: 8000
+  }
+}
+```
+
+Returns:
+
+```js
+{
+  text: "recognized text",
+  confidence: 92,
+  language: "eng+chi_sim",
+  recognizedAt: 1710000000000
+}
+```

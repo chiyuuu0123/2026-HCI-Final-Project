@@ -157,6 +157,10 @@ const supportedDocumentExtensions = new Set(["PDF", "MD"]);
 const PDF_TEXT_LIMIT = 60000;
 const PDF_PAGE_TEXT_LIMIT = 8000;
 const PDF_AI_PAGE_TEXT_LIMIT = 5000;
+const PDF_OCR_LANGUAGES = ["eng", "chi_sim"];
+const PDF_OCR_RENDER_SCALE = 1.8;
+const PDF_OCR_MAX_CANVAS_SIDE = 2200;
+const PDF_OCR_AUTO_MAX_PAGES = 8;
 const AI_CONTEXT_TEXT_LIMIT = 12000;
 const AI_READING_TEXT_LIMIT = 8000;
 const RAG_KNOWLEDGE_TEXT_LIMIT = 60000;
@@ -934,6 +938,9 @@ function sanitizeRagKnowledge(ragKnowledge = {}) {
         chunkCount: Math.max(1, Number(documentMeta.chunkCount) || splitRagText(text, settings.chunkSize).length),
         learnedAt: Number(documentMeta.learnedAt) || Date.now(),
         sourceType: documentMeta.sourceType || "course",
+        ocrPageCount: Math.max(0, Number(documentMeta.ocrPageCount) || 0),
+        ocrSkippedPageCount: Math.max(0, Number(documentMeta.ocrSkippedPageCount) || 0),
+        pageRange: documentMeta.pageRange || null,
       };
     })
     .filter(Boolean);
@@ -1130,37 +1137,248 @@ function extractTextFromPdfTextContent(textContent) {
   return normalizeExtractedPdfText(rows.filter(Boolean).join("\n"));
 }
 
-async function extractPdfTextFromBytes(bytes) {
+function getPdfOcrCandidatePageNumbers(extracted, options = {}) {
+  const pageCount = Math.max(0, Number(extracted?.pageCount || options.pageCount) || 0);
+  const pages = Array.isArray(extracted?.pages) ? extracted.pages : [];
+  const textPageNumbers = new Set(
+    pages
+      .filter((page) => normalizeExtractedPdfText(page.text))
+      .map((page) => Number(page.pageNumber)),
+  );
+  let candidates = Array.isArray(options.ocrPages)
+    ? options.ocrPages.map(Number).filter(Number.isFinite)
+    : [];
+
+  if (!pageCount) {
+    return {
+      pageNumbers: [],
+      skippedPageCount: 0,
+    };
+  }
+
+  if (!candidates.length) {
+    if (options.ocrMode === "always" || !normalizeExtractedPdfText(extracted?.text)) {
+      candidates = Array.from({ length: pageCount }, (item, index) => index + 1);
+    } else if (options.ocrMissingPages) {
+      candidates = Array.from({ length: pageCount }, (item, index) => index + 1)
+        .filter((pageNumber) => !textPageNumbers.has(pageNumber));
+    }
+  }
+
+  const uniqueCandidates = Array.from(new Set(candidates))
+    .filter((pageNumber) => pageNumber >= 1 && pageNumber <= pageCount)
+    .filter((pageNumber) => options.ocrMode === "always" || !textPageNumbers.has(pageNumber));
+  const maxPages = Math.max(0, Number(options.ocrMaxPages) || PDF_OCR_AUTO_MAX_PAGES);
+
+  return {
+    pageNumbers: uniqueCandidates.slice(0, maxPages),
+    skippedPageCount: Math.max(0, uniqueCandidates.length - maxPages),
+  };
+}
+
+function getPdfOcrScale(page, options = {}) {
+  const viewport = page.getViewport({ scale: 1 });
+  const requestedScale = Number(options.ocrScale) || PDF_OCR_RENDER_SCALE;
+  const sideScale = PDF_OCR_MAX_CANVAS_SIDE / Math.max(viewport.width, viewport.height, 1);
+
+  return Math.max(1.1, Math.min(requestedScale, sideScale));
+}
+
+async function renderPdfPageToOcrDataUrl(page, options = {}) {
+  const viewport = page.getViewport({ scale: getPdfOcrScale(page, options) });
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { alpha: false });
+
+  if (!context) {
+    throw new Error("无法创建 OCR 渲染画布。");
+  }
+
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  await page.render({
+    canvasContext: context,
+    viewport,
+    background: "#ffffff",
+  }).promise;
+
+  const dataUrl = canvas.toDataURL("image/png");
+  canvas.width = 1;
+  canvas.height = 1;
+  return dataUrl;
+}
+
+async function recognizePdfPageWithOcr(page, pageNumber, options = {}) {
+  const recognizeImageText = window.mindStudy?.ai?.recognizeImageText;
+
+  if (!recognizeImageText) {
+    throw new Error("OCR 接口尚未可用。");
+  }
+
+  const dataUrl = await renderPdfPageToOcrDataUrl(page, options);
+  const result = await recognizeImageText({
+    dataUrl,
+    options: {
+      languages: options.ocrLanguages || PDF_OCR_LANGUAGES,
+      pageNumber,
+      textLimit: options.textLimit || PDF_PAGE_TEXT_LIMIT,
+    },
+  });
+  const text = normalizeExtractedPdfText(result?.text).slice(0, options.textLimit || PDF_PAGE_TEXT_LIMIT);
+
+  return {
+    pageNumber,
+    text,
+    confidence: result?.confidence ?? null,
+    source: "ocr",
+  };
+}
+
+function mergePdfTextAndOcrExtraction(extracted, ocrPages, metadata = {}) {
+  const pagesByNumber = new Map();
+
+  for (const page of extracted?.pages || []) {
+    const pageNumber = Number(page.pageNumber);
+    if (!Number.isFinite(pageNumber)) continue;
+    pagesByNumber.set(pageNumber, {
+      ...page,
+      source: page.source || "text-layer",
+    });
+  }
+
+  for (const page of ocrPages || []) {
+    if (!page.text) continue;
+    pagesByNumber.set(Number(page.pageNumber), {
+      pageNumber: Number(page.pageNumber),
+      text: page.text.slice(0, PDF_PAGE_TEXT_LIMIT),
+      confidence: page.confidence,
+      source: "ocr",
+    });
+  }
+
+  const pages = Array.from(pagesByNumber.values())
+    .sort((left, right) => Number(left.pageNumber) - Number(right.pageNumber));
+  const text = normalizeExtractedPdfText(
+    pages
+      .filter((page) => page.text)
+      .map((page) => `第 ${page.pageNumber} 页\n${page.text}`)
+      .join("\n\n"),
+  ).slice(0, PDF_TEXT_LIMIT);
+  const ocrPageCount = pages.filter((page) => page.source === "ocr" && page.text).length;
+
+  return {
+    ...extracted,
+    pages,
+    text,
+    extractedPageCount: pages.filter((page) => page.text).length,
+    ocrPageCount,
+    ocrSkippedPageCount: metadata.skippedPageCount || 0,
+    ocrErrors: metadata.ocrErrors || [],
+    extractionMethods: ocrPageCount ? ["text-layer", "ocr"] : ["text-layer"],
+  };
+}
+
+async function appendOcrTextFromPdfPages(bytes, extracted, options = {}) {
+  if (options.enableOcr === false || !window.mindStudy?.ai?.recognizeImageText) {
+    return extracted;
+  }
+
+  const { pageNumbers, skippedPageCount } = getPdfOcrCandidatePageNumbers(extracted, options);
+  if (!pageNumbers.length) {
+    return {
+      ...extracted,
+      ocrSkippedPageCount: skippedPageCount,
+    };
+  }
+
+  options.onOcrStart?.({
+    total: pageNumbers.length,
+    skippedPageCount,
+  });
+
+  const pdfjsLib = await loadPdfJs();
+  const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+  const ocrPages = [];
+  const ocrErrors = [];
+
+  try {
+    for (const [index, pageNumber] of pageNumbers.entries()) {
+      options.onOcrProgress?.({
+        pageNumber,
+        index: index + 1,
+        total: pageNumbers.length,
+      });
+
+      try {
+        const page = await pdf.getPage(pageNumber);
+        const ocrPage = await recognizePdfPageWithOcr(page, pageNumber, options);
+        if (ocrPage.text) ocrPages.push(ocrPage);
+      } catch (error) {
+        ocrErrors.push({
+          pageNumber,
+          message: error.message || String(error),
+        });
+      }
+    }
+  } finally {
+    if (typeof pdf.destroy === "function") {
+      await pdf.destroy();
+    }
+  }
+
+  if (!ocrPages.length && !normalizeExtractedPdfText(extracted?.text) && ocrErrors.length) {
+    throw new Error(`OCR 识别失败：${ocrErrors[0].message}`);
+  }
+
+  return mergePdfTextAndOcrExtraction(extracted, ocrPages, {
+    skippedPageCount,
+    ocrErrors,
+  });
+}
+
+async function extractPdfTextFromBytes(bytes, options = {}) {
   if (window.mindStudy?.ai?.extractPdfText) {
+    let extracted = null;
+
     try {
-      const extracted = await window.mindStudy.ai.extractPdfText({
+      extracted = await window.mindStudy.ai.extractPdfText({
         base64: uint8ArrayToBase64(bytes),
         options: {
           pageTextLimit: PDF_PAGE_TEXT_LIMIT,
           totalTextLimit: PDF_TEXT_LIMIT,
         },
       });
-
-      if (extracted?.text || extracted?.pages?.length) {
-        return extracted;
-      }
     } catch (error) {
       console.warn("Main-process PDF text extraction failed; falling back to renderer PDF.js.", error);
+    }
+
+    if (extracted?.pageCount || extracted?.text || extracted?.pages?.length) {
+      return await appendOcrTextFromPdfPages(bytes, extracted, options);
     }
   }
 
   const pdfjsLib = await loadPdfJs();
   const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+  const pageCount = pdf.numPages;
   const pages = [];
 
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const textContent = await page.getTextContent();
-    const pageText = extractTextFromPdfTextContent(textContent);
-    pages.push({
-      pageNumber,
-      text: pageText.slice(0, PDF_PAGE_TEXT_LIMIT),
-    });
+  try {
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const textContent = await page.getTextContent();
+      const pageText = extractTextFromPdfTextContent(textContent);
+      pages.push({
+        pageNumber,
+        text: pageText.slice(0, PDF_PAGE_TEXT_LIMIT),
+        source: "text-layer",
+      });
+    }
+  } finally {
+    if (typeof pdf.destroy === "function") {
+      await pdf.destroy();
+    }
   }
 
   const fullText = normalizeExtractedPdfText(
@@ -1170,12 +1388,12 @@ async function extractPdfTextFromBytes(bytes) {
       .join("\n\n"),
   );
 
-  return {
-    pageCount: pdf.numPages,
+  return await appendOcrTextFromPdfPages(bytes, {
+    pageCount,
     pages,
     text: fullText.slice(0, PDF_TEXT_LIMIT),
     extractedAt: Date.now(),
-  };
+  }, options);
 }
 
 function downloadInBrowser(fileName, content, mimeType) {
@@ -1682,15 +1900,18 @@ function renderRagAssistant() {
   if (list) {
     list.innerHTML = knowledge.documents.length
       ? knowledge.documents
-          .map((documentMeta) => `
-            <article class="rag-learned-card">
-              <div>
-                <strong>${escapeHtml(documentMeta.title)}</strong>
-                <span>${escapeHtml(documentMeta.extension || "TXT")} · ${documentMeta.chunkCount} 段知识 · ${documentMeta.textLength} 字</span>
-              </div>
-              <small>${escapeHtml(formatRagDate(documentMeta.learnedAt))}</small>
-            </article>
-          `)
+          .map((documentMeta) => {
+            const ocrLabel = documentMeta.ocrPageCount ? ` · OCR ${documentMeta.ocrPageCount} 页` : "";
+            return `
+              <article class="rag-learned-card">
+                <div>
+                  <strong>${escapeHtml(documentMeta.title)}</strong>
+                  <span>${escapeHtml(documentMeta.extension || "TXT")} · ${documentMeta.chunkCount} 段知识 · ${documentMeta.textLength} 字${ocrLabel}</span>
+                </div>
+                <small>${escapeHtml(formatRagDate(documentMeta.learnedAt))}</small>
+              </article>
+            `;
+          })
           .join("")
       : `<div class="rag-empty">还没有学习文件。先从当前资料或整个课程生成知识库。</div>`;
   }
@@ -1763,6 +1984,8 @@ async function getRagDocumentText(meta) {
     activeDoc.pdfText = extracted;
     activeDoc.meta.extractedText = extracted.text;
     activeDoc.meta.extractedPages = extracted.pages || [];
+    activeDoc.meta.ocrPageCount = extracted.ocrPageCount || 0;
+    activeDoc.meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
     activeDoc.meta.extractedAt = extracted.extractedAt;
     activeDoc.meta.pdfTextStale = false;
     saveWorkspace();
@@ -1780,6 +2003,8 @@ async function getRagDocumentText(meta) {
     const extracted = await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""));
     meta.extractedText = extracted.text;
     meta.extractedPages = extracted.pages || [];
+    meta.ocrPageCount = extracted.ocrPageCount || 0;
+    meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
     meta.extractedAt = extracted.extractedAt;
     meta.pdfTextStale = false;
     saveWorkspace();
@@ -1808,6 +2033,8 @@ async function buildRagKnowledgeDocument(meta) {
     chunkCount: splitRagText(text, settings.chunkSize).length,
     learnedAt: Date.now(),
     sourceType: "course",
+    ocrPageCount: Math.max(0, Number(meta.ocrPageCount) || 0),
+    ocrSkippedPageCount: Math.max(0, Number(meta.ocrSkippedPageCount) || 0),
   };
 }
 
@@ -1856,7 +2083,16 @@ async function learnActivePdfRange() {
     const source = await getActivePdfSource();
     const range = getPdfRangeFromInputs("rag", source.pageCount);
     const subPdf = await createPdfRangeBytes(source.bytes, range.startPage, range.endPage);
-    const extracted = await extractPdfTextFromBytes(subPdf.bytes);
+    const extracted = await extractPdfTextFromBytes(subPdf.bytes, {
+      ocrMissingPages: true,
+      ocrMaxPages: subPdf.pageCount,
+      onOcrStart: ({ total }) => {
+        setRagStatus(`正在识别 ${total} 页扫描内容...`, "working");
+      },
+      onOcrProgress: ({ index, total }) => {
+        setRagStatus(`正在识别扫描内容 ${index}/${total}`, "working");
+      },
+    });
     const text = normalizeExtractedPdfText(extracted.text).slice(0, RAG_KNOWLEDGE_TEXT_LIMIT);
 
     if (!text) {
@@ -1875,6 +2111,8 @@ async function learnActivePdfRange() {
       chunkCount: splitRagText(text, settings.chunkSize).length,
       learnedAt: Date.now(),
       sourceType: "pdf-range",
+      ocrPageCount: extracted.ocrPageCount || 0,
+      ocrSkippedPageCount: extracted.ocrSkippedPageCount || 0,
       pageRange: {
         startPage: subPdf.startPage,
         endPage: subPdf.endPage,
@@ -2345,7 +2583,14 @@ async function applyPdfTextExtraction(doc, shouldRender = true) {
 
   try {
     setParseStatus("提取文字中", "working");
-    const extracted = await extractPdfTextFromBytes(doc.bytes);
+    const extracted = await extractPdfTextFromBytes(doc.bytes, {
+      onOcrStart: ({ total }) => {
+        setParseStatus(`OCR 识别 ${total} 页`, "working");
+      },
+      onOcrProgress: ({ index, total }) => {
+        setParseStatus(`OCR 识别中 ${index}/${total}`, "working");
+      },
+    });
     const textPages = extracted.pages.filter((page) => page.text);
     const storedPages = [];
     let storedTextLength = 0;
@@ -2366,6 +2611,8 @@ async function applyPdfTextExtraction(doc, shouldRender = true) {
     doc.meta.extractedText = extracted.text;
     doc.meta.extractedPages = storedPages;
     doc.meta.extractedPageCount = textPages.length;
+    doc.meta.ocrPageCount = extracted.ocrPageCount || 0;
+    doc.meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
     doc.meta.extractedAt = extracted.extractedAt;
     doc.meta.pdfExtractError = "";
     doc.meta.pdfTextStale = false;
@@ -2374,7 +2621,10 @@ async function applyPdfTextExtraction(doc, shouldRender = true) {
     doc.meta.aiSource = getCurrentReadingText(doc);
     doc.meta.aiOutput = analyzeReadingText(doc.meta.aiSource);
     saveWorkspace();
-    setParseStatus(textPages.length ? "文字已提取" : "未提取到文字", textPages.length ? "ready" : "working");
+    setParseStatus(
+      textPages.length ? (extracted.ocrPageCount ? "OCR 文字已识别" : "文字已提取") : "未提取到文字",
+      textPages.length ? "ready" : "working",
+    );
   } catch (error) {
     doc.meta.pdfExtractError = "PDF 文字提取失败，可能是扫描版或加密文档。可以手动复制文字到 AI 阅读窗口。";
     doc.meta.pdfTextStale = false;
@@ -2416,11 +2666,13 @@ function hydrateStoredPdfText(doc) {
   return true;
 }
 
-function upsertPdfExtractedPage(doc, pageNumber, text) {
+function upsertPdfExtractedPage(doc, pageNumber, text, options = {}) {
   const nextPage = {
     pageNumber,
     text: text.slice(0, PDF_PAGE_TEXT_LIMIT),
+    source: options.source || "text-layer",
   };
+  if (Number.isFinite(options.confidence)) nextPage.confidence = options.confidence;
   const pages = Array.isArray(doc.meta.extractedPages) ? [...doc.meta.extractedPages] : [];
   const index = pages.findIndex((page) => Number(page.pageNumber) === Number(pageNumber));
 
@@ -2433,6 +2685,7 @@ function upsertPdfExtractedPage(doc, pageNumber, text) {
   pages.sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber));
   doc.meta.extractedPages = pages;
   doc.meta.extractedPageCount = pages.filter((page) => page.text).length;
+  doc.meta.ocrPageCount = pages.filter((page) => page.source === "ocr" && page.text).length;
   doc.meta.extractedText = normalizeExtractedPdfText(
     pages
       .filter((page) => page.text)
@@ -2477,9 +2730,22 @@ async function extractCurrentPdfPageText(doc, options = {}) {
     const pdf = await getPdfRuntimeDocument(doc);
     const page = await pdf.getPage(pageNumber);
     const textContent = await page.getTextContent();
-    const pageText = extractTextFromPdfTextContent(textContent);
+    let pageText = extractTextFromPdfTextContent(textContent);
+    let usedOcr = false;
 
-    upsertPdfExtractedPage(doc, pageNumber, pageText);
+    if (!pageText && window.mindStudy?.ai?.recognizeImageText) {
+      setParseStatus("OCR 识别当前页", "working");
+      const ocrPage = await recognizePdfPageWithOcr(page, pageNumber, {
+        textLimit: PDF_AI_PAGE_TEXT_LIMIT,
+        ocrMode: "always",
+      });
+      pageText = ocrPage.text;
+      usedOcr = Boolean(pageText);
+    }
+
+    upsertPdfExtractedPage(doc, pageNumber, pageText, {
+      source: usedOcr ? "ocr" : "text-layer",
+    });
     doc.meta.aiSourcesByPage = doc.meta.aiSourcesByPage || {};
     doc.meta.aiOutputsByPage = doc.meta.aiOutputsByPage || {};
 
@@ -2496,7 +2762,7 @@ async function extractCurrentPdfPageText(doc, options = {}) {
       updatePdfAiReadingPanel(doc);
     }
 
-    setParseStatus(pageText ? "当前页文字已提取" : "当前页无可选文字", pageText ? "ready" : "working");
+    setParseStatus(pageText ? (usedOcr ? "OCR 当前页已识别" : "当前页文字已提取") : "当前页无可识别文字", pageText ? "ready" : "working");
     return pageText;
   } catch (error) {
     doc.meta.pdfExtractError = "当前页文字提取失败，可能是扫描版或加密文档。";

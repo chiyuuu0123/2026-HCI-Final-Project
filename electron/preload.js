@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("mindStudy", {
     askQuestion: (request) => ipcRenderer.invoke("b:ai:ask-question", request),
     summarizeDocuments: (request) => ipcRenderer.invoke("b:ai:summarize-documents", request),
     extractPdfText: (payload) => ipcRenderer.invoke("b:ai:extract-pdf-text", payload),
+    recognizeImageText: (payload) => ipcRenderer.invoke("b:ai:recognize-image-text", payload),
   },
   rag: {
     askLibrary: (request) => ipcRenderer.invoke("b:rag:ask-library", request),
