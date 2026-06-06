@@ -30,6 +30,115 @@ const nodeContent = {
   原型测试: "用低成本原型验证交互流程和视觉布局，帮助尽早发现设计问题。",
 };
 
+const knowledgeTopics = [
+  { id: "人机交互", chapter: "导论", difficulty: "基础", baseMastery: 76, related: ["可用性", "用户体验", "认知负荷"], source: "Lecture 01 · HCI 概念框架" },
+  { id: "可用性", chapter: "评估", difficulty: "基础", baseMastery: 72, related: ["评估方法", "SUS 量表", "原型测试"], source: "Lecture 05 · 可用性定义" },
+  { id: "用户体验", chapter: "设计", difficulty: "中等", baseMastery: 70, related: ["用户访谈", "原型测试", "认知负荷"], source: "Lecture 03 · UX 与用户研究" },
+  { id: "评估方法", chapter: "评估", difficulty: "中等", baseMastery: 46, related: ["可用性", "SUS 量表", "用户访谈"], source: "Lecture 05 · 可用性评估方法" },
+  { id: "Fitts 定律", chapter: "交互模型", difficulty: "较难", baseMastery: 68, related: ["可用性", "认知负荷"], source: "Lecture 04 · 指向任务模型" },
+  { id: "SUS 量表", chapter: "评估", difficulty: "中等", baseMastery: 42, related: ["评估方法", "可用性"], source: "Lecture 05 · SUS 问卷" },
+  { id: "认知负荷", chapter: "认知", difficulty: "中等", baseMastery: 64, related: ["用户体验", "人机交互"], source: "Lecture 02 · 认知基础" },
+  { id: "用户访谈", chapter: "用户研究", difficulty: "中等", baseMastery: 51, related: ["用户体验", "评估方法"], source: "Lecture 03 · 用户研究方法" },
+  { id: "原型测试", chapter: "设计验证", difficulty: "基础", baseMastery: 58, related: ["可用性", "用户体验", "评估方法"], source: "Lecture 06 · 原型与测试" },
+];
+
+const quizBank = [
+  {
+    id: "q-satisfaction-choice",
+    topic: "评估方法",
+    type: "choice",
+    difficulty: "中等",
+    prompt: "下列哪一项最适合作为“满意度”的评价指标？",
+    options: ["完成任务所需的平均时间", "用户主观评分和反馈", "页面加载速度", "鼠标点击次数"],
+    answer: 1,
+    explanation: "满意度关注用户主观感受，常通过问卷、评分、访谈反馈获得。",
+  },
+  {
+    id: "q-sus-purpose",
+    topic: "SUS 量表",
+    type: "judge",
+    difficulty: "基础",
+    prompt: "SUS 量表适合在原型或系统试用后快速收集用户对可用性的主观评价。",
+    answer: true,
+    explanation: "SUS 是轻量级问卷，常用于快速比较不同版本或判断系统可用性基线。",
+  },
+  {
+    id: "q-usability-three",
+    topic: "可用性",
+    type: "short",
+    difficulty: "基础",
+    prompt: "简述可用性评估中常见的三个核心指标。",
+    keywords: ["有效", "效率", "满意"],
+    sampleAnswer: "有效性、效率和满意度。",
+    explanation: "有效性看目标是否完成，效率看完成成本，满意度看用户主观感受。",
+  },
+  {
+    id: "q-method-match",
+    topic: "评估方法",
+    type: "match",
+    difficulty: "中等",
+    prompt: "将评估方法与最适合收集的信息匹配。",
+    pairs: [
+      ["用户访谈", "需求、痛点和真实使用感受"],
+      ["可用性测试", "任务完成情况与操作问题"],
+      ["SUS 量表", "快速主观可用性评分"],
+    ],
+    explanation: "访谈偏定性洞察，可用性测试观察任务表现，SUS 快速量化主观评价。",
+  },
+  {
+    id: "q-fitts-choice",
+    topic: "Fitts 定律",
+    type: "choice",
+    difficulty: "较难",
+    prompt: "根据 Fitts 定律，哪种按钮更容易被快速点击？",
+    options: ["离鼠标远且面积小", "离鼠标近且面积大", "颜色更深但位置更远", "文字更多但面积不变"],
+    answer: 1,
+    explanation: "目标越近、越大，指向操作时间通常越短。",
+  },
+  {
+    id: "q-cognitive-load",
+    topic: "认知负荷",
+    type: "judge",
+    difficulty: "中等",
+    prompt: "界面元素越多，用户一定越容易理解系统状态。",
+    answer: false,
+    explanation: "过多元素会增加理解和选择成本，可能提高认知负荷。",
+  },
+  {
+    id: "q-interview-short",
+    topic: "用户访谈",
+    type: "short",
+    difficulty: "中等",
+    prompt: "用户访谈为什么适合发现深层需求？",
+    keywords: ["交流", "追问", "动机", "痛点", "真实"],
+    sampleAnswer: "访谈可以通过交流和追问理解用户动机、痛点与真实使用场景。",
+    explanation: "访谈不是只收集答案，更重要的是追问行为背后的原因。",
+  },
+  {
+    id: "q-prototype-choice",
+    topic: "原型测试",
+    type: "choice",
+    difficulty: "基础",
+    prompt: "在 HCI 项目早期做低保真原型测试的主要价值是什么？",
+    options: ["直接替代最终产品", "尽早以低成本发现流程和理解问题", "提高数据库性能", "生成最终报告封面"],
+    answer: 1,
+    explanation: "低保真原型能用较低成本验证交互流程，避免后期返工。",
+  },
+  {
+    id: "q-ux-match",
+    topic: "用户体验",
+    type: "match",
+    difficulty: "中等",
+    prompt: "将用户体验维度与解释匹配。",
+    pairs: [
+      ["使用前", "期待、信任和学习成本"],
+      ["使用中", "流畅度、反馈和控制感"],
+      ["使用后", "满意度、记忆点和复用意愿"],
+    ],
+    explanation: "UX 贯穿使用前、中、后，不只等同于界面美观。",
+  },
+];
+
 const title = document.querySelector("#view-title");
 const navItems = document.querySelectorAll("[data-view]");
 const panels = document.querySelectorAll("[data-view-panel]");
@@ -552,7 +661,18 @@ function createDefaultCourse() {
     description: "第 5 周资料复习中",
     documents: [],
     activeDocumentId: "",
+    studyModule: createDefaultStudyModule(),
     createdAt: Date.now(),
+  };
+}
+
+function createDefaultStudyModule() {
+  return {
+    selectedNodeId: "评估方法",
+    activeQuizTopic: "评估方法",
+    quizCursor: 0,
+    mapMode: "mastery",
+    attempts: [],
   };
 }
 
@@ -736,6 +856,7 @@ function sanitizeWorkspace(nextWorkspace) {
       activeDocumentId: documents.some((documentMeta) => documentMeta.id === course.activeDocumentId)
         ? course.activeDocumentId
         : documents[0]?.id || "",
+      studyModule: sanitizeStudyModule(course.studyModule),
     };
   });
 
@@ -747,6 +868,23 @@ function sanitizeWorkspace(nextWorkspace) {
     ...nextWorkspace,
     activeCourseId,
     courses,
+  };
+}
+
+function sanitizeStudyModule(studyModule = {}) {
+  const defaults = createDefaultStudyModule();
+  const topicIds = new Set(knowledgeTopics.map((topic) => topic.id));
+  const selectedNodeId = topicIds.has(studyModule.selectedNodeId) ? studyModule.selectedNodeId : defaults.selectedNodeId;
+  const activeQuizTopic = topicIds.has(studyModule.activeQuizTopic) ? studyModule.activeQuizTopic : selectedNodeId;
+
+  return {
+    ...defaults,
+    ...studyModule,
+    selectedNodeId,
+    activeQuizTopic,
+    mapMode: ["mastery", "chapter", "difficulty"].includes(studyModule.mapMode) ? studyModule.mapMode : defaults.mapMode,
+    quizCursor: Math.max(0, Number(studyModule.quizCursor) || 0),
+    attempts: Array.isArray(studyModule.attempts) ? studyModule.attempts : [],
   };
 }
 
@@ -2672,6 +2810,18 @@ function showView(viewName) {
   if (viewName === "planner") {
     renderPlannerView();
   }
+
+  if (viewName === "map") {
+    renderKnowledgeModule();
+  }
+
+  if (viewName === "quiz") {
+    renderQuizModule();
+  }
+
+  if (viewName === "report") {
+    renderReportModule();
+  }
 }
 
 function setParseStatus(text, tone = "ready") {
@@ -2747,6 +2897,389 @@ function updateDashboardForCourse() {
   }
 
   updateImportedFileCard(activeMeta, activeMeta ? ["已加入课程资料库", activeMeta.path ? "已保存本机路径" : "临时导入"] : []);
+}
+
+function getStudyModule(course = getActiveCourse()) {
+  course.studyModule = sanitizeStudyModule(course.studyModule);
+  return course.studyModule;
+}
+
+function getKnowledgeTopic(topicId) {
+  return knowledgeTopics.find((topic) => topic.id === topicId) || knowledgeTopics[0];
+}
+
+function clampPercent(value) {
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+function getTopicAttempts(topicId) {
+  return getStudyModule().attempts.filter((attempt) => attempt.topic === topicId);
+}
+
+function getTopicStats(topicId) {
+  const topic = getKnowledgeTopic(topicId);
+  const attempts = getTopicAttempts(topicId);
+  const correct = attempts.filter((attempt) => attempt.correct).length;
+  const wrong = attempts.length - correct;
+  const mastery = clampPercent(topic.baseMastery + correct * 8 - wrong * 6 + Math.min(attempts.length, 5) * 3);
+
+  return {
+    total: attempts.length,
+    correct,
+    wrong,
+    accuracy: attempts.length ? Math.round((correct / attempts.length) * 100) : null,
+    mastery,
+  };
+}
+
+function getTopicQuestions(topicId) {
+  const topic = getKnowledgeTopic(topicId);
+  const directQuestions = quizBank.filter((question) => question.topic === topic.id);
+  const relatedQuestions = quizBank.filter((question) => topic.related.includes(question.topic));
+  const fallbackQuestions = quizBank.filter((question) => question.topic !== topic.id && !topic.related.includes(question.topic));
+  return [...directQuestions, ...relatedQuestions, ...fallbackQuestions].slice(0, 6);
+}
+
+function getQuizTypeLabel(type) {
+  return {
+    choice: "选择题",
+    judge: "判断题",
+    short: "简答题",
+    match: "概念匹配",
+  }[type] || "自动题";
+}
+
+function getReportStats() {
+  const attempts = getStudyModule().attempts;
+  const correct = attempts.filter((attempt) => attempt.correct).length;
+  const wrong = attempts.length - correct;
+  const accuracy = attempts.length ? Math.round((correct / attempts.length) * 100) : 84;
+  const weakTopics = knowledgeTopics
+    .map((topic) => ({ ...topic, stats: getTopicStats(topic.id) }))
+    .sort((a, b) => a.stats.mastery - b.stats.mastery);
+
+  return {
+    attempts,
+    correct,
+    wrong,
+    accuracy,
+    studyHours: (6.8 + attempts.length * 0.08).toFixed(1),
+    weakTopics,
+  };
+}
+
+function renderKnowledgeModule() {
+  const studyModule = getStudyModule();
+  const selectedTopic = getKnowledgeTopic(studyModule.selectedNodeId);
+  const selectedStats = getTopicStats(selectedTopic.id);
+  const mapMode = studyModule.mapMode || "mastery";
+
+  document.querySelectorAll("[data-map-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.mapMode === mapMode);
+  });
+
+  document.querySelectorAll(".knowledge-map .node").forEach((node) => {
+    const topic = getKnowledgeTopic(node.dataset.node);
+    const stats = getTopicStats(topic.id);
+    const tag = mapMode === "chapter" ? topic.chapter : mapMode === "difficulty" ? topic.difficulty : `${stats.mastery}%`;
+
+    node.classList.toggle("weak", stats.mastery < 60);
+    node.classList.toggle("selected", topic.id === selectedTopic.id);
+    node.innerHTML = `${escapeHtml(topic.id)}<small>${escapeHtml(tag)}</small>`;
+    node.title = `${topic.id} · 掌握度 ${stats.mastery}%`;
+  });
+
+  const nodeTitle = document.querySelector("#node-title");
+  const nodeDesc = document.querySelector("#node-desc");
+  const nodeMeta = document.querySelector("#node-meta");
+  const nodeRelated = document.querySelector("#node-related");
+  const mastery = document.querySelector(".mastery-bar span");
+
+  if (nodeTitle) nodeTitle.textContent = selectedTopic.id;
+  if (nodeDesc) nodeDesc.textContent = nodeContent[selectedTopic.id] || selectedTopic.source;
+  if (nodeMeta) {
+    nodeMeta.innerHTML = `
+      <span>掌握度 ${selectedStats.mastery}%</span>
+      <span>${escapeHtml(selectedTopic.chapter)}</span>
+      <span>${escapeHtml(selectedTopic.difficulty)}</span>
+      <span>${selectedStats.total ? `已答 ${selectedStats.total} 题` : "待练习"}</span>
+    `;
+  }
+  if (nodeRelated) {
+    nodeRelated.innerHTML = selectedTopic.related
+      .map((relatedTopic) => `<button class="mini-button" data-map-related="${escapeHtml(relatedTopic)}">${escapeHtml(relatedTopic)}</button>`)
+      .join("");
+  }
+  if (mastery) {
+    mastery.style.width = `${selectedStats.mastery}%`;
+    mastery.style.background = selectedStats.mastery < 60 ? "var(--coral)" : "var(--teal)";
+  }
+}
+
+function selectKnowledgeNode(topicId) {
+  const studyModule = getStudyModule();
+  studyModule.selectedNodeId = getKnowledgeTopic(topicId).id;
+  saveWorkspace();
+  renderKnowledgeModule();
+}
+
+function showKnowledgeSource() {
+  const studyModule = getStudyModule();
+  const topic = getKnowledgeTopic(studyModule.selectedNodeId);
+  const nodeDesc = document.querySelector("#node-desc");
+  if (nodeDesc) {
+    nodeDesc.textContent = `${nodeContent[topic.id]} 资料来源：${topic.source}。建议先回到资料阅读页定位对应章节，再完成一组相关测验。`;
+  }
+}
+
+function renderQuizModule() {
+  const studyModule = getStudyModule();
+  const questions = getTopicQuestions(studyModule.activeQuizTopic);
+  const currentIndex = questions.length ? studyModule.quizCursor % questions.length : 0;
+  const question = questions[currentIndex];
+
+  if (!question) return;
+
+  studyModule.quizCursor = currentIndex;
+  const topicStats = getTopicStats(studyModule.activeQuizTopic);
+  const titleNode = document.querySelector("#quiz-title");
+  const difficultyNode = document.querySelector("#quiz-difficulty");
+  const questionNode = document.querySelector("#quiz-question");
+  const answerList = document.querySelector("#quiz-answer-list");
+  const feedback = document.querySelector("#answer-feedback");
+
+  if (titleNode) titleNode.textContent = `${studyModule.activeQuizTopic} · 第 ${currentIndex + 1} 题`;
+  if (difficultyNode) difficultyNode.textContent = `${getQuizTypeLabel(question.type)} · ${question.difficulty}`;
+  if (questionNode) questionNode.textContent = question.prompt;
+  if (feedback) {
+    feedback.textContent = "选择或提交答案后显示解析。";
+    feedback.className = "answer-feedback";
+  }
+
+  if (answerList) {
+    if (question.type === "choice") {
+      answerList.innerHTML = question.options
+        .map((option, index) => `<button class="answer-option" data-quiz-answer="${index}">${String.fromCharCode(65 + index)}. ${escapeHtml(option)}</button>`)
+        .join("");
+    } else if (question.type === "judge") {
+      answerList.innerHTML = `
+        <button class="answer-option" data-quiz-answer="true">正确</button>
+        <button class="answer-option" data-quiz-answer="false">错误</button>
+      `;
+    } else if (question.type === "short") {
+      answerList.innerHTML = `
+        <textarea class="quiz-short-answer" id="quiz-short-answer" rows="5" placeholder="写下关键词或一句完整解释"></textarea>
+        <button class="primary-action" data-quiz-action="submit-short">提交简答</button>
+        <div class="quiz-sample-answer">参考要点：${escapeHtml(question.sampleAnswer)}</div>
+      `;
+    } else if (question.type === "match") {
+      const choices = question.pairs.map((pair) => pair[1]).sort((a, b) => a.localeCompare(b, "zh-CN"));
+      answerList.innerHTML = question.pairs
+        .map(
+          (pair, index) => `
+            <label class="match-row">
+              <strong>${escapeHtml(pair[0])}</strong>
+              <select data-match-index="${index}">
+                <option value="">选择匹配解释</option>
+                ${choices.map((choice) => `<option value="${escapeHtml(choice)}">${escapeHtml(choice)}</option>`).join("")}
+              </select>
+            </label>
+          `,
+        )
+        .join("") + `<button class="primary-action" data-quiz-action="submit-match">提交匹配</button>`;
+    }
+  }
+
+  renderQuizSidebar(questions, topicStats);
+  window.lucide?.createIcons();
+}
+
+function renderQuizSidebar(questions = getTopicQuestions(getStudyModule().activeQuizTopic), topicStats = getTopicStats(getStudyModule().activeQuizTopic)) {
+  const studyModule = getStudyModule();
+  const scoreValue = document.querySelector("#quiz-score-value");
+  const scoreLabel = document.querySelector("#quiz-score-label");
+  const topicList = document.querySelector("#quiz-topic-list");
+  const answeredQuestionIds = new Set(getTopicAttempts(studyModule.activeQuizTopic).map((attempt) => attempt.questionId));
+
+  if (scoreValue) scoreValue.textContent = `${answeredQuestionIds.size} / ${questions.length}`;
+  if (scoreLabel) {
+    scoreLabel.textContent = topicStats.total
+      ? `正确率 ${topicStats.accuracy}% · 掌握度 ${topicStats.mastery}%`
+      : "等待首次作答";
+  }
+  if (topicList) {
+    topicList.innerHTML = knowledgeTopics
+      .map((topic) => {
+        const stats = getTopicStats(topic.id);
+        const className = [
+          topic.id === studyModule.activeQuizTopic ? "current" : "",
+          stats.mastery >= 75 ? "done" : "",
+          stats.mastery < 60 ? "weak-topic" : "",
+        ].filter(Boolean).join(" ");
+        return `<button class="${className}" data-report-review-topic="${escapeHtml(topic.id)}">${escapeHtml(topic.id)} ${stats.mastery}%</button>`;
+      })
+      .join("");
+  }
+}
+
+function getCurrentQuizQuestion() {
+  const studyModule = getStudyModule();
+  const questions = getTopicQuestions(studyModule.activeQuizTopic);
+  return questions[studyModule.quizCursor % questions.length];
+}
+
+function recordQuizAnswer(selectedAnswer, correct) {
+  const studyModule = getStudyModule();
+  const question = getCurrentQuizQuestion();
+  studyModule.attempts.push({
+    id: createId("attempt"),
+    questionId: question.id,
+    topic: question.topic,
+    type: question.type,
+    question: question.prompt,
+    selectedAnswer,
+    correct,
+    explanation: question.explanation,
+    answeredAt: Date.now(),
+  });
+  saveWorkspace();
+}
+
+function showQuizFeedback(correct, explanation) {
+  const feedback = document.querySelector("#answer-feedback");
+  if (!feedback) return;
+
+  feedback.textContent = `${correct ? "回答正确。" : "这次答错了。"}${explanation}`;
+  feedback.className = `answer-feedback ${correct ? "correct" : "wrong"}`;
+}
+
+function submitObjectiveQuizAnswer(answerButton) {
+  const question = getCurrentQuizQuestion();
+  const selectedValue = answerButton.dataset.quizAnswer;
+  const correct = question.type === "choice"
+    ? Number(selectedValue) === question.answer
+    : (selectedValue === "true") === question.answer;
+
+  document.querySelectorAll(".answer-option").forEach((button) => {
+    button.classList.remove("selected", "correct", "wrong");
+    if (button === answerButton) button.classList.add("selected", correct ? "correct" : "wrong");
+  });
+
+  recordQuizAnswer(selectedValue, correct);
+  showQuizFeedback(correct, question.explanation);
+  renderQuizSidebar();
+  renderKnowledgeModule();
+}
+
+function submitShortQuizAnswer() {
+  const question = getCurrentQuizQuestion();
+  const answer = document.querySelector("#quiz-short-answer")?.value.trim() || "";
+  const normalizedAnswer = answer.toLowerCase();
+  const hitCount = (question.keywords || []).filter((keyword) => normalizedAnswer.includes(keyword.toLowerCase())).length;
+  const correct = hitCount >= Math.min(2, question.keywords.length);
+
+  recordQuizAnswer(answer || "未填写", correct);
+  showQuizFeedback(correct, `${question.explanation} 参考答案：${question.sampleAnswer}`);
+  renderQuizSidebar();
+  renderKnowledgeModule();
+}
+
+function submitMatchQuizAnswer() {
+  const question = getCurrentQuizQuestion();
+  const selects = Array.from(document.querySelectorAll("[data-match-index]"));
+  const correct = selects.every((select) => question.pairs[Number(select.dataset.matchIndex)]?.[1] === select.value);
+  const selectedAnswer = selects.map((select) => `${question.pairs[Number(select.dataset.matchIndex)]?.[0]} -> ${select.value || "未选择"}`).join("; ");
+
+  recordQuizAnswer(selectedAnswer, correct);
+  showQuizFeedback(correct, question.explanation);
+  renderQuizSidebar();
+  renderKnowledgeModule();
+}
+
+function generateQuizForTopic(topicId) {
+  const studyModule = getStudyModule();
+  const topic = getKnowledgeTopic(topicId);
+  studyModule.activeQuizTopic = topic.id;
+  studyModule.selectedNodeId = topic.id;
+  studyModule.quizCursor = 0;
+  saveWorkspace();
+  renderKnowledgeModule();
+  renderQuizModule();
+  showView("quiz");
+}
+
+function moveQuizCursor(step = 1) {
+  const studyModule = getStudyModule();
+  const questions = getTopicQuestions(studyModule.activeQuizTopic);
+  studyModule.quizCursor = (studyModule.quizCursor + step + questions.length) % questions.length;
+  saveWorkspace();
+  renderQuizModule();
+}
+
+function renderReportModule() {
+  const stats = getReportStats();
+  const weakest = stats.weakTopics[0];
+  const reportTitle = document.querySelector("#report-title");
+  const studyTime = document.querySelector("#report-study-time");
+  const accuracy = document.querySelector("#report-accuracy");
+  const mistakes = document.querySelector("#report-mistakes");
+  const trendChart = document.querySelector("#report-trend-chart");
+  const reviewPanel = document.querySelector("#report-review-panel");
+
+  if (reportTitle) {
+    reportTitle.textContent = stats.attempts.length
+      ? `已完成 ${stats.attempts.length} 次练习，建议优先补强${weakest.id}。`
+      : "还没有新的答题记录，建议先从评估方法生成一组测验。";
+  }
+  if (studyTime) studyTime.textContent = `${stats.studyHours}h`;
+  if (accuracy) accuracy.textContent = `${stats.accuracy}%`;
+  if (mistakes) mistakes.textContent = String(stats.wrong);
+
+  if (trendChart) {
+    const now = new Date();
+    const dayValues = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(now);
+      day.setDate(now.getDate() - (6 - index));
+      const key = day.toISOString().slice(0, 10);
+      return stats.attempts.filter((attempt) => new Date(attempt.answeredAt).toISOString().slice(0, 10) === key).length;
+    });
+    const maxValue = Math.max(3, ...dayValues);
+    trendChart.innerHTML = dayValues
+      .map((value) => `<span style="--h: ${Math.max(18, Math.round((value / maxValue) * 100))}%" title="${value} 次练习"></span>`)
+      .join("");
+  }
+
+  if (reviewPanel) {
+    const wrongAttempts = stats.attempts.filter((attempt) => !attempt.correct).slice(-4).reverse();
+    reviewPanel.innerHTML = `
+      <span class="tag muted">推荐复习</span>
+      ${stats.weakTopics
+        .slice(0, 4)
+        .map(
+          (topic) => `
+            <button class="review-row" data-report-review-topic="${escapeHtml(topic.id)}">
+              <strong>${escapeHtml(topic.id)}</strong>
+              <span>掌握度 ${topic.stats.mastery}%</span>
+            </button>
+          `,
+        )
+        .join("")}
+      <div class="mistake-list">
+        <strong>错题记录</strong>
+        ${
+          wrongAttempts.length
+            ? wrongAttempts.map((attempt) => `<p>${escapeHtml(attempt.question)}<span>${escapeHtml(attempt.explanation)}</span></p>`).join("")
+            : "<p>暂无新增错题<span>完成一组测验后这里会记录薄弱题目。</span></p>"
+        }
+      </div>
+    `;
+  }
+}
+
+function renderStudyModuleViews() {
+  renderKnowledgeModule();
+  renderQuizModule();
+  renderReportModule();
 }
 
 function getPlannerStatusMeta(status) {
@@ -4918,6 +5451,7 @@ function submitCourseForm(event) {
     description,
     documents: [],
     activeDocumentId: "",
+    studyModule: createDefaultStudyModule(),
     createdAt: Date.now(),
   };
 
@@ -5025,6 +5559,7 @@ function renderAllCourseViews() {
   renderCourseSwitcher();
   renderDocumentLibrary();
   updateDashboardForCourse();
+  renderStudyModuleViews();
   renderPlannerView();
 }
 
@@ -5073,34 +5608,8 @@ document.querySelectorAll(".prompt-chip").forEach((chip) => {
 
 document.querySelectorAll(".node").forEach((node) => {
   node.addEventListener("click", () => {
-    const nodeName = node.dataset.node;
-    const nodeTitle = document.querySelector("#node-title");
-    const nodeDesc = document.querySelector("#node-desc");
-    const mastery = document.querySelector(".mastery-bar span");
-
-    if (!nodeTitle || !nodeDesc || !mastery) {
-      showView("map");
-      return;
-    }
-
-    nodeTitle.textContent = nodeName;
-    nodeDesc.textContent = nodeContent[nodeName] || "该知识点已加入当前课程结构，可继续生成解释、例题和复习题。";
-    mastery.style.width = node.classList.contains("weak") ? "46%" : "78%";
+    selectKnowledgeNode(node.dataset.node);
     showView("map");
-  });
-});
-
-document.querySelectorAll(".answer-option").forEach((option) => {
-  option.addEventListener("click", () => {
-    document.querySelectorAll(".answer-option").forEach((item) => item.classList.remove("selected"));
-    option.classList.add("selected");
-    const feedback = document.querySelector("#answer-feedback");
-    const isCorrect = option.textContent.includes("用户主观评分");
-    feedback.textContent = isCorrect
-      ? "回答正确。满意度更偏向用户主观评价，常通过问卷、评分和访谈反馈获得。"
-      : "这个选项更接近效率或性能指标。满意度通常来自用户主观评分和反馈。";
-    feedback.style.background = isCorrect ? "var(--teal-soft)" : "var(--coral-soft)";
-    feedback.style.color = isCorrect ? "var(--teal)" : "var(--coral)";
   });
 });
 
@@ -5240,7 +5749,50 @@ document.addEventListener("click", (event) => {
   const plannerEventDeleteButton = event.target.closest("[data-planner-event-delete]");
   const longlongToggleButton = event.target.closest("[data-longlong-toggle]");
   const longlongActionButton = event.target.closest("[data-longlong-action]");
+  const mapModeButton = event.target.closest("[data-map-mode]");
+  const mapRelatedButton = event.target.closest("[data-map-related]");
+  const mapActionButton = event.target.closest("[data-map-action]");
+  const quizAnswerButton = event.target.closest("[data-quiz-answer]");
+  const quizActionButton = event.target.closest("[data-quiz-action]");
+  const reportReviewButton = event.target.closest("[data-report-review-topic]");
   const actionButton = event.target.closest("button");
+
+  if (quizAnswerButton) {
+    submitObjectiveQuizAnswer(quizAnswerButton);
+    return;
+  }
+
+  if (quizActionButton) {
+    const action = quizActionButton.dataset.quizAction;
+    if (action === "generate-current") generateQuizForTopic(getStudyModule().selectedNodeId);
+    if (action === "next") moveQuizCursor(1);
+    if (action === "reset") generateQuizForTopic(getStudyModule().selectedNodeId);
+    if (action === "submit-short") submitShortQuizAnswer();
+    if (action === "submit-match") submitMatchQuizAnswer();
+    return;
+  }
+
+  if (mapModeButton) {
+    getStudyModule().mapMode = mapModeButton.dataset.mapMode;
+    saveWorkspace();
+    renderKnowledgeModule();
+    return;
+  }
+
+  if (mapRelatedButton) {
+    selectKnowledgeNode(mapRelatedButton.dataset.mapRelated);
+    return;
+  }
+
+  if (mapActionButton?.dataset.mapAction === "show-source") {
+    showKnowledgeSource();
+    return;
+  }
+
+  if (reportReviewButton) {
+    generateQuizForTopic(reportReviewButton.dataset.reportReviewTopic);
+    return;
+  }
 
   if (longlongToggleButton) {
     if (longlongDragState.suppressToggle) return;
