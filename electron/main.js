@@ -126,6 +126,165 @@ function getPdfExtractionOptions(payload) {
   };
 }
 
+function collectWebSearchResults(data, maxResults) {
+  const results = [];
+
+  function addResult(title, snippet, url) {
+    const nextSnippet = String(snippet || "").trim();
+    const nextTitle = String(title || "").trim() || nextSnippet.slice(0, 80);
+    const nextUrl = String(url || "").trim();
+
+    if (!nextSnippet || results.length >= maxResults) return;
+    if (results.some((result) => result.snippet === nextSnippet || (nextUrl && result.url === nextUrl))) return;
+
+    results.push({
+      title: nextTitle,
+      snippet: nextSnippet,
+      url: nextUrl,
+    });
+  }
+
+  addResult(data?.Heading, data?.AbstractText, data?.AbstractURL);
+
+  function visitTopics(topics) {
+    for (const topic of topics || []) {
+      if (results.length >= maxResults) return;
+
+      if (Array.isArray(topic.Topics)) {
+        visitTopics(topic.Topics);
+        continue;
+      }
+
+      addResult(topic.Text, topic.Text, topic.FirstURL);
+    }
+  }
+
+  visitTopics(data?.RelatedTopics);
+  return results;
+}
+
+async function searchWebKnowledge(request = {}) {
+  const query = String(request.query || "").trim();
+
+  if (!query) {
+    throw new Error("Web search requires a non-empty query.");
+  }
+
+  if (typeof fetch !== "function") {
+    throw new Error("Global fetch is not available for web search.");
+  }
+
+  const maxResults = Math.min(8, Math.max(1, Number(request.maxResults) || 5));
+  const timeoutMs = Math.min(15000, Math.max(1500, Number(request.timeoutMs) || 8000));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const params = new URLSearchParams({
+    q: query,
+    format: "json",
+    no_html: "1",
+    skip_disambig: "1",
+  });
+
+  try {
+    const response = await fetch(`https://api.duckduckgo.com/?${params.toString()}`, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(`Web search failed with status ${response.status}.`);
+    }
+
+    return {
+      query,
+      provider: "duckduckgo-instant-answer",
+      results: collectWebSearchResults(data, maxResults),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function buildWebSearchDocuments(webSearch) {
+  return (webSearch?.results || []).map((result, index) => ({
+    id: `web-${index + 1}`,
+    title: result.title || `Web result ${index + 1}`,
+    text: [result.snippet, result.url ? `URL: ${result.url}` : ""].filter(Boolean).join("\n"),
+    mimeType: "text/plain",
+    extension: "TXT",
+    sourceType: "web",
+  }));
+}
+
+async function answerRagLibrary(request = {}) {
+  const question = String(request.question || "").trim();
+  const documents = Array.isArray(request.documents) ? request.documents : [];
+  const options = request && typeof request.options === "object" ? request.options : {};
+
+  if (!question) {
+    throw new Error("RAG library question cannot be empty.");
+  }
+
+  let webSearch = null;
+  if (request.includeWeb) {
+    try {
+      webSearch = await searchWebKnowledge({
+        query: question,
+        maxResults: options.webResults || 4,
+      });
+    } catch (error) {
+      webSearch = {
+        query: question,
+        provider: "duckduckgo-instant-answer",
+        error: error.message || String(error),
+        results: [],
+      };
+    }
+  }
+
+  const allDocuments = [
+    ...documents.map((documentMeta, index) => ({
+      id: documentMeta.id || `knowledge-${index + 1}`,
+      title: documentMeta.title || documentMeta.name || `Knowledge ${index + 1}`,
+      text: documentMeta.text || documentMeta.content || "",
+      mimeType: documentMeta.mimeType || "text/plain",
+      extension: documentMeta.extension || "TXT",
+      sourceType: documentMeta.sourceType || "knowledge",
+    })),
+    ...buildWebSearchDocuments(webSearch),
+  ].filter((documentMeta) => String(documentMeta.text || "").trim());
+
+  if (!allDocuments.length) {
+    throw new Error("RAG library has no learned knowledge or web results to search.");
+  }
+
+  const answer = await createCurrentStudyAiService().askCourseQuestion({
+    question: [
+      question,
+      "",
+      "Answer primarily from the learned local knowledge base.",
+      "Use web search results only as secondary support, and explicitly say when web search is insufficient.",
+    ].join("\n"),
+    documents: allDocuments,
+    options: {
+      chunkSize: options.chunkSize,
+      maxChunks: options.maxChunks,
+      maxContextChars: options.maxContextChars,
+      maxTokens: options.maxTokens || 1100,
+      temperature: options.temperature ?? 0.2,
+    },
+  });
+
+  return {
+    ...answer,
+    webSearch,
+    learnedDocumentCount: documents.length,
+  };
+}
+
 function getMimeType(extension) {
   const normalized = extension.toLowerCase();
 
@@ -513,6 +672,7 @@ ipcMain.handle("b:ai:extract-pdf-text", async (event, payload) => {
 ipcMain.handle("b:rag:ask-library", async (event, request) => {
   const question = String(request?.question || "").trim();
   const documents = Array.isArray(request?.documents) ? request.documents : [];
+  return answerRagLibrary(request);
   const textChunks = documents.filter((documentMeta) => String(documentMeta.text || "").trim()).length;
 
   return {

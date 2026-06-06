@@ -11,6 +11,7 @@ const LONGLONG_REMINDER_LIMIT = 3;
 const viewTitles = {
   dashboard: "学习工作台",
   reader: "资料阅读",
+  rag: "RAG 知识问答",
   planner: "TodoList",
   map: "知识图谱",
   quiz: "自动测验",
@@ -158,6 +159,13 @@ const PDF_PAGE_TEXT_LIMIT = 8000;
 const PDF_AI_PAGE_TEXT_LIMIT = 5000;
 const AI_CONTEXT_TEXT_LIMIT = 12000;
 const AI_READING_TEXT_LIMIT = 8000;
+const RAG_KNOWLEDGE_TEXT_LIMIT = 60000;
+const RAG_DEFAULT_CHUNK_SIZE = 1400;
+const RAG_DEFAULT_MAX_CHUNKS = 6;
+const RAG_MIN_CHUNK_SIZE = 500;
+const RAG_MAX_CHUNK_SIZE = 4000;
+const RAG_MIN_MAX_CHUNKS = 2;
+const RAG_MAX_MAX_CHUNKS = 12;
 const cameraState = {
   stream: null,
   sampleTimer: null,
@@ -662,7 +670,21 @@ function createDefaultCourse() {
     documents: [],
     activeDocumentId: "",
     studyModule: createDefaultStudyModule(),
+    ragKnowledge: createDefaultRagKnowledge(),
     createdAt: Date.now(),
+  };
+}
+
+function createDefaultRagKnowledge() {
+  return {
+    documents: [],
+    messages: [],
+    settings: {
+      chunkSize: RAG_DEFAULT_CHUNK_SIZE,
+      maxChunks: RAG_DEFAULT_MAX_CHUNKS,
+      includeWeb: true,
+    },
+    updatedAt: 0,
   };
 }
 
@@ -857,6 +879,7 @@ function sanitizeWorkspace(nextWorkspace) {
         ? course.activeDocumentId
         : documents[0]?.id || "",
       studyModule: sanitizeStudyModule(course.studyModule),
+      ragKnowledge: sanitizeRagKnowledge(course.ragKnowledge),
     };
   });
 
@@ -868,6 +891,71 @@ function sanitizeWorkspace(nextWorkspace) {
     ...nextWorkspace,
     activeCourseId,
     courses,
+  };
+}
+
+function normalizeRagNumber(value, fallback, min, max) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(numericValue)));
+}
+
+function sanitizeRagKnowledge(ragKnowledge = {}) {
+  const defaults = createDefaultRagKnowledge();
+  const settings = {
+    chunkSize: normalizeRagNumber(
+      ragKnowledge.settings?.chunkSize,
+      defaults.settings.chunkSize,
+      RAG_MIN_CHUNK_SIZE,
+      RAG_MAX_CHUNK_SIZE,
+    ),
+    maxChunks: normalizeRagNumber(
+      ragKnowledge.settings?.maxChunks,
+      defaults.settings.maxChunks,
+      RAG_MIN_MAX_CHUNKS,
+      RAG_MAX_MAX_CHUNKS,
+    ),
+    includeWeb: ragKnowledge.settings?.includeWeb !== false,
+  };
+
+  const documents = (ragKnowledge.documents || [])
+    .map((documentMeta, index) => {
+      const text = normalizeExtractedPdfText(documentMeta.text || "").slice(0, RAG_KNOWLEDGE_TEXT_LIMIT);
+      if (!text) return null;
+
+      return {
+        id: documentMeta.id || createId("ragdoc"),
+        title: documentMeta.title || documentMeta.name || `Knowledge ${index + 1}`,
+        extension: documentMeta.extension || "TXT",
+        size: Number(documentMeta.size) || 0,
+        text,
+        textLength: text.length,
+        chunkSize: normalizeRagNumber(documentMeta.chunkSize, settings.chunkSize, RAG_MIN_CHUNK_SIZE, RAG_MAX_CHUNK_SIZE),
+        chunkCount: Math.max(1, Number(documentMeta.chunkCount) || splitRagText(text, settings.chunkSize).length),
+        learnedAt: Number(documentMeta.learnedAt) || Date.now(),
+        sourceType: documentMeta.sourceType || "course",
+      };
+    })
+    .filter(Boolean);
+
+  const messages = (ragKnowledge.messages || [])
+    .filter((message) => message && ["user", "assistant", "system"].includes(message.role))
+    .slice(-12)
+    .map((message) => ({
+      role: message.role,
+      text: String(message.text || "").slice(0, 4000),
+      createdAt: Number(message.createdAt) || Date.now(),
+      sources: Array.isArray(message.sources) ? message.sources.slice(0, 8) : [],
+      webSearch: message.webSearch || null,
+    }));
+
+  return {
+    ...defaults,
+    ...ragKnowledge,
+    documents,
+    messages,
+    settings,
+    updatedAt: Number(ragKnowledge.updatedAt) || 0,
   };
 }
 
@@ -1326,6 +1414,542 @@ async function buildActiveAiDocuments(sourceOverride = "") {
   }
 
   return [aiDocument];
+}
+
+function getRagKnowledge(course = getActiveCourse()) {
+  course.ragKnowledge = sanitizeRagKnowledge(course.ragKnowledge);
+  return course.ragKnowledge;
+}
+
+function splitRagText(text, chunkSize = RAG_DEFAULT_CHUNK_SIZE) {
+  const normalized = normalizeExtractedPdfText(text);
+  const size = normalizeRagNumber(chunkSize, RAG_DEFAULT_CHUNK_SIZE, RAG_MIN_CHUNK_SIZE, RAG_MAX_CHUNK_SIZE);
+
+  if (!normalized) return [];
+
+  const chunks = [];
+  const paragraphs = normalized.split(/\n\s*\n/);
+  let current = "";
+
+  for (const paragraph of paragraphs) {
+    const candidate = current ? `${current}\n\n${paragraph}` : paragraph;
+
+    if (candidate.length <= size) {
+      current = candidate;
+      continue;
+    }
+
+    if (current) {
+      chunks.push(current);
+      current = "";
+    }
+
+    if (paragraph.length <= size) {
+      current = paragraph;
+      continue;
+    }
+
+    for (let index = 0; index < paragraph.length; index += size) {
+      chunks.push(paragraph.slice(index, index + size));
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function getAiReadingChunkSettings() {
+  const doc = documentState.current;
+  const chunkInput = document.querySelector("#ai-reading-chunk-size");
+  const maxChunksInput = document.querySelector("#ai-reading-max-chunks");
+  const chunkSize = normalizeRagNumber(
+    chunkInput?.value || doc?.meta?.aiChunkSize,
+    RAG_DEFAULT_CHUNK_SIZE,
+    RAG_MIN_CHUNK_SIZE,
+    RAG_MAX_CHUNK_SIZE,
+  );
+  const maxChunks = normalizeRagNumber(
+    maxChunksInput?.value || doc?.meta?.aiMaxChunks,
+    RAG_DEFAULT_MAX_CHUNKS,
+    RAG_MIN_MAX_CHUNKS,
+    RAG_MAX_MAX_CHUNKS,
+  );
+
+  return {
+    chunkSize,
+    maxChunks,
+    maxContextChars: Math.min(AI_READING_TEXT_LIMIT, chunkSize * maxChunks),
+  };
+}
+
+function rememberAiChunkSettings() {
+  const doc = documentState.current;
+  if (!doc) return;
+  const settings = getAiReadingChunkSettings();
+  doc.meta.aiChunkSize = settings.chunkSize;
+  doc.meta.aiMaxChunks = settings.maxChunks;
+  saveWorkspace();
+}
+
+function getPdfRangeFromInputs(prefix, pageCount) {
+  const startInput = document.querySelector(`#${prefix}-pdf-start-page`);
+  const endInput = document.querySelector(`#${prefix}-pdf-end-page`);
+  let startPage = Math.min(pageCount, Math.max(1, Number(startInput?.value) || 1));
+  let endPage = Math.min(pageCount, Math.max(1, Number(endInput?.value) || startPage));
+
+  if (endPage < startPage) {
+    [startPage, endPage] = [endPage, startPage];
+  }
+
+  if (startInput) startInput.value = String(startPage);
+  if (endInput) endInput.value = String(endPage);
+
+  return {
+    startPage,
+    endPage,
+  };
+}
+
+async function getActivePdfSource() {
+  const meta = getActiveDocumentMeta();
+
+  if (!meta || String(meta.extension || "").toUpperCase() !== "PDF") {
+    throw new Error("请先选择一个 PDF 文件。");
+  }
+
+  if (documentState.current?.meta?.id === meta.id && documentState.current.kind === "pdf") {
+    return {
+      meta,
+      bytes: documentState.current.bytes,
+      pageCount: Math.max(1, documentState.current.pageCount || meta.pageCount || 1),
+    };
+  }
+
+  const file = await readStoredFile(meta);
+  const bytes = base64ToUint8Array(file.base64 || "");
+  let pageCount = Math.max(1, meta.pageCount || 1);
+
+  if (window.PDFLib) {
+    try {
+      const { PDFDocument } = window.PDFLib;
+      const pdfDoc = await PDFDocument.load(bytes);
+      pageCount = Math.max(1, pdfDoc.getPageCount());
+      meta.pageCount = pageCount;
+      saveWorkspace();
+    } catch (error) {
+      pageCount = Math.max(1, meta.pageCount || 1);
+    }
+  }
+
+  return {
+    meta,
+    bytes,
+    pageCount,
+  };
+}
+
+async function createPdfRangeBytes(bytes, startPage, endPage) {
+  if (!window.PDFLib) {
+    throw new Error("PDF 编辑库尚未加载，请重新运行 npm install。");
+  }
+
+  const { PDFDocument } = window.PDFLib;
+  const sourcePdf = await PDFDocument.load(bytes);
+  const pageCount = sourcePdf.getPageCount();
+  const safeStart = Math.min(pageCount, Math.max(1, Number(startPage) || 1));
+  const safeEnd = Math.min(pageCount, Math.max(safeStart, Number(endPage) || safeStart));
+  const targetPdf = await PDFDocument.create();
+  const pageIndexes = [];
+
+  for (let pageIndex = safeStart - 1; pageIndex <= safeEnd - 1; pageIndex += 1) {
+    pageIndexes.push(pageIndex);
+  }
+
+  const copiedPages = await targetPdf.copyPages(sourcePdf, pageIndexes);
+  copiedPages.forEach((page) => targetPdf.addPage(page));
+
+  return {
+    bytes: await targetPdf.save(),
+    startPage: safeStart,
+    endPage: safeEnd,
+    pageCount: copiedPages.length,
+    originalPageCount: pageCount,
+  };
+}
+
+async function exportActivePdfRange(prefix = "ai") {
+  try {
+    const source = await getActivePdfSource();
+    const range = getPdfRangeFromInputs(prefix, source.pageCount);
+    const subPdf = await createPdfRangeBytes(source.bytes, range.startPage, range.endPage);
+    const baseName = source.meta.name.replace(/\.pdf$/i, "");
+
+    await saveBinaryFile(`${baseName}-p${subPdf.startPage}-${subPdf.endPage}.pdf`, subPdf.bytes, [
+      { name: "PDF", extensions: ["pdf"] },
+    ]);
+
+    if (prefix === "ai") {
+      const doc = documentState.current;
+      if (doc?.kind === "pdf") {
+        doc.meta.pdfRangeStart = subPdf.startPage;
+        doc.meta.pdfRangeEnd = subPdf.endPage;
+        saveWorkspace();
+      }
+    }
+  } catch (error) {
+    if (prefix === "rag") {
+      setRagStatus(getAiErrorMessage(error), "warning");
+    } else {
+      const output = document.querySelector("#ai-reading-output");
+      if (output) output.textContent = getAiErrorMessage(error);
+    }
+  }
+}
+
+function getRagSettingsFromInputs() {
+  const knowledge = getRagKnowledge();
+  const chunkSize = normalizeRagNumber(knowledge.settings.chunkSize, RAG_DEFAULT_CHUNK_SIZE, RAG_MIN_CHUNK_SIZE, RAG_MAX_CHUNK_SIZE);
+  const maxChunks = normalizeRagNumber(knowledge.settings.maxChunks, RAG_DEFAULT_MAX_CHUNKS, RAG_MIN_MAX_CHUNKS, RAG_MAX_MAX_CHUNKS);
+
+  return {
+    chunkSize,
+    maxChunks,
+    includeWeb: document.querySelector("#rag-include-web")?.checked ?? knowledge.settings.includeWeb,
+    maxContextChars: Math.min(18000, chunkSize * maxChunks),
+  };
+}
+
+function rememberRagSettings() {
+  const knowledge = getRagKnowledge();
+  knowledge.settings = getRagSettingsFromInputs();
+  knowledge.documents = knowledge.documents.map((documentMeta) => ({
+    ...documentMeta,
+    chunkSize: knowledge.settings.chunkSize,
+    chunkCount: splitRagText(documentMeta.text, knowledge.settings.chunkSize).length,
+  }));
+  knowledge.updatedAt = Date.now();
+  saveWorkspace();
+  renderRagAssistant();
+}
+
+function setRagStatus(text, tone = "ready") {
+  const status = document.querySelector("#rag-status");
+  if (!status) return;
+  status.textContent = text;
+  status.className = `rag-status ${tone}`;
+}
+
+function formatRagDate(value) {
+  if (!value) return "尚未学习";
+  return new Date(value).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderRagAssistant() {
+  const root = document.querySelector("[data-view-panel='rag']");
+  if (!root) return;
+
+  const knowledge = getRagKnowledge();
+  const settings = knowledge.settings;
+  const chunkTotal = knowledge.documents.reduce((sum, documentMeta) => sum + (Number(documentMeta.chunkCount) || 0), 0);
+  const stats = document.querySelector("#rag-knowledge-stats");
+  const list = document.querySelector("#rag-learned-files");
+  const includeWebInput = document.querySelector("#rag-include-web");
+  const activePdf = documentState.current?.kind === "pdf" ? documentState.current : null;
+  const activePage = activePdf ? getActivePdfPageNumber(activePdf) : 1;
+  const activePageCount = activePdf ? Math.max(1, activePdf.pageCount || activePdf.meta.pageCount || 1) : 1;
+  const rangeStartInput = document.querySelector("#rag-pdf-start-page");
+  const rangeEndInput = document.querySelector("#rag-pdf-end-page");
+
+  if (stats) {
+    stats.textContent = `${knowledge.documents.length} 个文件 · ${chunkTotal} 段知识`;
+  }
+
+  if (includeWebInput) includeWebInput.checked = settings.includeWeb;
+  if (rangeStartInput) {
+    rangeStartInput.max = String(activePageCount);
+    rangeStartInput.value = String(Math.min(activePageCount, Math.max(1, Number(rangeStartInput.value) || activePage)));
+  }
+  if (rangeEndInput) {
+    rangeEndInput.max = String(activePageCount);
+    rangeEndInput.value = String(Math.min(activePageCount, Math.max(1, Number(rangeEndInput.value) || activePage)));
+  }
+
+  if (list) {
+    list.innerHTML = knowledge.documents.length
+      ? knowledge.documents
+          .map((documentMeta) => `
+            <article class="rag-learned-card">
+              <div>
+                <strong>${escapeHtml(documentMeta.title)}</strong>
+                <span>${escapeHtml(documentMeta.extension || "TXT")} · ${documentMeta.chunkCount} 段知识 · ${documentMeta.textLength} 字</span>
+              </div>
+              <small>${escapeHtml(formatRagDate(documentMeta.learnedAt))}</small>
+            </article>
+          `)
+          .join("")
+      : `<div class="rag-empty">还没有学习文件。先从当前资料或整个课程生成知识库。</div>`;
+  }
+
+  renderRagMessages();
+  setRagStatus(knowledge.documents.length ? "知识库已就绪" : "等待学习资料", knowledge.documents.length ? "ready" : "working");
+  window.lucide?.createIcons();
+}
+
+function renderRagMessages() {
+  const chatList = document.querySelector("#rag-chat-list");
+  if (!chatList) return;
+  const messages = getRagKnowledge().messages;
+
+  chatList.innerHTML = messages.length
+    ? messages
+        .map((message) => {
+          const sourceMarkup = Array.isArray(message.sources) && message.sources.length
+            ? `<div class="rag-source-list">${message.sources
+                .map((source) => `<span>${escapeHtml(source.label || "")} ${escapeHtml(source.title || source.name || source.id || "")}</span>`)
+                .join("")}</div>`
+            : "";
+          const webMarkup = message.webSearch
+            ? `<small class="rag-web-note">${message.webSearch.error ? `联网搜索失败：${escapeHtml(message.webSearch.error)}` : `联网搜索：${message.webSearch.results?.length || 0} 条结果`}</small>`
+            : "";
+          return `
+            <article class="rag-message ${message.role}">
+              <p>${escapeHtml(message.text)}</p>
+              ${sourceMarkup}
+              ${webMarkup}
+            </article>
+          `;
+        })
+        .join("")
+    : `<div class="rag-empty">学习文件后，在这里向知识库提问。</div>`;
+
+  chatList.scrollTop = chatList.scrollHeight;
+}
+
+function addRagMessage(message) {
+  const knowledge = getRagKnowledge();
+  knowledge.messages = [
+    ...knowledge.messages,
+    {
+      role: message.role,
+      text: String(message.text || "").slice(0, 4000),
+      createdAt: Date.now(),
+      sources: Array.isArray(message.sources) ? message.sources : [],
+      webSearch: message.webSearch || null,
+    },
+  ].slice(-12);
+  knowledge.updatedAt = Date.now();
+  saveWorkspace();
+  renderRagMessages();
+}
+
+async function getRagDocumentText(meta) {
+  const activeDoc = documentState.current?.meta?.id === meta.id ? documentState.current : null;
+
+  if (activeDoc?.kind === "md") {
+    return stripMarkdown(activeDoc.editedText || activeDoc.text || "");
+  }
+
+  if (activeDoc?.kind === "pdf") {
+    if (activeDoc.meta.extractedText && !activeDoc.meta.pdfTextStale) {
+      return activeDoc.meta.extractedText;
+    }
+
+    const extracted = await extractPdfTextFromBytes(activeDoc.bytes);
+    activeDoc.pdfText = extracted;
+    activeDoc.meta.extractedText = extracted.text;
+    activeDoc.meta.extractedPages = extracted.pages || [];
+    activeDoc.meta.extractedAt = extracted.extractedAt;
+    activeDoc.meta.pdfTextStale = false;
+    saveWorkspace();
+    return extracted.text;
+  }
+
+  const file = await readStoredFile(meta);
+  const extension = String(file.extension || meta.extension || "").toUpperCase();
+
+  if (extension === "MD") {
+    return stripMarkdown(base64ToText(file.base64 || ""));
+  }
+
+  if (extension === "PDF") {
+    const extracted = await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""));
+    meta.extractedText = extracted.text;
+    meta.extractedPages = extracted.pages || [];
+    meta.extractedAt = extracted.extractedAt;
+    meta.pdfTextStale = false;
+    saveWorkspace();
+    return extracted.text;
+  }
+
+  return "";
+}
+
+async function buildRagKnowledgeDocument(meta) {
+  const settings = getRagSettingsFromInputs();
+  const text = normalizeExtractedPdfText(await getRagDocumentText(meta)).slice(0, RAG_KNOWLEDGE_TEXT_LIMIT);
+
+  if (!text) {
+    throw new Error(`${meta.name} 没有可学习的文本。`);
+  }
+
+  return {
+    id: meta.id,
+    title: meta.name,
+    extension: meta.extension || "TXT",
+    size: meta.size || 0,
+    text,
+    textLength: text.length,
+    chunkSize: settings.chunkSize,
+    chunkCount: splitRagText(text, settings.chunkSize).length,
+    learnedAt: Date.now(),
+    sourceType: "course",
+  };
+}
+
+function upsertRagKnowledgeDocument(documentMeta) {
+  const knowledge = getRagKnowledge();
+  const index = knowledge.documents.findIndex((item) => item.id === documentMeta.id);
+
+  if (index >= 0) {
+    knowledge.documents[index] = documentMeta;
+  } else {
+    knowledge.documents.unshift(documentMeta);
+  }
+
+  knowledge.updatedAt = Date.now();
+}
+
+async function learnRagKnowledge(scope) {
+  const course = getActiveCourse();
+  const metas = scope === "course" ? course.documents : [getActiveDocumentMeta()].filter(Boolean);
+
+  if (!metas.length) {
+    setRagStatus("当前课程没有可学习文件", "warning");
+    return;
+  }
+
+  setRagStatus(scope === "course" ? "正在学习本课程..." : "正在学习当前文件...", "working");
+
+  try {
+    for (const meta of metas) {
+      const learnedDocument = await buildRagKnowledgeDocument(meta);
+      upsertRagKnowledgeDocument(learnedDocument);
+    }
+
+    saveWorkspace();
+    renderRagAssistant();
+    setRagStatus(scope === "course" ? `已学习 ${metas.length} 个文件` : "当前文件已学习", "ready");
+  } catch (error) {
+    setRagStatus(getAiErrorMessage(error), "warning");
+  }
+}
+
+async function learnActivePdfRange() {
+  setRagStatus("正在学习 PDF 页段...", "working");
+
+  try {
+    const source = await getActivePdfSource();
+    const range = getPdfRangeFromInputs("rag", source.pageCount);
+    const subPdf = await createPdfRangeBytes(source.bytes, range.startPage, range.endPage);
+    const extracted = await extractPdfTextFromBytes(subPdf.bytes);
+    const text = normalizeExtractedPdfText(extracted.text).slice(0, RAG_KNOWLEDGE_TEXT_LIMIT);
+
+    if (!text) {
+      throw new Error("这个页段没有提取到可学习文字，可能是扫描图片页。");
+    }
+
+    const settings = getRagSettingsFromInputs();
+    upsertRagKnowledgeDocument({
+      id: `${source.meta.id}:p${subPdf.startPage}-${subPdf.endPage}`,
+      title: `${source.meta.name} P${subPdf.startPage}-${subPdf.endPage}`,
+      extension: "PDF",
+      size: subPdf.bytes.length || source.meta.size || 0,
+      text,
+      textLength: text.length,
+      chunkSize: settings.chunkSize,
+      chunkCount: splitRagText(text, settings.chunkSize).length,
+      learnedAt: Date.now(),
+      sourceType: "pdf-range",
+      pageRange: {
+        startPage: subPdf.startPage,
+        endPage: subPdf.endPage,
+      },
+    });
+
+    saveWorkspace();
+    renderRagAssistant();
+    setRagStatus(`已学习第 ${subPdf.startPage}-${subPdf.endPage} 页`, "ready");
+  } catch (error) {
+    setRagStatus(getAiErrorMessage(error), "warning");
+  }
+}
+
+function clearRagKnowledge() {
+  const knowledge = getRagKnowledge();
+  knowledge.documents = [];
+  knowledge.messages = [];
+  knowledge.updatedAt = Date.now();
+  saveWorkspace();
+  renderRagAssistant();
+}
+
+async function submitRagQuestion(event) {
+  event.preventDefault();
+  const input = document.querySelector("#rag-question-input");
+  const question = input?.value.trim();
+
+  if (!question) {
+    setRagStatus("请先输入问题", "warning");
+    input?.focus();
+    return;
+  }
+
+  const knowledge = getRagKnowledge();
+  const settings = getRagSettingsFromInputs();
+
+  if (!knowledge.documents.length && !settings.includeWeb) {
+    setRagStatus("请先学习文件，或开启联网搜索", "warning");
+    return;
+  }
+
+  addRagMessage({ role: "user", text: question });
+  input.value = "";
+  setRagStatus(settings.includeWeb ? "正在检索知识库与联网结果..." : "正在检索知识库...", "working");
+
+  try {
+    await ensureAiConfigured();
+    const response = await window.mindStudy.rag.askLibrary({
+      question,
+      documents: knowledge.documents,
+      includeWeb: settings.includeWeb,
+      options: {
+        chunkSize: settings.chunkSize,
+        maxChunks: settings.maxChunks,
+        maxContextChars: settings.maxContextChars,
+        webResults: 4,
+        maxTokens: 1200,
+      },
+    });
+
+    addRagMessage({
+      role: "assistant",
+      text: response.answer || "AI 没有返回内容。",
+      sources: response.sources || [],
+      webSearch: response.webSearch || null,
+    });
+    setRagStatus("回答完成", "ready");
+  } catch (error) {
+    addRagMessage({
+      role: "assistant",
+      text: getAiErrorMessage(error),
+    });
+    setRagStatus("回答失败", "warning");
+  }
 }
 
 function normalizeSelectedFiles(result) {
@@ -2807,6 +3431,10 @@ function showView(viewName) {
     }
   }
 
+  if (viewName === "rag") {
+    renderRagAssistant();
+  }
+
   if (viewName === "planner") {
     renderPlannerView();
   }
@@ -4143,6 +4771,9 @@ function renderAiReadingWindow(doc) {
       : "这里会自动带入当前 Markdown 正文，也可以手动修改需要解析或翻译的段落。";
   const extractStatus =
     doc.kind === "pdf" ? getPdfExtractionStatus(doc) : null;
+  const pdfPageCount = doc.kind === "pdf" ? Math.max(1, doc.pageCount || doc.meta.pageCount || 1) : 1;
+  const rangeStart = Math.min(pdfPageCount, Math.max(1, Number(doc.meta.pdfRangeStart || getActivePdfPageNumber(doc) || 1)));
+  const rangeEnd = Math.min(pdfPageCount, Math.max(rangeStart, Number(doc.meta.pdfRangeEnd || rangeStart)));
 
   return `
     <section class="ai-reading-card">
@@ -4159,6 +4790,24 @@ function renderAiReadingWindow(doc) {
       ${
         extractStatus
           ? `<p id="ai-reading-status" class="ai-reading-status ${escapeHtml(extractStatus.tone)}">${escapeHtml(extractStatus.text)}</p>`
+          : ""
+      }
+      ${
+        doc.kind === "pdf"
+          ? `<div class="pdf-range-controls">
+              <label>
+                <span>起始页</span>
+                <input id="ai-pdf-start-page" type="number" min="1" max="${pdfPageCount}" value="${rangeStart}" />
+              </label>
+              <label>
+                <span>结束页</span>
+                <input id="ai-pdf-end-page" type="number" min="1" max="${pdfPageCount}" value="${rangeEnd}" />
+              </label>
+              <button class="ghost-action compact" id="export-ai-pdf-range" type="button">
+                <i data-lucide="file-output"></i>
+                <span>生成子 PDF</span>
+              </button>
+            </div>`
           : ""
       }
       <textarea id="ai-reading-source" class="ai-reading-source" placeholder="${escapeHtml(placeholder)}">${escapeHtml(sourceText)}</textarea>
@@ -4200,6 +4849,7 @@ async function updateAiReadingOutput(mode) {
 
   try {
     await ensureAiConfigured();
+    const chunkSettings = getAiReadingChunkSettings();
     const documents = await buildActiveAiDocuments(source);
 
     if (mode === "translate") {
@@ -4207,8 +4857,9 @@ async function updateAiReadingOutput(mode) {
         question: "请将当前阅读内容翻译成自然、准确的中文。只输出译文，必要时保留术语英文原文。",
         documents,
         options: {
-          maxChunks: 4,
-          maxContextChars: AI_READING_TEXT_LIMIT,
+          chunkSize: chunkSettings.chunkSize,
+          maxChunks: chunkSettings.maxChunks,
+          maxContextChars: chunkSettings.maxContextChars,
           maxTokens: 1200,
         },
       });
@@ -4218,8 +4869,9 @@ async function updateAiReadingOutput(mode) {
         topic: "解析当前阅读内容，提炼学习要点、关键词和可加入笔记的内容",
         documents,
         options: {
-          maxChunks: 6,
-          maxContextChars: AI_READING_TEXT_LIMIT,
+          chunkSize: chunkSettings.chunkSize,
+          maxChunks: chunkSettings.maxChunks,
+          maxContextChars: chunkSettings.maxContextChars,
           maxTokens: 1200,
         },
       });
@@ -5559,6 +6211,7 @@ function renderAllCourseViews() {
   renderCourseSwitcher();
   renderDocumentLibrary();
   updateDashboardForCourse();
+  renderRagAssistant();
   renderStudyModuleViews();
   renderPlannerView();
 }
@@ -5630,6 +6283,10 @@ document.addEventListener("change", (event) => {
     syncPdfInkUi();
   }
 
+  if (event.target.matches("#rag-include-web")) {
+    rememberRagSettings();
+  }
+
   if (event.target.matches("[data-planner-progress]")) {
     setPlannerProgress(event.target.dataset.plannerProgress, event.target.value);
   }
@@ -5654,6 +6311,23 @@ document.addEventListener("input", (event) => {
       }
       window.clearTimeout(event.target.dataset.saveTimer);
       event.target.dataset.saveTimer = window.setTimeout(saveWorkspace, 250);
+    }
+  }
+
+  if (event.target.matches("#ai-pdf-start-page, #ai-pdf-end-page")) {
+    const doc = documentState.current;
+    if (doc?.kind === "pdf") {
+      const range = getPdfRangeFromInputs("ai", Math.max(1, doc.pageCount || doc.meta.pageCount || 1));
+      doc.meta.pdfRangeStart = range.startPage;
+      doc.meta.pdfRangeEnd = range.endPage;
+      saveWorkspace();
+    }
+  }
+
+  if (event.target.matches("#rag-pdf-start-page, #rag-pdf-end-page")) {
+    const activePdf = documentState.current?.kind === "pdf" ? documentState.current : null;
+    if (activePdf) {
+      getPdfRangeFromInputs("rag", Math.max(1, activePdf.pageCount || activePdf.meta.pageCount || 1));
     }
   }
 
@@ -5705,6 +6379,10 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("wheel", handleAppZoomWheel, { passive: false });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.matches("#rag-question-form")) {
+    submitRagQuestion(event);
+  }
+
   if (event.target.matches("#ai-settings-form")) {
     submitAiSettingsForm(event);
   }
@@ -5747,6 +6425,7 @@ document.addEventListener("click", (event) => {
   const calendarMonthButton = event.target.closest("[data-calendar-month-step]");
   const calendarDateButton = event.target.closest("[data-calendar-date]");
   const plannerEventDeleteButton = event.target.closest("[data-planner-event-delete]");
+  const ragActionButton = event.target.closest("[data-rag-action]");
   const longlongToggleButton = event.target.closest("[data-longlong-toggle]");
   const longlongActionButton = event.target.closest("[data-longlong-action]");
   const mapModeButton = event.target.closest("[data-map-mode]");
@@ -5756,6 +6435,16 @@ document.addEventListener("click", (event) => {
   const quizActionButton = event.target.closest("[data-quiz-action]");
   const reportReviewButton = event.target.closest("[data-report-review-topic]");
   const actionButton = event.target.closest("button");
+
+  if (ragActionButton) {
+    const action = ragActionButton.dataset.ragAction;
+    if (action === "learn-active") learnRagKnowledge("active");
+    if (action === "learn-course") learnRagKnowledge("course");
+    if (action === "learn-range") learnActivePdfRange();
+    if (action === "export-range") exportActivePdfRange("rag");
+    if (action === "clear-library") clearRagKnowledge();
+    return;
+  }
 
   if (quizAnswerButton) {
     submitObjectiveQuizAnswer(quizAnswerButton);
@@ -5934,6 +6623,7 @@ document.addEventListener("click", (event) => {
   if (actionButton.id === "apply-pdf-ink") applyPdfInkToCurrentPdf();
   if (actionButton.id === "ai-analyze-reading") updateAiReadingOutput("analyze");
   if (actionButton.id === "ai-translate-reading") updateAiReadingOutput("translate");
+  if (actionButton.id === "export-ai-pdf-range") exportActivePdfRange("ai");
   if (actionButton.id === "extract-pdf-text") {
     const doc = documentState.current;
     if (doc?.kind === "pdf") extractCurrentPdfPageText(doc, { force: true });

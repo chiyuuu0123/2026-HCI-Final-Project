@@ -29,6 +29,10 @@
             <i data-lucide="book-open"></i>
             <span>资料阅读</span>
           </button>
+          <button class="nav-item" data-view="rag">
+            <i data-lucide="brain-circuit"></i>
+            <span>RAG 问答</span>
+          </button>
           <button class="nav-item" data-view="planner">
             <i data-lucide="list-todo"></i>
             <span>TodoList</span>
@@ -279,6 +283,90 @@
               <button class="ghost-action full">
                 <i data-lucide="bookmark"></i>
                 <span>保存为笔记</span>
+              </button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="rag">
+          <div class="rag-page">
+            <section class="panel rag-chat-panel">
+              <div class="rag-hero">
+                <div>
+                  <span class="tag muted">RAG Knowledge QA</span>
+                  <h2>知识库问答助手</h2>
+                  <p>先学习课程资料形成主知识库，再按需结合联网搜索补充背景信息。</p>
+                </div>
+                <button class="mini-button" data-ai-action="settings" title="设置 DeepSeek API Key">
+                  <i data-lucide="key-round"></i>
+                  <span>Key</span>
+                </button>
+              </div>
+
+              <div class="rag-status-row">
+                <span class="rag-status ready" id="rag-status">等待学习资料</span>
+                <span id="rag-knowledge-stats">0 个文件 · 0 段知识</span>
+              </div>
+
+              <div class="rag-chat-list" id="rag-chat-list"></div>
+
+              <form class="rag-question-form" id="rag-question-form">
+                <textarea id="rag-question-input" rows="3" placeholder="向已学习的知识库提问，例如：SUS 量表适合解决什么评估问题？"></textarea>
+                <button class="primary-action" type="submit">
+                  <i data-lucide="send"></i>
+                  <span>提问</span>
+                </button>
+              </form>
+            </section>
+
+            <aside class="panel rag-library-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="tag muted">Knowledge Base</span>
+                  <h3>已学习文件</h3>
+                </div>
+              </div>
+
+              <div class="rag-learn-actions">
+                <button class="primary-action compact" data-rag-action="learn-active">
+                  <i data-lucide="book-plus"></i>
+                  <span>学习当前文件</span>
+                </button>
+                <button class="ghost-action compact" data-rag-action="learn-course">
+                  <i data-lucide="library"></i>
+                  <span>学习本课程</span>
+                </button>
+              </div>
+
+              <div class="rag-range-settings">
+                <label>
+                  <span>起始页</span>
+                  <input id="rag-pdf-start-page" type="number" min="1" value="1" />
+                </label>
+                <label>
+                  <span>结束页</span>
+                  <input id="rag-pdf-end-page" type="number" min="1" value="1" />
+                </label>
+                <button class="ghost-action compact" data-rag-action="learn-range">
+                  <i data-lucide="scan-text"></i>
+                  <span>学习页段</span>
+                </button>
+                <button class="ghost-action compact" data-rag-action="export-range">
+                  <i data-lucide="file-output"></i>
+                  <span>导出子 PDF</span>
+                </button>
+              </div>
+
+              <label class="rag-web-toggle">
+                <input id="rag-include-web" type="checkbox" checked />
+                <span>结合联网搜索</span>
+              </label>
+
+              <div class="rag-learned-list" id="rag-learned-files"></div>
+
+              <button class="ghost-action full" data-rag-action="clear-library">
+                <i data-lucide="trash-2"></i>
+                <span>清空知识库</span>
               </button>
             </aside>
           </div>
