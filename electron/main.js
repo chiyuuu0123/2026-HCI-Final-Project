@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
@@ -12,6 +12,14 @@ const {
 const isWindows = process.platform === "win32";
 const maxImportBytes = 80 * 1024 * 1024;
 const supportedExtensions = new Set([".pdf", ".md"]);
+const companionWindowWidth = 248;
+const companionWindowHeight = 282;
+let mainWindow = null;
+let companionWindow = null;
+let companionSnapshot = null;
+let companionShouldShow = false;
+let lastMainWindowBounds = null;
+let companionCustomBounds = null;
 
 function getDeepSeekConfigPath() {
   return path.join(app.getPath("userData"), "deepseek-config.json");
@@ -162,7 +170,7 @@ async function readCourseFile(filePath) {
 }
 
 function createMainWindow() {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
     minWidth: 1080,
@@ -176,12 +184,14 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      backgroundThrottling: false,
     },
   });
 
   mainWindow.loadFile(path.join(__dirname, "..", "frontend", "index.html"));
 
   mainWindow.once("ready-to-show", () => {
+    lastMainWindowBounds = mainWindow.getBounds();
     mainWindow.show();
   });
 
@@ -190,7 +200,179 @@ function createMainWindow() {
     return { action: "deny" };
   });
 
+  mainWindow.on("move", () => {
+    if (!mainWindow?.isMinimized()) lastMainWindowBounds = mainWindow.getBounds();
+  });
+
+  mainWindow.on("resize", () => {
+    if (!mainWindow?.isMinimized()) lastMainWindowBounds = mainWindow.getBounds();
+  });
+
+  mainWindow.on("minimize", () => {
+    showCompanionWindow();
+    setTimeout(showCompanionWindow, 120);
+    setTimeout(showCompanionWindow, 420);
+  });
+
+  mainWindow.on("restore", () => {
+    hideCompanionWindow({ destroy: true });
+  });
+
+  mainWindow.on("hide", () => {
+    if (companionShouldShow || mainWindow?.isMinimized()) {
+      showCompanionWindow();
+    }
+  });
+
+  mainWindow.on("show", () => {
+    if (!mainWindow?.isMinimized()) hideCompanionWindow({ destroy: true });
+  });
+
+  mainWindow.on("focus", () => {
+    if (!mainWindow?.isMinimized()) hideCompanionWindow({ destroy: true });
+  });
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+    companionShouldShow = false;
+    if (companionWindow && !companionWindow.isDestroyed()) {
+      companionWindow.close();
+    }
+  });
+
   return mainWindow;
+}
+
+function getCompanionBounds() {
+  if (companionCustomBounds) {
+    return clampCompanionBounds(companionCustomBounds);
+  }
+
+  const display = lastMainWindowBounds
+    ? screen.getDisplayMatching(lastMainWindowBounds)
+    : mainWindow && !mainWindow.isMinimized()
+      ? screen.getDisplayMatching(mainWindow.getBounds())
+      : screen.getPrimaryDisplay();
+  const { x, y, width, height } = display.workArea;
+
+  return {
+    width: companionWindowWidth,
+    height: companionWindowHeight,
+    x: x + width - companionWindowWidth - 18,
+    y: y + height - companionWindowHeight - 18,
+  };
+}
+
+function clampCompanionBounds(bounds) {
+  const display = screen.getDisplayMatching(bounds);
+  const area = display.workArea;
+  const width = companionWindowWidth;
+  const height = companionWindowHeight;
+
+  return {
+    width,
+    height,
+    x: Math.min(area.x + area.width - width, Math.max(area.x, Math.round(bounds.x))),
+    y: Math.min(area.y + area.height - height, Math.max(area.y, Math.round(bounds.y))),
+  };
+}
+
+function createCompanionWindow() {
+  if (companionWindow && !companionWindow.isDestroyed()) return companionWindow;
+
+  const bounds = getCompanionBounds();
+  companionWindow = new BrowserWindow({
+    ...bounds,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+    show: false,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  });
+
+  companionWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  companionWindow.loadFile(path.join(__dirname, "..", "frontend", "companion.html"));
+  companionWindow.webContents.once("did-finish-load", () => {
+    companionWindow?.webContents.send("companion:snapshot", companionSnapshot);
+    if (companionShouldShow) {
+      revealCompanionWindow();
+    }
+  });
+  companionWindow.on("show", () => {
+    if (companionShouldShow) {
+      companionWindow?.setAlwaysOnTop(true, "screen-saver");
+      companionWindow?.moveTop();
+    }
+  });
+  companionWindow.on("blur", () => {
+    if (companionShouldShow) {
+      setTimeout(revealCompanionWindow, 80);
+    }
+  });
+  companionWindow.on("move", () => {
+    if (companionShouldShow) {
+      companionCustomBounds = clampCompanionBounds(companionWindow.getBounds());
+    }
+  });
+  companionWindow.on("closed", () => {
+    companionWindow = null;
+  });
+
+  return companionWindow;
+}
+
+function revealCompanionWindow() {
+  if (!companionWindow || companionWindow.isDestroyed()) return;
+
+  companionWindow.setBounds(getCompanionBounds(), false);
+  companionWindow.setAlwaysOnTop(true, "screen-saver");
+  companionWindow.show();
+  companionWindow.moveTop();
+}
+
+function showCompanionWindow() {
+  companionShouldShow = true;
+  const petWindow = createCompanionWindow();
+  if (petWindow.webContents.isLoading()) return;
+  revealCompanionWindow();
+}
+
+function hideCompanionWindow({ destroy = false } = {}) {
+  companionShouldShow = false;
+  if (companionWindow && !companionWindow.isDestroyed()) {
+    companionCustomBounds = clampCompanionBounds(companionWindow.getBounds());
+    if (destroy) {
+      companionWindow.close();
+    } else {
+      companionWindow.hide();
+    }
+  }
+}
+
+function wakeMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow();
+  }
+
+  lastMainWindowBounds = mainWindow.getBounds();
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  hideCompanionWindow({ destroy: true });
 }
 
 function buildMenu() {
@@ -328,14 +510,56 @@ ipcMain.handle("b:ai:extract-pdf-text", async (event, payload) => {
   return extractPdfTextFromBase64(base64, getPdfExtractionOptions(payload));
 });
 
+ipcMain.handle("b:rag:ask-library", async (event, request) => {
+  const question = String(request?.question || "").trim();
+  const documents = Array.isArray(request?.documents) ? request.documents : [];
+  const textChunks = documents.filter((documentMeta) => String(documentMeta.text || "").trim()).length;
+
+  return {
+    mode: "placeholder",
+    answer:
+      `龙龙已收到你的问题：${question || "未输入问题"}\n\n` +
+      `RAG 向量库接口已预留。本次请求传入 ${documents.length} 份资料，其中 ${textChunks} 份已有可检索文本。` +
+      "后续接入向量化和召回逻辑后，龙龙会优先用当前课程资料库回答。",
+    sources: documents.slice(0, 4).map((documentMeta) => ({
+      id: documentMeta.id,
+      name: documentMeta.name,
+      extension: documentMeta.extension,
+    })),
+  };
+});
+
+ipcMain.on("companion:wake-main", () => {
+  wakeMainWindow();
+});
+
+ipcMain.on("companion:hide", () => {
+  hideCompanionWindow({ destroy: true });
+});
+
+ipcMain.on("companion:update-snapshot", (event, snapshot) => {
+  companionSnapshot = {
+    mood: String(snapshot?.mood || "陪你学习中").slice(0, 40),
+    reminder: String(snapshot?.reminder || "点我回到 MindStudy").slice(0, 80),
+    music: String(snapshot?.music || "白噪音 + 轻钢琴").slice(0, 40),
+  };
+
+  if (companionWindow && !companionWindow.isDestroyed()) {
+    companionWindow.webContents.send("companion:snapshot", companionSnapshot);
+  }
+});
+
 app.whenReady().then(() => {
   configurePermissions();
   buildMenu();
   createMainWindow();
+  createCompanionWindow();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!mainWindow || mainWindow.isDestroyed()) {
       createMainWindow();
+    } else {
+      wakeMainWindow();
     }
   });
 });

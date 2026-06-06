@@ -4,6 +4,9 @@ const APP_ZOOM_STORAGE_KEY = "mindstudy.appZoom.v1";
 const APP_ZOOM_MIN = 0.75;
 const APP_ZOOM_MAX = 1.4;
 const APP_ZOOM_STEP = 0.05;
+const LONGLONG_POSITION_STORAGE_KEY = "mindstudy.longlongPosition.v1";
+const LONGLONG_RAG_TEXT_LIMIT = 1600;
+const LONGLONG_REMINDER_LIMIT = 3;
 
 const viewTitles = {
   dashboard: "学习工作台",
@@ -80,6 +83,27 @@ let pdfPageTextTimer = null;
 let pdfReaderResizeRenderTimer = null;
 let appZoom = loadAppZoom();
 let appZoomToastTimer = null;
+let longlongSnapshotCache = "";
+let longlongPosition = loadLonglongPosition();
+const longlongState = {
+  expanded: false,
+  mood: "等待摄像头",
+  moodDetail: "我会结合状态识别和音乐建议提醒你。",
+  focusScore: "--",
+  music: "白噪音 + 轻钢琴，适合继续专注阅读。",
+  ragAnswer: "RAG 向量接口已预留，后续接入资料库向量检索后会在这里回答。",
+};
+const longlongDragState = {
+  active: false,
+  moved: false,
+  suppressToggle: false,
+  pointerId: null,
+  mode: "",
+  startX: 0,
+  startY: 0,
+  startLeft: 0,
+  startTop: 0,
+};
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -162,6 +186,363 @@ function handleAppZoomWheel(event) {
     announce: true,
     rerenderReader: true,
   });
+}
+
+function getLonglongElements() {
+  return {
+    root: document.querySelector("#longlong-assistant"),
+    panel: document.querySelector("#longlong-panel"),
+    bubble: document.querySelector("#longlong-bubble"),
+    mood: document.querySelector("#longlong-mood"),
+    moodDetail: document.querySelector("#longlong-mood-detail"),
+    music: document.querySelector("#longlong-music"),
+    reminders: document.querySelector("#longlong-reminders"),
+    question: document.querySelector("#longlong-question"),
+    ragOutput: document.querySelector("#longlong-rag-output"),
+  };
+}
+
+function loadLonglongPosition() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(LONGLONG_POSITION_STORAGE_KEY));
+    if (Number.isFinite(stored?.left) && Number.isFinite(stored?.top)) {
+      return {
+        left: stored.left,
+        top: stored.top,
+      };
+    }
+  } catch (error) {
+    localStorage.removeItem(LONGLONG_POSITION_STORAGE_KEY);
+  }
+
+  return null;
+}
+
+function saveLonglongPosition() {
+  if (!longlongPosition) return;
+  try {
+    localStorage.setItem(LONGLONG_POSITION_STORAGE_KEY, JSON.stringify(longlongPosition));
+  } catch (error) {
+    // 位置记忆失败不影响龙龙本次拖拽使用。
+  }
+}
+
+function clampLonglongPosition(left, top, root = getLonglongElements().root) {
+  const margin = 8;
+  const width = root?.offsetWidth || 190;
+  const height = root?.offsetHeight || 128;
+  const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+  const maxTop = Math.max(margin, window.innerHeight - height - margin);
+
+  return {
+    left: Math.min(maxLeft, Math.max(margin, left)),
+    top: Math.min(maxTop, Math.max(margin, top)),
+  };
+}
+
+function applyLonglongPosition() {
+  const root = getLonglongElements().root;
+  if (!root) return;
+
+  if (!longlongPosition) {
+    root.style.left = "";
+    root.style.top = "";
+    root.style.right = "";
+    root.style.bottom = "";
+    return;
+  }
+
+  longlongPosition = clampLonglongPosition(longlongPosition.left, longlongPosition.top, root);
+  root.style.left = `${longlongPosition.left}px`;
+  root.style.top = `${longlongPosition.top}px`;
+  root.style.right = "auto";
+  root.style.bottom = "auto";
+}
+
+function setLonglongExpanded(expanded) {
+  longlongState.expanded = Boolean(expanded);
+  getLonglongElements().root?.classList.toggle("expanded", longlongState.expanded);
+  window.requestAnimationFrame(applyLonglongPosition);
+}
+
+function toggleLonglongPanel() {
+  setLonglongExpanded(!longlongState.expanded);
+}
+
+function beginLonglongDrag(event, mode = "pointer") {
+  const avatar = event.target.closest?.(".longlong-avatar");
+  const root = getLonglongElements().root;
+  if (!avatar || !root) return;
+
+  const rect = root.getBoundingClientRect();
+  longlongDragState.active = true;
+  longlongDragState.moved = false;
+  longlongDragState.pointerId = event.pointerId ?? "mouse";
+  longlongDragState.mode = mode;
+  longlongDragState.startX = event.clientX;
+  longlongDragState.startY = event.clientY;
+  longlongDragState.startLeft = rect.left;
+  longlongDragState.startTop = rect.top;
+  root.classList.add("dragging");
+  if (event.pointerId !== undefined) avatar.setPointerCapture?.(event.pointerId);
+}
+
+function updateLonglongDrag(event) {
+  const pointerId = event.pointerId ?? "mouse";
+  if (!longlongDragState.active || pointerId !== longlongDragState.pointerId) return;
+
+  event.preventDefault?.();
+  const deltaX = event.clientX - longlongDragState.startX;
+  const deltaY = event.clientY - longlongDragState.startY;
+  if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+    longlongDragState.moved = true;
+    event.preventDefault?.();
+  }
+
+  longlongPosition = clampLonglongPosition(
+    longlongDragState.startLeft + deltaX,
+    longlongDragState.startTop + deltaY,
+  );
+  applyLonglongPosition();
+}
+
+function finishLonglongDrag(event) {
+  const pointerId = event.pointerId ?? "mouse";
+  if (!longlongDragState.active || pointerId !== longlongDragState.pointerId) return;
+
+  const root = getLonglongElements().root;
+  root?.classList.remove("dragging");
+  if (longlongDragState.moved) {
+    longlongDragState.suppressToggle = true;
+    saveLonglongPosition();
+    window.setTimeout(() => {
+      longlongDragState.suppressToggle = false;
+    }, 80);
+  }
+
+  longlongDragState.active = false;
+  longlongDragState.pointerId = null;
+  longlongDragState.mode = "";
+}
+
+function beginLonglongMouseDrag(event) {
+  if (event.button !== 0) return;
+  beginLonglongDrag(event, "mouse");
+}
+
+function updateLonglongMouseDrag(event) {
+  if (longlongDragState.mode !== "mouse") return;
+  updateLonglongDrag(event);
+}
+
+function finishLonglongMouseDrag(event) {
+  if (longlongDragState.mode !== "mouse") return;
+  finishLonglongDrag(event);
+}
+
+function handleLonglongKeyboardToggle(event) {
+  if (!event.target.closest?.(".longlong-avatar")) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  toggleLonglongPanel();
+}
+
+function getTodayDateKey() {
+  return toPlannerDateKey(new Date());
+}
+
+function formatLonglongDate(dateKey) {
+  if (!dateKey) return "未排期";
+  const today = getTodayDateKey();
+  if (dateKey === today) return "今天";
+  return dateKey.slice(5).replace("-", ".");
+}
+
+function getLonglongTodoReminders() {
+  return (plannerState.items || [])
+    .filter((item) => item.status !== "done")
+    .sort((a, b) => Number(b.importance) - Number(a.importance) || Number(a.progress || 0) - Number(b.progress || 0))
+    .slice(0, 2)
+    .map((item) => ({
+      type: "todo",
+      title: item.title,
+      detail: `${getPlannerStatusMeta(item.status).label} · ${item.progress || 0}% · ${item.importance || 0} 星`,
+    }));
+}
+
+function getLonglongEventReminders() {
+  const today = getTodayDateKey();
+  return (plannerState.events || [])
+    .filter((event) => event.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 2)
+    .map((event) => ({
+      type: "event",
+      title: event.title,
+      detail: `${formatLonglongDate(event.date)} · ${event.type}`,
+    }));
+}
+
+function getLonglongReminders() {
+  return [...getLonglongEventReminders(), ...getLonglongTodoReminders()].slice(0, LONGLONG_REMINDER_LIMIT);
+}
+
+function getLonglongReminderText(reminders = getLonglongReminders()) {
+  if (!reminders.length) return "今天没有紧急事项，适合整理笔记。";
+  const first = reminders[0];
+  return `${first.type === "event" ? "记得" : "先推进"}：${first.title}`;
+}
+
+function updateLonglongMood(mood, detail, music = "") {
+  longlongState.mood = mood || longlongState.mood;
+  longlongState.moodDetail = detail || longlongState.moodDetail;
+  if (music) longlongState.music = music;
+  syncLonglongAssistant();
+}
+
+function getLonglongMusicForBrightness(normalized) {
+  if (normalized < 22) return "自然白噪音 + 轻节拍，先开灯再继续读。";
+  if (normalized > 82) return "舒缓钢琴 + 低音量，注意屏幕和环境光。";
+  if (normalized > 55) return "白噪音 + 轻钢琴，适合继续专注阅读。";
+  return "雨声 + 柔和钢琴，适合整理笔记和复盘。";
+}
+
+function getDocumentRagSnippet(documentMeta) {
+  const snippets = [];
+  const currentDoc = documentState.current;
+
+  if (currentDoc?.meta?.id === documentMeta.id) {
+    snippets.push(getCurrentReadingText(currentDoc));
+  }
+
+  snippets.push(documentMeta.editedText || "");
+  snippets.push(documentMeta.extractedText || "");
+  snippets.push(documentMeta.aiSource || "");
+
+  const runtimeFile = runtimeFiles.get(documentMeta.id);
+  if (runtimeFile?.base64 && String(documentMeta.extension || "").toUpperCase() === "MD") {
+    try {
+      snippets.push(stripMarkdown(base64ToText(runtimeFile.base64)));
+    } catch (error) {
+      snippets.push("");
+    }
+  }
+
+  return normalizeExtractedPdfText(snippets.filter(Boolean).join("\n\n")).slice(0, LONGLONG_RAG_TEXT_LIMIT);
+}
+
+function buildLonglongRagRequest(question) {
+  const activeCourse = getActiveCourse();
+  const documents = (activeCourse.documents || []).map((documentMeta) => ({
+    id: documentMeta.id,
+    name: documentMeta.name,
+    extension: documentMeta.extension,
+    path: documentMeta.path,
+    text: getDocumentRagSnippet(documentMeta),
+  }));
+
+  return {
+    question,
+    course: {
+      id: activeCourse.id,
+      name: activeCourse.name,
+      description: activeCourse.description,
+      activeDocumentId: activeCourse.activeDocumentId,
+    },
+    documents,
+    interface: "longlong-rag-placeholder-v1",
+  };
+}
+
+function formatLonglongRagResponse(response) {
+  if (!response) return "龙龙的 RAG 接口已预留，但当前没有返回内容。";
+  const sources = Array.isArray(response.sources) && response.sources.length
+    ? `\n\n资料入口：${response.sources.map((source) => source.name).join("、")}`
+    : "";
+  return `${response.answer || "RAG 接口已收到请求。"}${sources}`;
+}
+
+async function submitLonglongRagQuestion(event) {
+  event.preventDefault();
+  const elements = getLonglongElements();
+  const question = elements.question?.value.trim();
+
+  if (!question) {
+    if (elements.ragOutput) elements.ragOutput.textContent = "先告诉龙龙你想问资料库什么问题。";
+    return;
+  }
+
+  if (elements.ragOutput) elements.ragOutput.textContent = "龙龙正在整理课程资料接口...";
+
+  try {
+    const request = buildLonglongRagRequest(question);
+    const response = window.mindStudy?.rag?.askLibrary
+      ? await window.mindStudy.rag.askLibrary(request)
+      : {
+          answer:
+            `龙龙已收到你的问题：${question}\n\n` +
+            `浏览器预览环境中先使用占位接口。本次已准备 ${request.documents.length} 份资料，后续接入向量库即可检索回答。`,
+          sources: request.documents.slice(0, 4),
+        };
+    longlongState.ragAnswer = formatLonglongRagResponse(response);
+  } catch (error) {
+    longlongState.ragAnswer = `RAG 接口调用失败：${getAiErrorMessage(error)}`;
+  }
+
+  if (elements.ragOutput) elements.ragOutput.textContent = longlongState.ragAnswer;
+  syncLonglongAssistant();
+}
+
+function handleLonglongAction(action) {
+  if (action === "planner") {
+    showView("planner");
+    setLonglongExpanded(true);
+    return;
+  }
+
+  if (action === "focus") {
+    showView("focus");
+    setLonglongExpanded(true);
+    if (!cameraState.stream) startCamera();
+  }
+}
+
+function syncLonglongAssistant() {
+  const elements = getLonglongElements();
+  if (!elements.root) return;
+
+  const reminders = getLonglongReminders();
+  const reminderText = getLonglongReminderText(reminders);
+
+  elements.root.classList.toggle("expanded", longlongState.expanded);
+  if (elements.bubble) elements.bubble.textContent = reminderText;
+  if (elements.mood) elements.mood.textContent = longlongState.mood;
+  if (elements.moodDetail) elements.moodDetail.textContent = longlongState.moodDetail;
+  if (elements.music) elements.music.textContent = longlongState.music;
+  if (elements.ragOutput) elements.ragOutput.textContent = longlongState.ragAnswer;
+  if (elements.reminders) {
+    elements.reminders.innerHTML = reminders.length
+      ? reminders
+          .map((item) => `
+            <article class="longlong-reminder ${item.type}">
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.detail)}</span>
+            </article>
+          `)
+          .join("")
+      : `<article class="longlong-reminder"><strong>暂无紧急日程</strong><span>可以整理资料或复盘错题。</span></article>`;
+  }
+
+  const snapshot = {
+    mood: longlongState.mood,
+    reminder: reminderText,
+    music: longlongState.music,
+  };
+  const snapshotText = JSON.stringify(snapshot);
+  if (snapshotText !== longlongSnapshotCache) {
+    longlongSnapshotCache = snapshotText;
+    window.mindStudy?.updateCompanionSnapshot?.(snapshot);
+  }
 }
 
 function createDefaultCourse() {
@@ -1026,6 +1407,15 @@ function setCameraStatus(status, detail = "") {
   }
   if (ui.modeBadge) ui.modeBadge.textContent = isActive ? "实时识别" : status === "pending" ? "请求中" : "待开启";
   if (ui.gestureTitle) ui.gestureTitle.textContent = isActive ? "等待手势" : "等待摄像头";
+
+  const mood = isActive ? "摄像头识别中" : detail || labels[status] || labels.idle;
+  const moodDetailMap = {
+    idle: "需要我观察学习状态时，可以让我开启摄像头。",
+    pending: "我正在请求摄像头权限，稍等一下。",
+    active: "我会观察光线和专注状态，并给出音乐建议。",
+    error: "摄像头暂时不可用，我仍会提醒日程和资料库问题。",
+  };
+  updateLonglongMood(mood, moodDetailMap[status] || moodDetailMap.idle);
 }
 
 function updateCameraMetrics(brightness) {
@@ -1052,6 +1442,11 @@ function updateCameraMetrics(brightness) {
   if (ui.focusLabel) ui.focusLabel.textContent = label;
   if (ui.moodTitle) ui.moodTitle.textContent = title;
   if (ui.gestureTitle) ui.gestureTitle.textContent = "摄像头已开启，等待手势";
+  updateLonglongMood(
+    title.replace("当前状态：", ""),
+    `${label}，专注分 ${score}。${normalized < 22 ? "先把环境光补足再继续。" : normalized > 82 ? "光线偏强，可以降低屏幕亮度。" : "现在适合继续沉浸阅读。"}`,
+    getLonglongMusicForBrightness(normalized),
+  );
 }
 
 function sampleCameraFrame() {
@@ -2575,6 +2970,7 @@ function renderPlannerView() {
   renderPlannerCalendar();
   renderPlannerEventList();
   syncPlannerFilters();
+  syncLonglongAssistant();
   window.lucide?.createIcons();
 }
 
@@ -4764,6 +5160,14 @@ document.addEventListener("input", (event) => {
   }
 });
 
+document.addEventListener("pointerdown", beginLonglongDrag);
+document.addEventListener("pointermove", updateLonglongDrag);
+document.addEventListener("pointerup", finishLonglongDrag);
+document.addEventListener("pointercancel", finishLonglongDrag);
+document.addEventListener("mousedown", beginLonglongMouseDrag);
+document.addEventListener("mousemove", updateLonglongMouseDrag);
+document.addEventListener("mouseup", finishLonglongMouseDrag);
+document.addEventListener("keydown", handleLonglongKeyboardToggle);
 document.addEventListener("pointerdown", beginPdfInkStroke);
 document.addEventListener("pointerdown", beginPdfImagePlacementDrag);
 document.addEventListener("pointermove", updatePdfInkStroke);
@@ -4807,6 +5211,10 @@ document.addEventListener("submit", (event) => {
   if (event.target.matches("#planner-event-form")) {
     addPlannerEvent(event);
   }
+
+  if (event.target.matches("#longlong-rag-form")) {
+    submitLonglongRagQuestion(event);
+  }
 });
 
 document.addEventListener("click", (event) => {
@@ -4830,7 +5238,20 @@ document.addEventListener("click", (event) => {
   const calendarMonthButton = event.target.closest("[data-calendar-month-step]");
   const calendarDateButton = event.target.closest("[data-calendar-date]");
   const plannerEventDeleteButton = event.target.closest("[data-planner-event-delete]");
+  const longlongToggleButton = event.target.closest("[data-longlong-toggle]");
+  const longlongActionButton = event.target.closest("[data-longlong-action]");
   const actionButton = event.target.closest("button");
+
+  if (longlongToggleButton) {
+    if (longlongDragState.suppressToggle) return;
+    toggleLonglongPanel();
+    return;
+  }
+
+  if (longlongActionButton) {
+    handleLonglongAction(longlongActionButton.dataset.longlongAction);
+    return;
+  }
 
   if (actionButton?.id === "toggle-reader-fullscreen") {
     toggleReaderFullscreen();
@@ -4974,6 +5395,7 @@ document.addEventListener("click", (event) => {
 
 window.addEventListener("DOMContentLoaded", () => {
   applyAppZoom();
+  applyLonglongPosition();
   renderAllCourseViews();
   setCameraStatus("idle");
 
@@ -4985,6 +5407,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   window.lucide?.createIcons();
   syncAiStatusButtons();
+  syncLonglongAssistant();
 
   window.mindStudy?.getAppInfo?.().then((info) => {
     document.body.dataset.platform = info.platform;
@@ -4996,6 +5419,7 @@ document.addEventListener("fullscreenchange", () => {
   rerenderCurrentPdfAfterReaderResize();
 });
 window.addEventListener("resize", () => {
+  applyLonglongPosition();
   rerenderCurrentPdfAfterReaderResize(220);
 });
 window.addEventListener("beforeunload", stopCamera);

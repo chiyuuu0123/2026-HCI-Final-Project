@@ -3121,6 +3121,194 @@ h3 {
   font-weight: 800;
 }
 
+.longlong-assistant {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 4500;
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.longlong-panel,
+.longlong-avatar {
+  pointer-events: auto;
+}
+
+.longlong-panel {
+  display: none;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(650px, calc(100vh - 132px));
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgba(24, 143, 132, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 55px rgba(24, 50, 45, 0.18);
+  backdrop-filter: blur(14px);
+}
+
+.longlong-assistant.expanded .longlong-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.longlong-panel-head,
+.longlong-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.longlong-panel-head h3 {
+  margin: 7px 0 0;
+}
+
+.longlong-status-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--teal-soft), #fff 70%);
+}
+
+.longlong-status-card strong {
+  color: var(--deep);
+}
+
+.longlong-status-card span,
+.longlong-section p,
+.longlong-reminder span,
+.longlong-rag-output {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.longlong-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.longlong-section-title span,
+.longlong-rag-form label {
+  color: var(--deep);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.longlong-reminders {
+  display: grid;
+  gap: 8px;
+}
+
+.longlong-reminder {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border-left: 4px solid var(--teal);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.longlong-reminder.event {
+  border-left-color: var(--coral);
+}
+
+.longlong-reminder.todo {
+  border-left-color: var(--yellow);
+}
+
+.longlong-rag-form {
+  display: grid;
+  gap: 8px;
+}
+
+.longlong-rag-form textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.longlong-rag-form textarea:focus {
+  border-color: rgba(24, 143, 132, 0.42);
+  box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.1);
+}
+
+.longlong-rag-output {
+  min-height: 74px;
+  padding: 11px;
+  border: 1px dashed rgba(24, 143, 132, 0.36);
+  border-radius: 8px;
+  background: var(--teal-soft);
+  white-space: pre-wrap;
+}
+
+.longlong-avatar {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  max-width: 190px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--deep);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.longlong-avatar img {
+  width: 108px;
+  height: 108px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 16px 20px rgba(18, 32, 28, 0.22));
+  transition: transform 160ms ease;
+}
+
+.longlong-avatar span {
+  display: block;
+  max-width: 190px;
+  padding: 8px 10px;
+  border: 1px solid rgba(24, 143, 132, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 30px rgba(18, 32, 28, 0.16);
+  color: var(--deep);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.longlong-avatar:hover img {
+  transform: translateY(-2px);
+}
+
+.longlong-assistant.dragging .longlong-avatar {
+  cursor: grabbing;
+}
+
+.longlong-assistant.dragging .longlong-avatar img {
+  transform: translateY(-3px) scale(1.02);
+}
+
 @media (max-width: 1180px) {
   body {
     overflow: auto;
@@ -3237,6 +3425,11 @@ h3 {
     flex: 1 1 380px;
     min-width: 320px;
   }
+
+  .longlong-assistant {
+    right: 14px;
+    bottom: 14px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -3300,6 +3493,15 @@ h3 {
 
   .planner-calendar-main {
     overflow-x: auto;
+  }
+
+  .longlong-panel {
+    max-height: min(620px, calc(100vh - 118px));
+  }
+
+  .longlong-avatar img {
+    width: 88px;
+    height: 88px;
   }
 
   .hero-panel {

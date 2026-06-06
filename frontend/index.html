@@ -575,5 +575,49 @@
         </section>
       </main>
     </div>
+    <aside class="longlong-assistant" id="longlong-assistant" aria-label="龙龙 AI 助手">
+      <section class="longlong-panel" id="longlong-panel">
+        <div class="longlong-panel-head">
+          <div>
+            <span class="tag muted">龙龙 AI 助手</span>
+            <h3>陪你学习中</h3>
+          </div>
+          <button class="icon-button" data-longlong-toggle title="收起龙龙">
+            <i data-lucide="minus"></i>
+          </button>
+        </div>
+        <div class="longlong-status-card">
+          <strong id="longlong-mood">等待摄像头</strong>
+          <span id="longlong-mood-detail">我会结合状态识别和音乐建议提醒你。</span>
+        </div>
+        <div class="longlong-section">
+          <div class="longlong-section-title">
+            <span>日程提醒</span>
+            <button class="mini-button" data-longlong-action="planner">查看</button>
+          </div>
+          <div class="longlong-reminders" id="longlong-reminders"></div>
+        </div>
+        <div class="longlong-section">
+          <div class="longlong-section-title">
+            <span>状态与音乐</span>
+            <button class="mini-button" data-longlong-action="focus">打开</button>
+          </div>
+          <p id="longlong-music">白噪音 + 轻钢琴，适合继续专注阅读。</p>
+        </div>
+        <form class="longlong-rag-form" id="longlong-rag-form">
+          <label for="longlong-question">问资料库</label>
+          <textarea id="longlong-question" rows="3" placeholder="问龙龙：这门课的重点是什么？"></textarea>
+          <button class="primary-action full" type="submit">
+            <i data-lucide="sparkles"></i>
+            <span>调用 RAG 接口</span>
+          </button>
+        </form>
+        <div class="longlong-rag-output" id="longlong-rag-output">RAG 向量接口已预留，后续接入资料库向量检索后会在这里回答。</div>
+      </section>
+      <div class="longlong-avatar" data-longlong-toggle role="button" tabindex="0" title="拖拽龙龙，点击展开助手">
+        <img src="./assets/longlong-guide.gif" alt="龙龙 AI 助手" draggable="false" />
+        <span id="longlong-bubble">今天也一起学一会儿吧。</span>
+      </div>
+    </aside>
   </body>
 </html>

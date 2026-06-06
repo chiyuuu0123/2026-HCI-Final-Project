@@ -2,6 +2,14 @@ const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 contextBridge.exposeInMainWorld("mindStudy", {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
+  wakeMainWindow: () => ipcRenderer.send("companion:wake-main"),
+  updateCompanionSnapshot: (snapshot) => ipcRenderer.send("companion:update-snapshot", snapshot),
+  hideCompanion: () => ipcRenderer.send("companion:hide"),
+  onCompanionSnapshot: (callback) => {
+    const listener = (event, snapshot) => callback(snapshot);
+    ipcRenderer.on("companion:snapshot", listener);
+    return () => ipcRenderer.removeListener("companion:snapshot", listener);
+  },
   getZoomFactor: () => webFrame.getZoomFactor(),
   setZoomFactor: (factor) => {
     const numericFactor = Number(factor);
@@ -22,5 +30,8 @@ contextBridge.exposeInMainWorld("mindStudy", {
     askQuestion: (request) => ipcRenderer.invoke("b:ai:ask-question", request),
     summarizeDocuments: (request) => ipcRenderer.invoke("b:ai:summarize-documents", request),
     extractPdfText: (payload) => ipcRenderer.invoke("b:ai:extract-pdf-text", payload),
+  },
+  rag: {
+    askLibrary: (request) => ipcRenderer.invoke("b:rag:ask-library", request),
   },
 });

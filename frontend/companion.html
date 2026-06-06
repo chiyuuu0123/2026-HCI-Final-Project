@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>龙龙</title>
+    <link rel="stylesheet" href="./companion.css" />
+  </head>
+  <body>
+    <main class="desktop-pet" id="desktop-pet">
+      <button class="pet-bubble" id="pet-bubble" title="点击唤醒 MindStudy">
+        <span id="pet-tip">今天也一起学一会儿吧</span>
+      </button>
+      <div class="pet-body" title="按住龙龙拖动">
+        <img src="./assets/longlong-guide.gif" alt="龙龙" draggable="false" />
+      </div>
+      <div class="pet-actions" aria-label="龙龙快捷操作">
+        <button type="button" data-pet-action="wake">唤醒</button>
+        <button type="button" data-pet-action="poke">摸摸</button>
+        <button type="button" data-pet-action="tip">提醒</button>
+        <button type="button" data-pet-action="hide">休息</button>
+      </div>
+    </main>
+    <script>
+      const pet = document.querySelector("#desktop-pet");
+      const tip = document.querySelector("#pet-tip");
+      const bubble = document.querySelector("#pet-bubble");
+      const actions = document.querySelector(".pet-actions");
+      const idleTips = [
+        "按住我可以拖到桌面任意位置",
+        "悬停我会冒出快捷气泡",
+        "先做最重要的一小步",
+        "久坐了就站起来伸展一下",
+        "资料库问答接口已经待命",
+      ];
+      const pokeTips = [
+        "摸摸收到，继续陪你。",
+        "龙龙精神满满。",
+        "先别分心，读完这一页。",
+      ];
+      let latestSnapshot = null;
+      let restoreTipTimer = null;
+
+      function showPetMotion(className = "speaking") {
+        pet.classList.remove("speaking", "poked", "thinking");
+        window.requestAnimationFrame(() => {
+          pet.classList.add(className);
+          window.setTimeout(() => pet.classList.remove(className), 640);
+        });
+      }
+
+      function setTip(text, { temporary = false, motion = "speaking" } = {}) {
+        tip.textContent = text || latestSnapshot?.reminder || "点我回来学习";
+        showPetMotion(motion);
+
+        window.clearTimeout(restoreTipTimer);
+        if (temporary) {
+          restoreTipTimer = window.setTimeout(() => {
+            tip.textContent = latestSnapshot?.reminder || latestSnapshot?.mood || "今天也一起学一会儿吧";
+          }, 4200);
+        }
+      }
+
+      function pickRandom(items) {
+        return items[Math.floor(Math.random() * items.length)];
+      }
+
+      window.mindStudy?.onCompanionSnapshot?.((snapshot) => {
+        if (!snapshot) return;
+        latestSnapshot = snapshot;
+        setTip(snapshot.reminder || snapshot.mood || "点我回来学习");
+      });
+
+      function handlePetAction(action) {
+        if (action === "wake") {
+          window.mindStudy?.wakeMainWindow?.();
+          return;
+        }
+
+        if (action === "poke") {
+          setTip(pickRandom(pokeTips), { temporary: true, motion: "poked" });
+          return;
+        }
+
+        if (action === "tip") {
+          setTip(pickRandom(idleTips), { temporary: true, motion: "thinking" });
+          return;
+        }
+
+        if (action === "hide") {
+          window.mindStudy?.hideCompanion?.();
+        }
+      }
+
+      bubble.addEventListener("click", () => {
+        window.mindStudy?.wakeMainWindow?.();
+      });
+
+      actions.addEventListener("click", (event) => {
+        const actionButton = event.target.closest("[data-pet-action]");
+        if (!actionButton) return;
+        handlePetAction(actionButton.dataset.petAction);
+      });
+
+      window.setInterval(() => {
+        if (document.hidden) return;
+        setTip(latestSnapshot?.reminder || pickRandom(idleTips), { temporary: true, motion: "thinking" });
+      }, 45000);
+    </script>
+  </body>
+</html>
