@@ -1,10 +1,11 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
+const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
 const {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
+  DeepSeekClient,
   createStudyAiService,
   extractPdfTextFromBase64,
   recognizeImageTextFromBase64,
@@ -14,12 +15,13 @@ const {
 const isWindows = process.platform === "win32";
 const maxImportBytes = 80 * 1024 * 1024;
 const supportedExtensions = new Set([".pdf", ".md"]);
-const companionWindowWidth = 248;
-const companionWindowHeight = 312;
+const companionPetSize = { width: 248, height: 312 };
+const companionChatSize = { width: 440, height: 568 };
 let mainWindow = null;
 let companionWindow = null;
 let companionSnapshot = null;
 let companionShouldShow = false;
+let companionMode = "pet";
 let lastMainWindowBounds = null;
 let companionCustomBounds = null;
 let studyTimerState = null;
@@ -223,6 +225,258 @@ function createCurrentStudyAiService() {
       model: config.model,
     },
   });
+}
+
+function createCurrentDeepSeekClient() {
+  const config = getDeepSeekRuntimeConfig();
+
+  return new DeepSeekClient({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    model: config.model,
+  });
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildCodingAssistantMessages(request = {}) {
+  const problem = String(request.problem || request.question || "").trim().slice(0, 12000);
+  const code = String(request.code || "").trim().slice(0, 40000);
+  const language = String(request.language || "auto").trim() || "auto";
+  const hasCode = Boolean(code);
+  const mode = hasCode ? "analyze-code" : "solve-problem";
+
+  if (!problem && !code) {
+    throw new Error("请至少输入题目或代码。");
+  }
+
+  const system = [
+    "你是 MindStudy 的龙龙，正在作为“阿龙在 Coding”助手陪用户写代码。",
+    "回答中要自然自称“龙龙”，语气亲和、耐心，但不要影响技术判断的准确性。",
+    "请用中文回答，面向正在刷题或写项目的学生。",
+    "如果用户提供了代码，重点分析代码意图、可行性、潜在 bug、时间复杂度、空间复杂度和优化建议。",
+    "如果用户只提供题目，先给出你认为最稳妥的算法思路，再写一版高质量代码，并说明复杂度。",
+    "回答要结构清晰，代码必须放在 Markdown 代码块中。",
+    "不要编造题目没有给出的约束；约束缺失时说明你的合理假设。",
+  ].join(" ");
+  const sections = hasCode
+    ? "请按以下结构回答：功能判断、可行性与风险、时间复杂度、空间复杂度、优化建议、必要时给出改进版代码。"
+    : "请按以下结构回答：题意理解、核心思路、最佳代码、时间复杂度、空间复杂度、边界情况。";
+
+  return {
+    mode,
+    messages: [
+      {
+        role: "system",
+        content: system,
+      },
+      {
+        role: "user",
+        content: [
+          sections,
+          `\n语言偏好：${language}`,
+          problem ? `\n题目：\n${problem}` : "\n题目：未提供",
+          code ? `\n代码：\n\`\`\`${language === "auto" ? "" : language}\n${code}\n\`\`\`` : "\n代码：未提供",
+        ].join("\n"),
+      },
+    ],
+  };
+}
+
+async function askCodingAssistant(request = {}) {
+  const { mode, messages } = buildCodingAssistantMessages(request);
+  const options = request.options || {};
+  const response = await createCurrentDeepSeekClient().chat({
+    messages,
+    temperature: options.temperature != null ? options.temperature : 0.18,
+    maxTokens: options.maxTokens != null ? options.maxTokens : 2200,
+    model: options.model,
+  });
+
+  return {
+    mode,
+    answer: response.content,
+    model: response.model,
+    usage: response.usage,
+  };
+}
+
+async function captureCurrentScreenForLonglong() {
+  const cursorPoint = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursorPoint);
+  const displayWidth = Math.max(1, display.size.width);
+  const displayHeight = Math.max(1, display.size.height);
+  const thumbnailWidth = Math.min(1280, displayWidth);
+  const thumbnailHeight = Math.round((thumbnailWidth / displayWidth) * displayHeight);
+  const previousOpacity = companionWindow && !companionWindow.isDestroyed() ? companionWindow.getOpacity() : null;
+
+  if (previousOpacity != null && companionWindow?.isVisible()) {
+    companionWindow.setOpacity(0);
+    await delay(70);
+  }
+
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize: {
+        width: thumbnailWidth,
+        height: thumbnailHeight,
+      },
+    });
+    const source = sources.find((item) => String(item.display_id) === String(display.id)) || sources[0];
+
+    if (!source || source.thumbnail.isEmpty()) {
+      throw new Error("没有捕获到当前屏幕。");
+    }
+
+    return {
+      dataUrl: source.thumbnail.toDataURL(),
+      capturedAt: Date.now(),
+      display: {
+        id: display.id,
+        width: displayWidth,
+        height: displayHeight,
+        scaleFactor: display.scaleFactor,
+      },
+    };
+  } finally {
+    if (previousOpacity != null && companionWindow && !companionWindow.isDestroyed()) {
+      companionWindow.setOpacity(previousOpacity);
+      companionWindow.moveTop();
+    }
+  }
+}
+
+async function extractScreenTextForLonglong(screenCapture) {
+  const base64 = getBase64Payload(screenCapture);
+
+  if (!base64) {
+    throw new Error("屏幕截图没有可识别的图像数据。");
+  }
+
+  return recognizeImageTextFromBase64(base64, {
+    languages: ["eng", "chi_sim"],
+    textLimit: 8000,
+    cachePath: path.join(app.getPath("userData"), "ocr-cache"),
+  });
+}
+
+function normalizeLonglongChatHistory(history = []) {
+  return (Array.isArray(history) ? history : [])
+    .filter((message) => message && ["user", "assistant"].includes(message.role))
+    .slice(-8)
+    .map((message) => ({
+      role: message.role,
+      content: String(message.content || "").slice(0, 2000),
+    }))
+    .filter((message) => message.content.trim());
+}
+
+function buildLonglongChatMessages(request = {}, screenContext = null, screenError = "") {
+  const message = String(request.message || request.question || "").trim().slice(0, 8000);
+  const history = normalizeLonglongChatHistory(request.history);
+
+  if (!message) {
+    throw new Error("请先告诉龙龙你想聊什么。");
+  }
+
+  const system = [
+    "你是 MindStudy 的桌宠 AI 助手龙龙。",
+    "你必须自然自称“龙龙”，像一直陪在用户身边的学习搭子一样说话，亲和、简洁、有行动建议。",
+    "如果用户的问题和屏幕内容相关，请优先根据本机 OCR 提取出的屏幕文字回答；看不清或无法判断时要坦诚说明。",
+    "不要声称你读取了用户没有提供的文件、后台窗口或隐私内容。",
+    "请使用中文 Markdown 排版，标题和列表要清晰，回答不要过长。",
+  ].join(" ");
+  const extractedText = String(screenContext?.text || "").trim();
+  const screenText = extractedText
+    ? [
+        "当前屏幕截图已经在本机通过 OCR 转成文字。请只根据下面能识别到的屏幕文字和用户问题回答。",
+        "如果 OCR 文本明显残缺、错字较多或缺少关键信息，请提醒用户截图文字不完整。",
+        "",
+        "屏幕 OCR 文字：",
+        extractedText,
+      ].join("\n")
+    : screenContext?.captured
+      ? `这次已捕获屏幕，但 OCR 没有提取到可靠文字${screenContext.ocrError ? `，原因：${screenContext.ocrError}` : ""}。请基于用户文字继续帮助，并说明龙龙暂时看不清屏幕细节。`
+      : screenError
+        ? `这次没有成功读取屏幕，原因：${screenError}。请基于用户文字继续帮助，并说明龙龙暂时看不到屏幕细节。`
+        : "这次没有读取屏幕内容，请基于用户文字回答。";
+  const userText = [
+    screenText,
+    "",
+    `用户对龙龙说：${message}`,
+  ].join("\n");
+
+  return [
+    { role: "system", content: system },
+    ...history,
+    { role: "user", content: userText },
+  ];
+}
+
+async function askLonglongCompanion(request = {}) {
+  const options = request.options || {};
+  const includeScreen = request.includeScreen !== false;
+  const client = createCurrentDeepSeekClient();
+  let screenCapture = null;
+  let screenContext = null;
+  let screenError = "";
+
+  if (includeScreen) {
+    try {
+      screenCapture = await captureCurrentScreenForLonglong();
+      try {
+        const ocr = await extractScreenTextForLonglong(screenCapture);
+        screenContext = {
+          captured: true,
+          capturedAt: screenCapture.capturedAt,
+          display: screenCapture.display,
+          text: String(ocr.text || "").slice(0, 8000),
+          confidence: ocr.confidence,
+          language: ocr.language,
+          warning: ocr.warning,
+        };
+      } catch (error) {
+        screenContext = {
+          captured: true,
+          capturedAt: screenCapture.capturedAt,
+          display: screenCapture.display,
+          text: "",
+          ocrError: error.message || String(error),
+        };
+      }
+    } catch (error) {
+      screenError = error.message || String(error);
+    }
+  }
+
+  const response = await client.chat({
+    messages: buildLonglongChatMessages(request, screenContext, screenError),
+    temperature: options.temperature != null ? options.temperature : 0.28,
+    maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
+    model: options.model,
+  });
+
+  return {
+    answer: response.content,
+    model: response.model,
+    usage: response.usage,
+    screen: screenContext
+      ? {
+          captured: true,
+          ocrUsed: true,
+          textExtracted: Boolean(screenContext.text),
+          textLength: String(screenContext.text || "").length,
+          confidence: screenContext.confidence,
+          language: screenContext.language,
+          capturedAt: screenContext.capturedAt,
+          display: screenContext.display,
+          error: screenContext.ocrError || screenContext.warning || "",
+        }
+      : { captured: false, ocrUsed: false, textExtracted: false, error: screenError },
+  };
 }
 
 function saveDeepSeekApiKey(apiKey) {
@@ -567,6 +821,10 @@ function createMainWindow() {
   return mainWindow;
 }
 
+function getCompanionSize(mode = companionMode) {
+  return mode === "chat" ? companionChatSize : companionPetSize;
+}
+
 function getCompanionBounds() {
   if (companionCustomBounds) {
     return clampCompanionBounds(companionCustomBounds);
@@ -578,27 +836,74 @@ function getCompanionBounds() {
       ? screen.getDisplayMatching(mainWindow.getBounds())
       : screen.getPrimaryDisplay();
   const { x, y, width, height } = display.workArea;
+  const size = getCompanionSize();
 
   return {
-    width: companionWindowWidth,
-    height: companionWindowHeight,
-    x: x + width - companionWindowWidth - 18,
-    y: y + height - companionWindowHeight - 18,
+    width: size.width,
+    height: size.height,
+    x: x + width - size.width - 18,
+    y: y + height - size.height - 18,
   };
 }
 
 function clampCompanionBounds(bounds) {
-  const display = screen.getDisplayMatching(bounds);
+  const size = getCompanionSize();
+  const safeBounds = {
+    width: Math.max(1, Math.round(Number(bounds?.width) || size.width)),
+    height: Math.max(1, Math.round(Number(bounds?.height) || size.height)),
+    x: Math.round(Number(bounds?.x) || 0),
+    y: Math.round(Number(bounds?.y) || 0),
+  };
+  const display = screen.getDisplayMatching(safeBounds);
   const area = display.workArea;
-  const width = companionWindowWidth;
-  const height = companionWindowHeight;
+  const width = size.width;
+  const height = size.height;
 
   return {
     width,
     height,
-    x: Math.min(area.x + area.width - width, Math.max(area.x, Math.round(bounds.x))),
-    y: Math.min(area.y + area.height - height, Math.max(area.y, Math.round(bounds.y))),
+    x: Math.min(area.x + area.width - width, Math.max(area.x, safeBounds.x)),
+    y: Math.min(area.y + area.height - height, Math.max(area.y, safeBounds.y)),
   };
+}
+
+function resizeCompanionWindowForMode(nextMode) {
+  companionMode = nextMode === "chat" ? "chat" : "pet";
+  if (!companionWindow || companionWindow.isDestroyed()) return;
+
+  const currentBounds = companionWindow.getBounds();
+  const size = getCompanionSize();
+  const nextBounds = clampCompanionBounds({
+    width: size.width,
+    height: size.height,
+    x: currentBounds.x + currentBounds.width - size.width,
+    y: currentBounds.y + currentBounds.height - size.height,
+  });
+  companionCustomBounds = nextBounds;
+  companionWindow.setFocusable(companionMode === "chat");
+  companionWindow.setBounds(nextBounds, false);
+  companionWindow.webContents.send("companion:mode", companionMode);
+  if (companionMode === "chat") {
+    companionWindow.show();
+    companionWindow.focus();
+  } else {
+    companionWindow.blur();
+    companionWindow.setAlwaysOnTop(true, "screen-saver");
+  }
+}
+
+function moveCompanionWindowTo(bounds = {}) {
+  if (!companionWindow || companionWindow.isDestroyed()) return;
+  const currentBounds = companionWindow.getBounds();
+  const nextX = Number(bounds.x);
+  const nextY = Number(bounds.y);
+  companionCustomBounds = clampCompanionBounds({
+    width: currentBounds.width,
+    height: currentBounds.height,
+    x: Number.isFinite(nextX) ? nextX : currentBounds.x,
+    y: Number.isFinite(nextY) ? nextY : currentBounds.y,
+  });
+  companionWindow.setBounds(companionCustomBounds, false);
 }
 
 function createCompanionWindow() {
@@ -615,7 +920,7 @@ function createCompanionWindow() {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    focusable: false,
+    focusable: companionMode === "chat",
     hasShadow: false,
     show: false,
     backgroundColor: "#00000000",
@@ -644,7 +949,7 @@ function createCompanionWindow() {
     }
   });
   companionWindow.on("blur", () => {
-    if (companionShouldShow) {
+    if (companionShouldShow && companionMode !== "chat") {
       setTimeout(revealCompanionWindow, 80);
     }
   });
@@ -671,6 +976,7 @@ function revealCompanionWindow() {
 
 function showCompanionWindow() {
   companionShouldShow = true;
+  companionMode = "pet";
   const petWindow = createCompanionWindow();
   if (petWindow.webContents.isLoading()) return;
   revealCompanionWindow();
@@ -827,6 +1133,27 @@ ipcMain.handle("b:ai:ask-question", async (event, request) => {
 
 ipcMain.handle("b:ai:summarize-documents", async (event, request) => {
   return createCurrentStudyAiService().summarizeDocuments(request);
+});
+
+ipcMain.handle("b:ai:ask-coding", async (event, request) => {
+  return askCodingAssistant(request);
+});
+
+ipcMain.handle("companion:ask-longlong", async (event, request) => {
+  return askLonglongCompanion(request);
+});
+
+ipcMain.handle("companion:set-mode", (event, mode) => {
+  resizeCompanionWindowForMode(mode);
+  return { mode: companionMode, bounds: companionWindow?.getBounds() || null };
+});
+
+ipcMain.handle("companion:get-bounds", () => {
+  return companionWindow && !companionWindow.isDestroyed() ? companionWindow.getBounds() : null;
+});
+
+ipcMain.on("companion:move-to", (event, bounds) => {
+  moveCompanionWindowTo(bounds);
 });
 
 ipcMain.handle("b:ai:extract-pdf-text", async (event, payload) => {

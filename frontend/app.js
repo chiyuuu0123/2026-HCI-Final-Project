@@ -12,6 +12,7 @@ const viewTitles = {
   dashboard: "学习工作台",
   reader: "资料阅读",
   rag: "RAG 知识问答",
+  coding: "阿龙在 Coding",
   planner: "TodoList",
   map: "知识图谱",
   quiz: "自动测验",
@@ -708,11 +709,11 @@ async function submitLonglongRagQuestion(event) {
   const question = elements.question?.value.trim();
 
   if (!question) {
-    if (elements.ragOutput) elements.ragOutput.textContent = "先告诉龙龙你想问资料库什么问题。";
+    setAiMarkdownContent(elements.ragOutput, "先告诉龙龙你想问资料库什么问题。");
     return;
   }
 
-  if (elements.ragOutput) elements.ragOutput.textContent = "龙龙正在整理课程资料接口...";
+  setAiMarkdownContent(elements.ragOutput, "龙龙正在整理课程资料接口...");
 
   try {
     const request = buildLonglongRagRequest(question);
@@ -729,7 +730,7 @@ async function submitLonglongRagQuestion(event) {
     longlongState.ragAnswer = `RAG 接口调用失败：${getAiErrorMessage(error)}`;
   }
 
-  if (elements.ragOutput) elements.ragOutput.textContent = longlongState.ragAnswer;
+  setAiMarkdownContent(elements.ragOutput, longlongState.ragAnswer);
   syncLonglongAssistant();
 }
 
@@ -760,7 +761,7 @@ function syncLonglongAssistant() {
   if (elements.moodDetail) elements.moodDetail.textContent = longlongState.moodDetail;
   renderStudyTimerSnapshot();
   if (elements.music) elements.music.textContent = longlongState.music;
-  if (elements.ragOutput) elements.ragOutput.textContent = longlongState.ragAnswer;
+  setAiMarkdownContent(elements.ragOutput, longlongState.ragAnswer);
   if (elements.reminders) {
     elements.reminders.innerHTML = reminders.length
       ? reminders
@@ -2008,7 +2009,7 @@ async function exportActivePdfRange(prefix = "ai") {
       setRagStatus(getAiErrorMessage(error), "warning");
     } else {
       const output = document.querySelector("#ai-reading-output");
-      if (output) output.textContent = getAiErrorMessage(error);
+      setAiMarkdownContent(output, getAiErrorMessage(error));
     }
   }
 }
@@ -2126,9 +2127,12 @@ function renderRagMessages() {
           const webMarkup = message.webSearch
             ? `<small class="rag-web-note">${message.webSearch.error ? `联网搜索失败：${escapeHtml(message.webSearch.error)}` : `联网搜索：${message.webSearch.results?.length || 0} 条结果`}</small>`
             : "";
+          const bodyMarkup = message.role === "assistant"
+            ? renderAiMarkdown(message.text)
+            : `<p>${escapeHtml(message.text)}</p>`;
           return `
             <article class="rag-message ${message.role}">
-              <p>${escapeHtml(message.text)}</p>
+              ${bodyMarkup}
               ${sourceMarkup}
               ${webMarkup}
             </article>
@@ -2377,6 +2381,85 @@ async function submitRagQuestion(event) {
     });
     setRagStatus("回答失败", "warning");
   }
+}
+
+function setCodingStatus(text, tone = "ready") {
+  const status = document.querySelector("#coding-status");
+  if (!status) return;
+  status.textContent = text;
+  status.className = `rag-status ${tone}`;
+}
+
+async function submitCodingAssistant(event) {
+  event.preventDefault();
+  const form = event.target;
+  const problemInput = form.querySelector("#coding-problem");
+  const codeInput = form.querySelector("#coding-code");
+  const languageInput = form.querySelector("#coding-language");
+  const output = document.querySelector("#coding-output");
+  const problem = problemInput?.value.trim() || "";
+  const code = codeInput?.value.trim() || "";
+  const language = languageInput?.value || "auto";
+
+  if (!problem && !code) {
+    setCodingStatus("请先输入题目或代码", "warning");
+    problemInput?.focus();
+    return;
+  }
+
+  setCodingStatus(code ? "正在分析代码..." : "正在生成解法...", "working");
+  if (output) {
+    output.innerHTML = `
+      <div class="coding-empty">
+        <strong>阿龙正在 coding...</strong>
+        <span>${code ? "正在检查复杂度、可行性和优化空间。" : "正在整理思路并生成推荐代码。"}</span>
+      </div>
+    `;
+  }
+
+  try {
+    await ensureAiConfigured();
+    if (!window.mindStudy?.ai?.askCoding) {
+      throw new Error("阿龙 coding 接口尚未可用。");
+    }
+
+    const response = await window.mindStudy.ai.askCoding({
+      problem,
+      code,
+      language,
+      options: {
+        maxTokens: 2600,
+        temperature: 0.18,
+      },
+    });
+
+    setAiMarkdownContent(output, response.answer);
+    setCodingStatus(code ? "代码分析完成" : "解法生成完成", "ready");
+  } catch (error) {
+    if (output) {
+      output.innerHTML = `
+        <div class="coding-empty">
+          <strong>阿龙暂时没跑起来</strong>
+          <span>${escapeHtml(getAiErrorMessage(error))}</span>
+        </div>
+      `;
+    }
+    setCodingStatus("请求失败", "warning");
+  }
+}
+
+function clearCodingAssistant() {
+  document.querySelector("#coding-form")?.reset();
+  const output = document.querySelector("#coding-output");
+  if (output) {
+    output.innerHTML = `
+      <div class="coding-empty">
+        <strong>把题目或代码交给阿龙</strong>
+        <span>支持复杂度分析、可行性判断、优化建议，以及根据题目生成一版推荐代码。</span>
+      </div>
+    `;
+  }
+  setCodingStatus("等待输入", "ready");
 }
 
 function normalizeSelectedFiles(result) {
@@ -3020,10 +3103,12 @@ function rememberCurrentAiReading() {
     doc.meta.aiSourcesByPage = doc.meta.aiSourcesByPage || {};
     doc.meta.aiSourcesByPage[pageKey] = sourceInput.value;
     doc.meta.aiSource = sourceInput.value;
-    if (output?.textContent) {
+    const storedMarkdown = doc.meta.aiOutputsByPage?.[pageKey] || doc.meta.aiOutput || "";
+    const outputMarkdown = getAiMarkdownContent(output, storedMarkdown);
+    if (outputMarkdown) {
       doc.meta.aiOutputsByPage = doc.meta.aiOutputsByPage || {};
-      doc.meta.aiOutputsByPage[pageKey] = output.textContent;
-      doc.meta.aiOutput = output.textContent;
+      doc.meta.aiOutputsByPage[pageKey] = outputMarkdown;
+      doc.meta.aiOutput = outputMarkdown;
     }
     saveWorkspace();
   }
@@ -3568,7 +3653,7 @@ function updatePdfAiReadingPanel(doc) {
   const sourceText = getCurrentReadingText(doc);
   sourceInput.value = sourceText;
   sourceInput.placeholder = `这里会跟随当前第 ${getActivePdfPageNumber(doc)} 页显示 PDF 提取文字。如果该页是扫描图片，可以手动粘贴文字。`;
-  output.textContent = getPdfAiOutput(doc, sourceText);
+  setAiMarkdownContent(output, getPdfAiOutput(doc, sourceText));
 
   if (status) {
     const extractStatus = getPdfExtractionStatus(doc);
@@ -5109,6 +5194,7 @@ async function generateStudyModuleFromUploads() {
             maxContextChars: GRAPH_TEXT_LIMIT,
             maxTokens: 2600,
             temperature: 0.15,
+            persona: false,
           },
         });
         const parsed = extractJsonFromAiText(response.answer);
@@ -5998,6 +6084,23 @@ function renderMarkdownPreview(markdown, doc = documentState.current) {
   return blocks.join("") || `<p class="markdown-empty">当前 Markdown 没有可预览内容。</p>`;
 }
 
+function renderAiMarkdown(markdown) {
+  return `<div class="ai-markdown">${renderMarkdownPreview(markdown || "AI 没有返回内容。", null)}</div>`;
+}
+
+function setAiMarkdownContent(element, markdown) {
+  if (!element) return;
+  const rawMarkdown = String(markdown || "");
+  element.dataset.markdown = rawMarkdown;
+  element.innerHTML = renderAiMarkdown(rawMarkdown);
+}
+
+function getAiMarkdownContent(element, fallback = "") {
+  if (!element) return fallback;
+  if (Object.hasOwn(element.dataset || {}, "markdown")) return element.dataset.markdown;
+  return fallback || element.textContent || "";
+}
+
 function stripMarkdown(markdown) {
   return markdown
     .replace(/```[\s\S]*?```/g, " ")
@@ -6205,7 +6308,7 @@ function renderAiReadingWindow(doc) {
             : ""
         }
       </div>
-      <div class="ai-reading-output" id="ai-reading-output">${escapeHtml(output)}</div>
+      <div class="ai-reading-output" id="ai-reading-output">${renderAiMarkdown(output)}</div>
     </section>
   `;
 }
@@ -6218,11 +6321,11 @@ async function updateAiReadingOutput(mode) {
 
   const source = sourceInput.value.trim();
   if (!source) {
-    output.textContent = analyzeReadingText(source);
+    setAiMarkdownContent(output, analyzeReadingText(source));
     return;
   }
 
-  output.textContent = mode === "translate" ? "DeepSeek 正在翻译..." : "DeepSeek 正在解析...";
+  setAiMarkdownContent(output, mode === "translate" ? "DeepSeek 正在翻译..." : "DeepSeek 正在解析...");
 
   let result = "";
 
@@ -6273,7 +6376,7 @@ async function updateAiReadingOutput(mode) {
     doc.meta.aiSource = source;
     doc.meta.aiOutput = result;
   }
-  output.textContent = result;
+  setAiMarkdownContent(output, result);
   saveWorkspace();
 }
 
@@ -7612,7 +7715,7 @@ document.querySelectorAll(".prompt-chip").forEach((chip) => {
     userBubble.className = "chat-bubble user";
     aiBubble.className = "chat-bubble ai";
     userBubble.textContent = chip.dataset.prompt;
-    aiBubble.textContent = "DeepSeek 正在根据当前课程资料整理回答...";
+    setAiMarkdownContent(aiBubble, "DeepSeek 正在根据当前课程资料整理回答...");
     chatList.append(userBubble, aiBubble);
     chatList.scrollTop = chatList.scrollHeight;
     chip.disabled = true;
@@ -7629,9 +7732,9 @@ document.querySelectorAll(".prompt-chip").forEach((chip) => {
           maxTokens: 1000,
         },
       });
-      aiBubble.textContent = formatAiAnswer(response);
+      setAiMarkdownContent(aiBubble, formatAiAnswer(response));
     } catch (error) {
-      aiBubble.textContent = getAiErrorMessage(error);
+      setAiMarkdownContent(aiBubble, getAiErrorMessage(error));
     } finally {
       chip.disabled = false;
       chatList.scrollTop = chatList.scrollHeight;
@@ -7787,6 +7890,10 @@ document.addEventListener("submit", (event) => {
     submitRagQuestion(event);
   }
 
+  if (event.target.matches("#coding-form")) {
+    submitCodingAssistant(event);
+  }
+
   if (event.target.matches("#ai-settings-form")) {
     submitAiSettingsForm(event);
   }
@@ -7830,6 +7937,7 @@ document.addEventListener("click", (event) => {
   const calendarDateButton = event.target.closest("[data-calendar-date]");
   const plannerEventDeleteButton = event.target.closest("[data-planner-event-delete]");
   const ragActionButton = event.target.closest("[data-rag-action]");
+  const codingActionButton = event.target.closest("[data-coding-action]");
   const longlongToggleButton = event.target.closest("[data-longlong-toggle]");
   const longlongActionButton = event.target.closest("[data-longlong-action]");
   const mapModeButton = event.target.closest("[data-map-mode]");
@@ -7852,6 +7960,11 @@ document.addEventListener("click", (event) => {
     if (action === "learn-range") learnActivePdfRange();
     if (action === "export-range") exportActivePdfRange("rag");
     if (action === "clear-library") clearRagKnowledge();
+    return;
+  }
+
+  if (codingActionButton) {
+    if (codingActionButton.dataset.codingAction === "clear") clearCodingAssistant();
     return;
   }
 

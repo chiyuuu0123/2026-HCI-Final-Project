@@ -33,6 +33,10 @@
             <i data-lucide="brain-circuit"></i>
             <span>RAG 问答</span>
           </button>
+          <button class="nav-item" data-view="coding">
+            <i data-lucide="code-2"></i>
+            <span>阿龙在 Coding</span>
+          </button>
           <button class="nav-item" data-view="planner">
             <i data-lucide="list-todo"></i>
             <span>TodoList</span>
@@ -369,6 +373,88 @@
                 <i data-lucide="trash-2"></i>
                 <span>清空知识库</span>
               </button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="coding">
+          <div class="coding-page">
+            <section class="panel coding-input-panel">
+              <div class="coding-hero">
+                <div>
+                  <span class="tag muted">Along Coding</span>
+                  <h2>阿龙在 Coding</h2>
+                  <p>发送代码和题目，阿龙会分析复杂度、可行性和优化方向；只发题目时，会直接给一版推荐解法。</p>
+                </div>
+                <button class="mini-button" data-ai-action="settings" title="设置 DeepSeek API Key">
+                  <i data-lucide="key-round"></i>
+                  <span>Key</span>
+                </button>
+              </div>
+
+              <form class="coding-form" id="coding-form">
+                <div class="coding-form-grid">
+                  <label>
+                    <span>语言</span>
+                    <select id="coding-language" name="language">
+                      <option value="auto">自动识别</option>
+                      <option value="java">Java</option>
+                      <option value="cpp">C++</option>
+                      <option value="python">Python</option>
+                      <option value="javascript">JavaScript</option>
+                      <option value="typescript">TypeScript</option>
+                      <option value="go">Go</option>
+                    </select>
+                  </label>
+                  <div class="coding-mode-note">
+                    <strong>两种用法</strong>
+                    <span>代码 + 题目：分析代码；只填题目：生成最佳代码。</span>
+                  </div>
+                </div>
+
+                <label class="coding-field">
+                  <span>题目 / 需求（可选）</span>
+                  <textarea id="coding-problem" name="problem" rows="7" placeholder="粘贴算法题、项目需求或输入输出约束。只填这里时，阿龙会写一版推荐代码。"></textarea>
+                </label>
+
+                <label class="coding-field">
+                  <span>代码（可选）</span>
+                  <textarea id="coding-code" name="code" rows="14" spellcheck="false" placeholder="粘贴你的代码。填写代码后，阿龙会重点分析复杂度、可行性、bug 风险和优化建议。"></textarea>
+                </label>
+
+                <div class="coding-actions">
+                  <button class="primary-action" type="submit">
+                    <i data-lucide="sparkles"></i>
+                    <span>让阿龙分析</span>
+                  </button>
+                  <button class="ghost-action" type="button" data-coding-action="clear">
+                    <i data-lucide="eraser"></i>
+                    <span>清空</span>
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            <aside class="panel coding-output-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="tag muted">AI Code Review</span>
+                  <h3>分析结果</h3>
+                </div>
+                <span class="rag-status ready" id="coding-status">等待输入</span>
+              </div>
+              <div class="coding-output" id="coding-output">
+                <div class="coding-empty">
+                  <strong>把题目或代码交给阿龙</strong>
+                  <span>支持复杂度分析、可行性判断、优化建议，以及根据题目生成一版推荐代码。</span>
+                </div>
+              </div>
+              <div class="coding-capabilities">
+                <span>时间复杂度</span>
+                <span>空间复杂度</span>
+                <span>边界情况</span>
+                <span>优化建议</span>
+              </div>
             </aside>
           </div>
         </section>

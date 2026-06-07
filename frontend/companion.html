@@ -7,44 +7,169 @@
     <link rel="stylesheet" href="./companion.css" />
   </head>
   <body>
-    <main class="desktop-pet" id="desktop-pet">
-      <button class="pet-bubble" id="pet-bubble" title="点击唤醒 MindStudy">
-        <span id="pet-tip">今天也一起学一会儿吧</span>
-      </button>
-      <div class="pet-study-time" id="pet-study-time" title="今天已经学习的时间">
-        <span>今日学习</span>
-        <strong>00:00:00</strong>
-      </div>
-      <div class="pet-body" title="按住龙龙拖动">
-        <img src="./assets/longlong-guide.gif" alt="龙龙" draggable="false" />
-      </div>
-      <div class="pet-actions" aria-label="龙龙快捷操作">
-        <button type="button" data-pet-action="wake">唤醒</button>
-        <button type="button" data-pet-action="poke">摸摸</button>
-        <button type="button" data-pet-action="tip">提醒</button>
-        <button type="button" data-pet-action="hide">休息</button>
-      </div>
+    <main class="desktop-pet pet-mode" id="desktop-pet">
+      <section class="pet-stage" aria-label="龙龙桌宠">
+        <button class="pet-bubble" id="pet-bubble" title="点击唤醒 MindStudy">
+          <span id="pet-tip">今天也一起学一会儿吧</span>
+        </button>
+        <div class="pet-study-time" id="pet-study-time" title="今天已经学习的时间">
+          <span>今日学习</span>
+          <strong>00:00:00</strong>
+        </div>
+        <button class="pet-body" id="pet-body" type="button" data-pet-drag title="拖动龙龙，点击和龙龙聊天">
+          <img src="./assets/longlong-guide.gif" alt="龙龙" draggable="false" />
+        </button>
+        <div class="pet-actions" aria-label="龙龙快捷操作">
+          <button type="button" data-pet-action="chat">聊聊</button>
+          <button type="button" data-pet-action="wake">唤醒</button>
+          <button type="button" data-pet-action="poke">摸摸</button>
+          <button type="button" data-pet-action="tip">提醒</button>
+        </div>
+      </section>
+
+      <section class="pet-chat" aria-label="和龙龙对话">
+        <header class="pet-chat-head" data-pet-drag>
+          <div>
+            <span>Longlong Live</span>
+            <strong>和龙龙聊聊</strong>
+          </div>
+          <div class="pet-chat-head-actions">
+            <button type="button" data-pet-action="wake">打开软件</button>
+            <button type="button" data-pet-action="pet">收起</button>
+          </div>
+        </header>
+        <div class="pet-chat-list" id="pet-chat-list">
+          <article class="pet-chat-message assistant">
+            <img src="./assets/longlong-guide.gif" alt="" draggable="false" />
+            <div>
+              <p>龙龙在这里。你可以问我当前屏幕上的代码、PDF、网页或报错，我会先读取屏幕文字再帮你分析。</p>
+            </div>
+          </article>
+        </div>
+        <form class="pet-chat-form" id="pet-chat-form">
+          <label class="pet-screen-toggle">
+            <input id="pet-screen-toggle" type="checkbox" checked />
+            <span>读取屏幕文字</span>
+          </label>
+          <textarea id="pet-chat-input" rows="3" placeholder="问龙龙：帮我看看屏幕文字里的代码哪里可以优化？"></textarea>
+          <div class="pet-chat-actions">
+            <button type="button" data-pet-action="pet">回到桌宠</button>
+            <button type="submit">发送</button>
+          </div>
+        </form>
+      </section>
     </main>
     <script>
       const pet = document.querySelector("#desktop-pet");
+      const petBody = document.querySelector("#pet-body");
       const tip = document.querySelector("#pet-tip");
       const bubble = document.querySelector("#pet-bubble");
       const actions = document.querySelector(".pet-actions");
+      const chatList = document.querySelector("#pet-chat-list");
+      const chatForm = document.querySelector("#pet-chat-form");
+      const chatInput = document.querySelector("#pet-chat-input");
+      const screenToggle = document.querySelector("#pet-screen-toggle");
       const studyTime = document.querySelector("#pet-study-time strong");
       const idleTips = [
+        "点击我可以直接聊天",
         "按住我可以拖到桌面任意位置",
-        "悬停我会冒出快捷气泡",
+        "龙龙可以读取屏幕文字陪你分析",
         "先做最重要的一小步",
         "久坐了就站起来伸展一下",
-        "资料库问答接口已经待命",
       ];
       const pokeTips = [
-        "摸摸收到，继续陪你。",
+        "摸摸收到，龙龙继续陪你。",
         "龙龙精神满满。",
         "先别分心，读完这一页。",
       ];
       let latestSnapshot = null;
       let restoreTipTimer = null;
+      let companionMode = "pet";
+      let chatHistory = [];
+      let dragState = null;
+      let dragFrame = 0;
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function renderInlineMarkdown(text) {
+        return escapeHtml(text)
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+          .replace(/`([^`]+)`/g, "<code>$1</code>");
+      }
+
+      function renderPetMarkdown(markdown) {
+        const source = String(markdown || "龙龙暂时没有想到合适的回答。").trim();
+        const blocks = [];
+        const lines = source.split(/\r?\n/);
+        let list = [];
+        let code = [];
+        let codeLang = "";
+        let inCode = false;
+
+        const flushList = () => {
+          if (!list.length) return;
+          blocks.push(`<ul>${list.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ul>`);
+          list = [];
+        };
+        const flushCode = () => {
+          if (!code.length && !codeLang) return;
+          blocks.push(`<pre><span>${escapeHtml(codeLang || "code")}</span><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+          code = [];
+          codeLang = "";
+        };
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("```")) {
+            if (inCode) {
+              flushCode();
+              inCode = false;
+            } else {
+              flushList();
+              inCode = true;
+              codeLang = trimmed.replace(/^```/, "").trim();
+            }
+            continue;
+          }
+
+          if (inCode) {
+            code.push(line);
+            continue;
+          }
+
+          if (!trimmed) {
+            flushList();
+            continue;
+          }
+
+          const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+          if (heading) {
+            flushList();
+            blocks.push(`<h3>${renderInlineMarkdown(heading[2])}</h3>`);
+            continue;
+          }
+
+          const item = trimmed.match(/^[-*+]\s+(.+)$/);
+          if (item) {
+            list.push(item[1]);
+            continue;
+          }
+
+          flushList();
+          blocks.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
+        }
+
+        flushList();
+        flushCode();
+        return blocks.join("");
+      }
 
       function formatStudyDuration(totalSeconds) {
         const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
@@ -69,7 +194,7 @@
       }
 
       function setTip(text, { temporary = false, motion = "speaking" } = {}) {
-        tip.textContent = text || latestSnapshot?.reminder || "点我回来学习";
+        tip.textContent = text || latestSnapshot?.reminder || "点我和龙龙聊天";
         showPetMotion(motion);
 
         window.clearTimeout(restoreTipTimer);
@@ -84,18 +209,139 @@
         return items[Math.floor(Math.random() * items.length)];
       }
 
-      window.mindStudy?.onCompanionSnapshot?.((snapshot) => {
-        if (!snapshot) return;
-        latestSnapshot = snapshot;
-        if (snapshot.studyTime) applyStudyTimerSnapshot({ formatted: snapshot.studyTime });
-        setTip(snapshot.reminder || snapshot.mood || "点我回来学习");
-      });
+      function applyMode(mode) {
+        companionMode = mode === "chat" ? "chat" : "pet";
+        pet.classList.toggle("chat-mode", companionMode === "chat");
+        pet.classList.toggle("pet-mode", companionMode === "pet");
+      }
 
-      const studyTimerPromise = window.mindStudy?.getStudyTimer?.();
-      studyTimerPromise?.then(applyStudyTimerSnapshot).catch(() => {});
-      window.mindStudy?.onStudyTimerUpdate?.(applyStudyTimerSnapshot);
+      async function setMode(mode) {
+        applyMode(mode);
+        await window.mindStudy?.setCompanionMode?.(companionMode);
+
+        if (companionMode === "chat") {
+          window.setTimeout(() => chatInput?.focus(), 80);
+        }
+      }
+
+      function addChatMessage(role, content, options = {}) {
+        const message = document.createElement("article");
+        message.className = `pet-chat-message ${role}`;
+        message.innerHTML = `
+          ${role === "assistant" ? '<img src="./assets/longlong-guide.gif" alt="" draggable="false" />' : ""}
+          <div>
+            ${renderPetMarkdown(content)}
+            ${options.meta ? `<small>${escapeHtml(options.meta)}</small>` : ""}
+          </div>
+        `;
+        chatList.append(message);
+        chatList.scrollTop = chatList.scrollHeight;
+        return message;
+      }
+
+      function updateChatMessage(message, content, options = {}) {
+        if (!message) return;
+        message.querySelector("div").innerHTML = `
+          ${renderPetMarkdown(content)}
+          ${options.meta ? `<small>${escapeHtml(options.meta)}</small>` : ""}
+        `;
+        chatList.scrollTop = chatList.scrollHeight;
+      }
+
+      async function submitChat(event) {
+        event.preventDefault();
+        const text = chatInput.value.trim();
+        if (!text) {
+          chatInput.focus();
+          return;
+        }
+
+        chatInput.value = "";
+        addChatMessage("user", text);
+        chatHistory.push({ role: "user", content: text });
+        const thinking = addChatMessage("assistant", screenToggle.checked ? "龙龙正在读取屏幕文字..." : "龙龙正在想...");
+
+        try {
+          const response = await window.mindStudy?.askLonglongCompanion?.({
+            message: text,
+            includeScreen: screenToggle.checked,
+            history: chatHistory.slice(0, -1),
+            options: {
+              maxTokens: 1200,
+              temperature: 0.28,
+            },
+          });
+          const answer = response?.answer || "龙龙没有收到有效回答。";
+          const screenMeta = response?.screen?.captured
+            ? response.screen.textExtracted
+              ? `已读取屏幕文字${response.screen.textLength ? ` · ${response.screen.textLength} 字` : ""}`
+              : "已截图，但没有识别到可靠文字"
+            : screenToggle.checked
+              ? "未能读取屏幕文字"
+              : "";
+          updateChatMessage(thinking, answer, { meta: screenMeta });
+          chatHistory.push({ role: "assistant", content: answer });
+          chatHistory = chatHistory.slice(-10);
+        } catch (error) {
+          updateChatMessage(thinking, `龙龙这次没连上：${error.message || String(error)}`);
+        }
+      }
+
+      async function beginDrag(event) {
+        const dragHandle = event.target.closest("[data-pet-drag]");
+        if (!dragHandle || event.target.closest("textarea, input, button:not(#pet-body)")) return;
+
+        const bounds = await window.mindStudy?.getCompanionBounds?.();
+        if (!bounds) return;
+
+        event.preventDefault();
+        dragHandle.setPointerCapture?.(event.pointerId);
+        dragState = {
+          bounds,
+          startX: event.screenX,
+          startY: event.screenY,
+          openChatOnClick: event.target.closest("#pet-body"),
+          moved: false,
+        };
+        pet.classList.add("dragging");
+      }
+
+      function updateDrag(event) {
+        if (!dragState) return;
+
+        const dx = event.screenX - dragState.startX;
+        const dy = event.screenY - dragState.startY;
+        if (Math.abs(dx) + Math.abs(dy) > 5) dragState.moved = true;
+        window.cancelAnimationFrame(dragFrame);
+        dragFrame = window.requestAnimationFrame(() => {
+          window.mindStudy?.moveCompanionTo?.({
+            width: dragState.bounds.width,
+            height: dragState.bounds.height,
+            x: dragState.bounds.x + dx,
+            y: dragState.bounds.y + dy,
+          });
+        });
+      }
+
+      function finishDrag() {
+        if (!dragState) return;
+        const shouldOpenChat = dragState.openChatOnClick && !dragState.moved;
+        dragState = null;
+        pet.classList.remove("dragging");
+        if (shouldOpenChat) setMode("chat");
+      }
 
       function handlePetAction(action) {
+        if (action === "chat") {
+          setMode("chat");
+          return;
+        }
+
+        if (action === "pet") {
+          setMode("pet");
+          return;
+        }
+
         if (action === "wake") {
           window.mindStudy?.wakeMainWindow?.();
           return;
@@ -108,13 +354,20 @@
 
         if (action === "tip") {
           setTip(pickRandom(idleTips), { temporary: true, motion: "thinking" });
-          return;
-        }
-
-        if (action === "hide") {
-          window.mindStudy?.hideCompanion?.();
         }
       }
+
+      window.mindStudy?.onCompanionSnapshot?.((snapshot) => {
+        if (!snapshot) return;
+        latestSnapshot = snapshot;
+        if (snapshot.studyTime) applyStudyTimerSnapshot({ formatted: snapshot.studyTime });
+        setTip(snapshot.reminder || snapshot.mood || "点我和龙龙聊天");
+      });
+      window.mindStudy?.onCompanionMode?.((mode) => applyMode(mode));
+
+      const studyTimerPromise = window.mindStudy?.getStudyTimer?.();
+      studyTimerPromise?.then(applyStudyTimerSnapshot).catch(() => {});
+      window.mindStudy?.onStudyTimerUpdate?.(applyStudyTimerSnapshot);
 
       bubble.addEventListener("click", () => {
         window.mindStudy?.wakeMainWindow?.();
@@ -126,8 +379,19 @@
         handlePetAction(actionButton.dataset.petAction);
       });
 
+      document.addEventListener("click", (event) => {
+        const actionButton = event.target.closest("[data-pet-action]");
+        if (!actionButton || actions.contains(actionButton)) return;
+        handlePetAction(actionButton.dataset.petAction);
+      });
+      document.addEventListener("pointerdown", beginDrag);
+      document.addEventListener("pointermove", updateDrag);
+      document.addEventListener("pointerup", finishDrag);
+      document.addEventListener("pointercancel", finishDrag);
+      chatForm.addEventListener("submit", submitChat);
+
       window.setInterval(() => {
-        if (document.hidden) return;
+        if (document.hidden || companionMode === "chat") return;
         setTip(latestSnapshot?.reminder || pickRandom(idleTips), { temporary: true, motion: "thinking" });
       }, 45000);
     </script>

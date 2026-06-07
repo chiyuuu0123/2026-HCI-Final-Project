@@ -48,14 +48,24 @@ function selectRagChunks(query, documents, options = {}) {
   };
 }
 
-function buildQuestionMessages(question, chunks) {
+function shouldUseLonglongPersona(options = {}) {
+  return options.persona !== false;
+}
+
+function buildQuestionMessages(question, chunks, options = {}) {
   const context = buildContext(chunks);
+  const personaLines = shouldUseLonglongPersona(options)
+    ? [
+        "You are Longlong (龙龙), MindStudy's friendly study companion.",
+        "Answer in Chinese by default, naturally refer to yourself as 龙龙, and keep a warm, encouraging tone.",
+      ]
+    : ["You are the B module for an HCI course project."];
 
   return [
     {
       role: "system",
       content: [
-        "You are the B module for an HCI course project.",
+        ...personaLines,
         "Answer only from the provided course context when possible.",
         "If the context is insufficient, say what is missing.",
         "Cite sources with labels such as [S1] or [S2].",
@@ -69,9 +79,12 @@ function buildQuestionMessages(question, chunks) {
   ];
 }
 
-function buildSummarizeMessages(topic, chunks) {
+function buildSummarizeMessages(topic, chunks, options = {}) {
   const context = buildContext(chunks);
   const requestTopic = topic ? String(topic).trim() : "overall course material";
+  const personaLine = shouldUseLonglongPersona(options)
+    ? "String fields should sound like 龙龙 is explaining the material warmly to the learner."
+    : "";
 
   return [
     {
@@ -84,6 +97,7 @@ function buildSummarizeMessages(topic, chunks) {
         "keywords must be an array of short strings.",
         "outline must be an array of objects with heading and points fields.",
         "takeaways must be an array of short strings.",
+        personaLine,
       ].join(" "),
     },
     {
@@ -130,7 +144,7 @@ function createStudyAiService(options = {}) {
       const normalizedDocuments = await normalizeDocumentsForAi(request.documents, options);
       const { chunks, retrieval } = selectRagChunks(request.question, normalizedDocuments, options);
       const response = await client.chat({
-        messages: buildQuestionMessages(request.question, chunks),
+        messages: buildQuestionMessages(request.question, chunks, options),
         model: options.model,
         temperature: options.temperature != null ? options.temperature : 0.2,
         maxTokens: options.maxTokens != null ? options.maxTokens : 900,
@@ -156,7 +170,7 @@ function createStudyAiService(options = {}) {
         : collectLeadingChunks(normalizedDocuments, options);
       const retrieval = buildRetrievalMetadata(topic ? index.strategy || "local-bm25" : "leading-chunks", index, chunks);
       const response = await client.chat({
-        messages: buildSummarizeMessages(topic, chunks),
+        messages: buildSummarizeMessages(topic, chunks, options),
         model: options.model,
         temperature: options.temperature != null ? options.temperature : 0.2,
         maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
