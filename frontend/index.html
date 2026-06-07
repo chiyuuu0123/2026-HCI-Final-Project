@@ -457,30 +457,59 @@
                   <span class="tag muted">Knowledge Graph</span>
                   <h3>用户交互技术知识图谱</h3>
                 </div>
+                <div class="graph-actions">
+                  <button class="primary-action" data-study-action="generate">
+                    <i data-lucide="sparkles"></i>
+                    <span>生成知识图谱</span>
+                  </button>
+                  <button class="ghost-action" data-study-action="cancel-generation">
+                    <i data-lucide="square"></i>
+                    <span>取消</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="study-generation-card" id="study-generation-card">
+                <div>
+                  <strong id="study-generation-title">等待生成</strong>
+                  <span id="study-generation-detail">导入资料后可用 DeepSeek / 本地规则生成课程图谱和题目。</span>
+                </div>
+                <div class="study-generation-track">
+                  <span id="study-generation-progress" style="width: 0%"></span>
+                </div>
+              </div>
+
+              <div class="graph-toolbar">
                 <div class="segmented" id="knowledge-view-mode" aria-label="知识图谱视图">
                   <button class="active" data-map-mode="mastery">掌握状态</button>
                   <button data-map-mode="chapter">章节</button>
                   <button data-map-mode="difficulty">难度</button>
                 </div>
+                <select id="graph-chapter-filter" aria-label="章节筛选"></select>
+                <select id="graph-difficulty-filter" aria-label="难度筛选"></select>
+                <select id="graph-mastery-filter" aria-label="掌握度筛选">
+                  <option value="all">全部掌握度</option>
+                  <option value="weak">薄弱 / 易错</option>
+                  <option value="learning">学习中</option>
+                  <option value="mastered">已掌握</option>
+                </select>
+                <div class="graph-zoom-tools">
+                  <button class="icon-button" data-graph-zoom="-0.1" title="缩小"><i data-lucide="zoom-out"></i></button>
+                  <button class="icon-button" data-graph-zoom="0.1" title="放大"><i data-lucide="zoom-in"></i></button>
+                  <button class="mini-button" data-study-action="reset-graph-view">重置视图</button>
+                </div>
               </div>
-              <div class="knowledge-map large-map">
-                <button class="node root" data-node="人机交互">人机交互</button>
-                <button class="node node-a" data-node="可用性">可用性</button>
-                <button class="node node-b" data-node="用户体验">用户体验</button>
-                <button class="node node-c weak" data-node="评估方法">评估方法</button>
-                <button class="node node-d" data-node="Fitts 定律">Fitts 定律</button>
-                <button class="node node-e weak" data-node="SUS 量表">SUS 量表</button>
-                <button class="node node-f" data-node="认知负荷">认知负荷</button>
-                <button class="node node-g weak" data-node="用户访谈">用户访谈</button>
-                <button class="node node-h" data-node="原型测试">原型测试</button>
-                <span class="edge edge-1"></span>
-                <span class="edge edge-2"></span>
-                <span class="edge edge-3"></span>
-                <span class="edge edge-4"></span>
-                <span class="edge edge-5"></span>
-                <span class="edge edge-6"></span>
-                <span class="edge edge-7"></span>
-                <span class="edge edge-8"></span>
+
+              <div class="knowledge-map large-map" id="knowledge-map-stage">
+                <div class="knowledge-map-canvas" id="knowledge-map-canvas">
+                  <svg class="knowledge-edge-layer" id="knowledge-edge-layer" viewBox="0 0 1000 680" preserveAspectRatio="none"></svg>
+                  <div class="knowledge-node-layer" id="knowledge-node-layer"></div>
+                </div>
+                <div class="graph-empty-state" id="graph-empty-state">
+                  <i data-lucide="network"></i>
+                  <strong>还没有生成课程图谱</strong>
+                  <span>上传 PDF / Markdown 后点击“生成知识图谱”。没有 API key 时也会自动用本地规则生成。</span>
+                </div>
               </div>
             </section>
 
@@ -515,6 +544,19 @@
                 </div>
                 <span class="progress-badge" id="quiz-difficulty">难度 中等</span>
               </div>
+              <div class="quiz-generator-bar">
+                <select id="quiz-scope-select" aria-label="出题范围"></select>
+                <select id="quiz-difficulty-select" aria-label="题目难度">
+                  <option value="all">全部难度</option>
+                  <option value="基础">基础</option>
+                  <option value="中等">中等</option>
+                  <option value="较难">较难</option>
+                </select>
+                <button class="primary-action" data-quiz-action="generate-filtered">
+                  <i data-lucide="wand-sparkles"></i>
+                  <span>生成题组</span>
+                </button>
+              </div>
               <p class="question" id="quiz-question">下列哪一项最适合作为“满意度”的评价指标？</p>
               <div class="answer-list" id="quiz-answer-list">
                 <button class="answer-option">A. 完成任务所需的平均时间</button>
@@ -547,6 +589,10 @@
               <button class="ghost-action full" data-quiz-action="reset">
                 <i data-lucide="rotate-cw"></i>
                 <span>重新生成</span>
+              </button>
+              <button class="ghost-action full" data-view-jump="report">
+                <i data-lucide="book-open-check"></i>
+                <span>查看错题本</span>
               </button>
             </aside>
           </div>
@@ -603,6 +649,16 @@
                 <strong>可用性测试</strong>
                 <span>掌握度 58%</span>
               </div>
+            </section>
+            <section class="panel mistake-book-panel" id="mistake-book-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="tag muted">错题本</span>
+                  <h3>自动记录与复习</h3>
+                </div>
+                <span class="progress-badge" id="mistake-book-count">0 题</span>
+              </div>
+              <div class="mistake-book-list" id="mistake-book-list"></div>
             </section>
           </div>
         </section>

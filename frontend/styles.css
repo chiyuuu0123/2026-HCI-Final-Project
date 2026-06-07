@@ -639,6 +639,145 @@ h3 {
   background-size: 28px 28px;
 }
 
+.graph-actions,
+.graph-toolbar,
+.quiz-generator-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.study-generation-card {
+  display: grid;
+  gap: 12px;
+  margin: 0 20px 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f9f6;
+}
+
+.study-generation-card strong,
+.study-generation-card span {
+  display: block;
+}
+
+.study-generation-card span {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.study-generation-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e3e9e2;
+}
+
+.study-generation-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--teal);
+  transition: width 0.24s ease;
+}
+
+.graph-toolbar {
+  margin: 0 20px 12px;
+}
+
+.graph-toolbar select,
+.quiz-generator-bar select {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+}
+
+.graph-zoom-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.knowledge-map-canvas {
+  position: absolute;
+  inset: 0;
+  width: 1000px;
+  height: 680px;
+  transform-origin: 0 0;
+  transition: transform 0.08s linear;
+}
+
+.knowledge-edge-layer,
+.knowledge-node-layer {
+  position: absolute;
+  inset: 0;
+  width: 1000px;
+  height: 680px;
+}
+
+.knowledge-edge-layer {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.graph-edge line {
+  stroke: rgba(24, 143, 132, 0.34);
+  stroke-width: 2;
+}
+
+.graph-edge text {
+  fill: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: #fbfcfa;
+  stroke-width: 4px;
+}
+
+.graph-empty-state {
+  position: absolute;
+  inset: 18px;
+  z-index: 3;
+  display: none;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 30px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: rgba(251, 252, 250, 0.9);
+  text-align: center;
+}
+
+.graph-empty-state.show {
+  display: grid;
+}
+
+.graph-empty-state svg {
+  width: 42px;
+  height: 42px;
+  color: var(--teal);
+}
+
+.graph-empty-state span {
+  max-width: 460px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.knowledge-map.panning {
+  cursor: grabbing;
+}
+
 .node {
   position: absolute;
   z-index: 2;
@@ -649,6 +788,12 @@ h3 {
   background: #fff;
   color: var(--deep);
   box-shadow: 0 8px 22px rgba(23, 48, 43, 0.11);
+}
+
+.graph-node {
+  transform: translate(-50%, -50%);
+  max-width: 190px;
+  white-space: nowrap;
 }
 
 .node small {
@@ -680,6 +825,16 @@ h3 {
 .node.weak {
   border-color: rgba(223, 105, 93, 0.36);
   background: var(--coral-soft);
+}
+
+.node.mastered {
+  border-color: rgba(24, 143, 132, 0.34);
+  background: var(--teal-soft);
+}
+
+.node.learning {
+  border-color: rgba(214, 160, 51, 0.36);
+  background: var(--yellow-soft);
 }
 
 .node.selected {
@@ -2476,6 +2631,8 @@ h3 {
 }
 
 .node-detail {
+  position: relative;
+  z-index: 4;
   padding: 22px;
 }
 
@@ -2509,6 +2666,17 @@ h3 {
   font-weight: 800;
 }
 
+.node-example {
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--teal);
+  border-radius: 8px;
+  background: #f7f9f6;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .mastery-bar {
   height: 10px;
   margin: 22px 0;
@@ -2530,6 +2698,10 @@ h3 {
 
 .quiz-main {
   padding-bottom: 24px;
+}
+
+.quiz-generator-bar {
+  padding: 16px 28px 0;
 }
 
 .question {
@@ -2578,6 +2750,19 @@ h3 {
   border-radius: 8px;
   background: #f3f5f2;
   color: var(--muted);
+  line-height: 1.7;
+}
+
+.answer-feedback strong,
+.answer-feedback span,
+.answer-feedback small {
+  display: block;
+}
+
+.answer-feedback small {
+  margin-top: 6px;
+  color: inherit;
+  opacity: 0.86;
 }
 
 .answer-feedback.correct {
@@ -2726,6 +2911,65 @@ h3 {
   display: grid;
   align-content: start;
   gap: 14px;
+}
+
+.chapter-progress {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.chapter-progress strong {
+  font-size: 32px;
+}
+
+.mistake-book-panel {
+  grid-column: span 2;
+  padding: 22px;
+}
+
+.mistake-book-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.mistake-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f9f6;
+}
+
+.mistake-card.reviewed {
+  opacity: 0.72;
+}
+
+.mistake-card strong {
+  color: var(--deep);
+  line-height: 1.5;
+}
+
+.mistake-card span,
+.mistake-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.mistake-card div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .review-row {
