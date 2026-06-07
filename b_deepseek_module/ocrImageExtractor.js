@@ -1,10 +1,27 @@
 "use strict";
 
-const { PSM, createWorker } = require("tesseract.js");
-
 const DEFAULT_OCR_LANGUAGES = ["eng", "chi_sim"];
 const DEFAULT_TEXT_LIMIT = 12000;
 const workerEntries = new Map();
+let tesseractModule = null;
+
+function loadTesseract() {
+  if (tesseractModule) return tesseractModule;
+
+  try {
+    tesseractModule = require("tesseract.js");
+    return tesseractModule;
+  } catch (error) {
+    const missingTesseract =
+      error?.code === "MODULE_NOT_FOUND" && String(error.message || "").includes("tesseract.js");
+
+    if (missingTesseract) {
+      throw new Error("OCR 依赖 tesseract.js 尚未安装。请在项目目录运行 npm install 后重启软件。");
+    }
+
+    throw error;
+  }
+}
 
 function normalizeOcrText(text) {
   return String(text || "")
@@ -33,6 +50,7 @@ function getWorkerKey(languages) {
 }
 
 async function createOcrWorker(languages, options = {}) {
+  const { PSM, createWorker } = loadTesseract();
   const workerOptions = {};
 
   if (options.cachePath) workerOptions.cachePath = options.cachePath;

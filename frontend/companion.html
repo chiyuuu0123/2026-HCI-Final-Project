@@ -11,6 +11,10 @@
       <button class="pet-bubble" id="pet-bubble" title="点击唤醒 MindStudy">
         <span id="pet-tip">今天也一起学一会儿吧</span>
       </button>
+      <div class="pet-study-time" id="pet-study-time" title="今天已经学习的时间">
+        <span>今日学习</span>
+        <strong>00:00:00</strong>
+      </div>
       <div class="pet-body" title="按住龙龙拖动">
         <img src="./assets/longlong-guide.gif" alt="龙龙" draggable="false" />
       </div>
@@ -26,6 +30,7 @@
       const tip = document.querySelector("#pet-tip");
       const bubble = document.querySelector("#pet-bubble");
       const actions = document.querySelector(".pet-actions");
+      const studyTime = document.querySelector("#pet-study-time strong");
       const idleTips = [
         "按住我可以拖到桌面任意位置",
         "悬停我会冒出快捷气泡",
@@ -40,6 +45,20 @@
       ];
       let latestSnapshot = null;
       let restoreTipTimer = null;
+
+      function formatStudyDuration(totalSeconds) {
+        const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const restSeconds = seconds % 60;
+
+        return [hours, minutes, restSeconds].map((value) => String(value).padStart(2, "0")).join(":");
+      }
+
+      function applyStudyTimerSnapshot(snapshot = {}) {
+        const formatted = snapshot.formatted || formatStudyDuration(snapshot.seconds);
+        studyTime.textContent = formatted;
+      }
 
       function showPetMotion(className = "speaking") {
         pet.classList.remove("speaking", "poked", "thinking");
@@ -68,8 +87,13 @@
       window.mindStudy?.onCompanionSnapshot?.((snapshot) => {
         if (!snapshot) return;
         latestSnapshot = snapshot;
+        if (snapshot.studyTime) applyStudyTimerSnapshot({ formatted: snapshot.studyTime });
         setTip(snapshot.reminder || snapshot.mood || "点我回来学习");
       });
+
+      const studyTimerPromise = window.mindStudy?.getStudyTimer?.();
+      studyTimerPromise?.then(applyStudyTimerSnapshot).catch(() => {});
+      window.mindStudy?.onStudyTimerUpdate?.(applyStudyTimerSnapshot);
 
       function handlePetAction(action) {
         if (action === "wake") {

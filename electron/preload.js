@@ -5,6 +5,12 @@ contextBridge.exposeInMainWorld("mindStudy", {
   wakeMainWindow: () => ipcRenderer.send("companion:wake-main"),
   updateCompanionSnapshot: (snapshot) => ipcRenderer.send("companion:update-snapshot", snapshot),
   hideCompanion: () => ipcRenderer.send("companion:hide"),
+  getStudyTimer: () => ipcRenderer.invoke("study-timer:get"),
+  onStudyTimerUpdate: (callback) => {
+    const listener = (event, snapshot) => callback(snapshot);
+    ipcRenderer.on("study-timer:update", listener);
+    return () => ipcRenderer.removeListener("study-timer:update", listener);
+  },
   onCompanionSnapshot: (callback) => {
     const listener = (event, snapshot) => callback(snapshot);
     ipcRenderer.on("companion:snapshot", listener);

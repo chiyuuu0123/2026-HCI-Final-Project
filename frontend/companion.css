@@ -18,7 +18,7 @@ body {
 .desktop-pet {
   position: relative;
   width: 238px;
-  height: 270px;
+  height: 300px;
   color: #26342f;
   user-select: none;
   -webkit-app-region: no-drag;
@@ -27,7 +27,7 @@ body {
 .pet-body {
   position: absolute;
   right: 44px;
-  bottom: 50px;
+  bottom: 56px;
   z-index: 1;
   display: grid;
   place-items: end center;
@@ -69,7 +69,7 @@ body {
 
 .pet-bubble {
   position: absolute;
-  top: 12px;
+  top: 8px;
   left: 50%;
   z-index: 2;
   max-width: 188px;
@@ -128,10 +128,43 @@ body {
   -webkit-line-clamp: 2;
 }
 
+.pet-study-time {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid rgba(24, 143, 132, 0.18);
+  border-radius: 999px;
+  background: rgba(236, 255, 251, 0.92);
+  box-shadow: 0 12px 22px rgba(21, 39, 34, 0.12);
+  color: #206159;
+  transform: translateX(-50%);
+  backdrop-filter: blur(12px);
+  -webkit-app-region: no-drag;
+}
+
+.pet-study-time span {
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.pet-study-time strong {
+  color: #08796f;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
 .pet-actions {
   position: absolute;
   right: 0;
-  bottom: 10px;
+  bottom: 12px;
   left: 0;
   z-index: 3;
   display: flex;

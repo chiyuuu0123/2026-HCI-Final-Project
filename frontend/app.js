@@ -206,6 +206,12 @@ let appZoom = loadAppZoom();
 let appZoomToastTimer = null;
 let longlongSnapshotCache = "";
 let longlongPosition = loadLonglongPosition();
+let studyTimerSnapshot = {
+  seconds: 0,
+  formatted: "00:00:00",
+  label: "今日学习 00:00:00",
+  dailySeconds: {},
+};
 const longlongState = {
   expanded: false,
   mood: "等待摄像头",
@@ -316,11 +322,88 @@ function getLonglongElements() {
     bubble: document.querySelector("#longlong-bubble"),
     mood: document.querySelector("#longlong-mood"),
     moodDetail: document.querySelector("#longlong-mood-detail"),
+    studyTime: document.querySelector("#longlong-study-time"),
+    studyTimePill: document.querySelector("#longlong-time-pill"),
     music: document.querySelector("#longlong-music"),
     reminders: document.querySelector("#longlong-reminders"),
     question: document.querySelector("#longlong-question"),
     ragOutput: document.querySelector("#longlong-rag-output"),
   };
+}
+
+function formatStudyDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const restSeconds = seconds % 60;
+
+  return [hours, minutes, restSeconds].map((value) => String(value).padStart(2, "0")).join(":");
+}
+
+function normalizeStudyTimerSnapshot(snapshot = {}) {
+  const seconds = Math.max(0, Math.floor(Number(snapshot.seconds) || 0));
+  const dailySeconds = snapshot.dailySeconds && typeof snapshot.dailySeconds === "object"
+    ? Object.fromEntries(
+        Object.entries(snapshot.dailySeconds)
+          .map(([dateKey, value]) => [dateKey, Math.max(0, Math.floor(Number(value) || 0))])
+          .filter(([dateKey]) => /^\d{4}-\d{2}-\d{2}$/.test(dateKey)),
+      )
+    : {};
+  const formatted = typeof snapshot.formatted === "string" && snapshot.formatted
+    ? snapshot.formatted
+    : formatStudyDuration(seconds);
+  if (snapshot.date) dailySeconds[snapshot.date] = seconds;
+
+  return {
+    ...snapshot,
+    seconds,
+    dailySeconds,
+    formatted,
+    label: snapshot.label || `今日学习 ${formatted}`,
+  };
+}
+
+function renderStudyTimerSnapshot() {
+  const elements = getLonglongElements();
+  const dashboardStudyTime = document.querySelector("#dashboard-study-time");
+  const dashboardStudyNote = document.querySelector("#dashboard-study-note");
+
+  if (elements.studyTime) elements.studyTime.textContent = studyTimerSnapshot.formatted;
+  if (elements.studyTimePill) elements.studyTimePill.textContent = `今日 ${studyTimerSnapshot.formatted}`;
+  if (dashboardStudyTime) dashboardStudyTime.textContent = studyTimerSnapshot.formatted;
+  if (dashboardStudyNote) dashboardStudyNote.textContent = `已累计 ${formatStudyDurationText(studyTimerSnapshot.seconds)}`;
+}
+
+function applyStudyTimerSnapshot(snapshot) {
+  studyTimerSnapshot = normalizeStudyTimerSnapshot(snapshot);
+  renderStudyTimerSnapshot();
+  renderPlannerCalendar();
+}
+
+function startStudyTimerFallback() {
+  const startedAt = Date.now();
+  applyStudyTimerSnapshot({ seconds: 0 });
+
+  window.setInterval(() => {
+    applyStudyTimerSnapshot({
+      seconds: Math.floor((Date.now() - startedAt) / 1000),
+    });
+  }, 1000);
+}
+
+async function initStudyTimer() {
+  if (!window.mindStudy?.getStudyTimer) {
+    startStudyTimerFallback();
+    return;
+  }
+
+  try {
+    applyStudyTimerSnapshot(await window.mindStudy.getStudyTimer());
+  } catch (error) {
+    applyStudyTimerSnapshot({ seconds: 0 });
+  }
+
+  window.mindStudy?.onStudyTimerUpdate?.(applyStudyTimerSnapshot);
 }
 
 function loadLonglongPosition() {
@@ -639,6 +722,7 @@ function syncLonglongAssistant() {
   if (elements.bubble) elements.bubble.textContent = reminderText;
   if (elements.mood) elements.mood.textContent = longlongState.mood;
   if (elements.moodDetail) elements.moodDetail.textContent = longlongState.moodDetail;
+  renderStudyTimerSnapshot();
   if (elements.music) elements.music.textContent = longlongState.music;
   if (elements.ragOutput) elements.ragOutput.textContent = longlongState.ragAnswer;
   if (elements.reminders) {
@@ -658,6 +742,8 @@ function syncLonglongAssistant() {
     mood: longlongState.mood,
     reminder: reminderText,
     music: longlongState.music,
+    studyTime: studyTimerSnapshot.formatted,
+    studySeconds: studyTimerSnapshot.seconds,
   };
   const snapshotText = JSON.stringify(snapshot);
   if (snapshotText !== longlongSnapshotCache) {
@@ -821,7 +907,8 @@ function mergePlannerItemsWithDefaults(items) {
 }
 
 function getCurrentCalendarMonth() {
-  return new Date().toISOString().slice(0, 7);
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function loadPlannerState() {
@@ -4315,6 +4402,41 @@ function getPlannerEventsForDate(dateKey) {
   return (plannerState.events || []).filter((event) => event.date === dateKey);
 }
 
+function getStudySecondsForDate(dateKey) {
+  return Math.max(0, Math.floor(Number(studyTimerSnapshot.dailySeconds?.[dateKey]) || 0));
+}
+
+function getStudyHeatLevel(seconds) {
+  if (seconds >= 3 * 3600) return 5;
+  if (seconds >= 90 * 60) return 4;
+  if (seconds >= 45 * 60) return 3;
+  if (seconds >= 15 * 60) return 2;
+  if (seconds > 0) return 1;
+  return 0;
+}
+
+function formatStudyDurationText(seconds) {
+  const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const restSeconds = totalSeconds % 60;
+
+  if (!hours && !minutes && restSeconds) return "不足 1 分钟";
+  if (!hours) return `${minutes} 分钟`;
+  if (!minutes) return `${hours} 小时`;
+  return `${hours} 小时 ${minutes} 分钟`;
+}
+
+function formatStudyDurationCompact(seconds) {
+  const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (hours) return `${hours}h${minutes ? `${minutes}m` : ""}`;
+  if (minutes) return `${minutes}m`;
+  return totalSeconds ? "<1m" : "0m";
+}
+
 function getPlannerEventImportanceLabel(importance) {
   return {
     high: "高",
@@ -4344,9 +4466,22 @@ function renderPlannerCalendar() {
     const dateKey = toPlannerDateKey(date);
     const events = getPlannerEventsForDate(dateKey);
     const inMonth = date.getMonth() === monthIndex;
+    const studySeconds = getStudySecondsForDate(dateKey);
+    const studyHeatLevel = getStudyHeatLevel(studySeconds);
+    const studyTimeText = formatStudyDurationText(studySeconds);
+    const studyTitle = `${dateKey} 今日学习：${studyTimeText}`;
     cells.push(`
-      <button class="calendar-day ${inMonth ? "" : "muted"} ${dateKey === todayKey ? "today" : ""}" data-calendar-date="${dateKey}">
+      <button
+        class="calendar-day ${inMonth ? "" : "muted"} ${dateKey === todayKey ? "today" : ""} study-heat-${studyHeatLevel}"
+        data-calendar-date="${dateKey}"
+        data-study-seconds="${studySeconds}"
+        title="${escapeHtml(studyTitle)}"
+      >
         <span class="calendar-day-number">${date.getDate()}</span>
+        <span class="calendar-study-heat">
+          <span class="calendar-study-dot"></span>
+          <small>${formatStudyDurationCompact(studySeconds)}</small>
+        </span>
         <span class="calendar-day-events">
           ${events
             .slice(0, 3)
@@ -4354,6 +4489,7 @@ function renderPlannerCalendar() {
             .join("")}
           ${events.length > 3 ? `<small>+${events.length - 3}</small>` : ""}
         </span>
+        <span class="calendar-study-tooltip">今日学习 ${escapeHtml(studyTimeText)}</span>
       </button>
     `);
   }
@@ -6903,6 +7039,7 @@ document.addEventListener("click", (event) => {
 
 window.addEventListener("DOMContentLoaded", () => {
   applyAppZoom();
+  initStudyTimer();
   applyLonglongPosition();
   renderAllCourseViews();
   setCameraStatus("idle");

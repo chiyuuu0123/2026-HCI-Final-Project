@@ -86,74 +86,10 @@
 
         <section class="view active" data-view-panel="dashboard">
           <div class="dashboard-grid">
-            <section class="panel hero-panel">
-              <div class="hero-copy">
-                <span class="tag">今日建议</span>
-                <h2>先复习“可用性评估”，再完成 10 道自测题。</h2>
-                <p>系统已从课程资料中识别 6 个薄弱知识点，建议从知识图谱进入。</p>
-              </div>
-              <div class="hero-actions">
-                <button class="primary-action" data-view-jump="map">
-                  <i data-lucide="sparkles"></i>
-                  <span>查看图谱</span>
-                </button>
-                <button class="ghost-action" data-view-jump="quiz">
-                  <i data-lucide="timer"></i>
-                  <span>开始自测</span>
-                </button>
-              </div>
-            </section>
-
-            <section class="panel upload-panel">
-              <div class="panel-heading">
-                <div>
-                  <span class="tag muted">资料解析</span>
-                  <h3>HCI_Lecture_05.pdf</h3>
-                </div>
-                <span class="progress-badge" id="parse-status">已解析</span>
-              </div>
-              <div class="file-preview" aria-label="资料预览">
-                <div class="file-page">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-                <div class="file-meta">
-                  <strong>38 页</strong>
-                  <span>12 个核心概念</span>
-                  <span>5 个章节</span>
-                </div>
-              </div>
-              <div class="parse-steps">
-                <span class="done">文本提取</span>
-                <span class="done">关键词</span>
-                <span class="done">向量索引</span>
-              </div>
-            </section>
-
-            <section class="panel metric-panel">
-              <div class="metric-card">
-                <span>今日学习</span>
-                <strong>68 分钟</strong>
-                <small>比昨日多 18 分钟</small>
-              </div>
-              <div class="metric-card accent-coral">
-                <span>正确率</span>
-                <strong>82%</strong>
-                <small>测验 2 组</small>
-              </div>
-              <div class="metric-card accent-yellow">
-                <span>待复习</span>
-                <strong>6 点</strong>
-                <small>集中在评估方法</small>
-              </div>
-            </section>
-
             <section class="panel planner-calendar-panel dashboard-calendar-panel">
               <div class="planner-calendar-heading">
                 <div>
-                  <span class="tag muted">重要日历</span>
+                  <span class="tag muted">重要日历 · 学习热度</span>
                   <h3 id="planner-calendar-title">2026 年 6 月</h3>
                 </div>
                 <div class="calendar-controls">
@@ -212,6 +148,71 @@
                 </aside>
               </div>
             </section>
+
+            <section class="panel hero-panel">
+              <div class="hero-copy">
+                <span class="tag">今日建议</span>
+                <h2>先复习“可用性评估”，再完成 10 道自测题。</h2>
+                <p>系统已从课程资料中识别 6 个薄弱知识点，建议从知识图谱进入。</p>
+              </div>
+              <div class="hero-actions">
+                <button class="primary-action" data-view-jump="map">
+                  <i data-lucide="sparkles"></i>
+                  <span>查看图谱</span>
+                </button>
+                <button class="ghost-action" data-view-jump="quiz">
+                  <i data-lucide="timer"></i>
+                  <span>开始自测</span>
+                </button>
+              </div>
+            </section>
+
+            <section class="panel upload-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="tag muted">资料解析</span>
+                  <h3>HCI_Lecture_05.pdf</h3>
+                </div>
+                <span class="progress-badge" id="parse-status">已解析</span>
+              </div>
+              <div class="file-preview" aria-label="资料预览">
+                <div class="file-page">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                <div class="file-meta">
+                  <strong>38 页</strong>
+                  <span>12 个核心概念</span>
+                  <span>5 个章节</span>
+                </div>
+              </div>
+              <div class="parse-steps">
+                <span class="done">文本提取</span>
+                <span class="done">关键词</span>
+                <span class="done">向量索引</span>
+              </div>
+            </section>
+
+            <section class="panel metric-panel">
+              <div class="metric-card">
+                <span>今日学习</span>
+                <strong id="dashboard-study-time">00:00:00</strong>
+                <small id="dashboard-study-note">打开软件后自动累计</small>
+              </div>
+              <div class="metric-card accent-coral">
+                <span>正确率</span>
+                <strong>82%</strong>
+                <small>测验 2 组</small>
+              </div>
+              <div class="metric-card accent-yellow">
+                <span>待复习</span>
+                <strong>6 点</strong>
+                <small>集中在评估方法</small>
+              </div>
+            </section>
+
           </div>
         </section>
 
@@ -683,6 +684,10 @@
         <div class="longlong-status-card">
           <strong id="longlong-mood">等待摄像头</strong>
           <span id="longlong-mood-detail">我会结合状态识别和音乐建议提醒你。</span>
+          <div class="longlong-study-timer">
+            <span>今日学习</span>
+            <strong id="longlong-study-time">00:00:00</strong>
+          </div>
         </div>
         <div class="longlong-section">
           <div class="longlong-section-title">
@@ -710,7 +715,8 @@
       </section>
       <div class="longlong-avatar" data-longlong-toggle role="button" tabindex="0" title="拖拽龙龙，点击展开助手">
         <img src="./assets/longlong-guide.gif" alt="龙龙 AI 助手" draggable="false" />
-        <span id="longlong-bubble">今天也一起学一会儿吧。</span>
+        <span class="longlong-time-pill" id="longlong-time-pill">今日 00:00:00</span>
+        <span class="longlong-bubble" id="longlong-bubble">今天也一起学一会儿吧。</span>
       </div>
     </aside>
   </body>

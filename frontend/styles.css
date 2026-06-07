@@ -449,7 +449,7 @@ h3 {
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(280px, 1.12fr) minmax(420px, 1.42fr) minmax(260px, 0.9fr);
-  grid-template-rows: minmax(190px, auto) auto minmax(480px, 1fr);
+  grid-template-rows: auto minmax(190px, auto) auto;
   gap: 18px;
   min-height: calc(100vh - 116px);
 }
@@ -599,7 +599,7 @@ h3 {
 
 .planner-calendar-panel.dashboard-calendar-panel {
   grid-column: 1 / -1;
-  min-height: 560px;
+  min-height: 590px;
 }
 
 .accent-coral {
@@ -3164,13 +3164,14 @@ button.review-row:hover {
 .planner-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-auto-rows: minmax(86px, 1fr);
-  min-height: 500px;
+  grid-auto-rows: minmax(92px, 1fr);
+  min-height: 520px;
 }
 
 .calendar-day {
+  position: relative;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   gap: 7px;
   min-width: 0;
   padding: 9px;
@@ -3180,6 +3181,10 @@ button.review-row:hover {
   background: #fff;
   color: var(--ink);
   text-align: left;
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .calendar-day:nth-child(7n) {
@@ -3191,12 +3196,51 @@ button.review-row:hover {
   color: #a7b0aa;
 }
 
+.calendar-day.study-heat-1 {
+  background:
+    linear-gradient(135deg, rgba(209, 245, 222, 0.68), rgba(255, 255, 255, 0.92) 62%),
+    #fff;
+}
+
+.calendar-day.study-heat-2 {
+  background:
+    linear-gradient(135deg, rgba(174, 235, 195, 0.78), rgba(250, 255, 252, 0.94) 64%),
+    #fff;
+}
+
+.calendar-day.study-heat-3 {
+  background:
+    linear-gradient(135deg, rgba(111, 210, 151, 0.82), rgba(244, 254, 248, 0.95) 66%),
+    #fff;
+}
+
+.calendar-day.study-heat-4 {
+  background:
+    linear-gradient(135deg, rgba(47, 168, 100, 0.82), rgba(239, 253, 245, 0.96) 68%),
+    #fff;
+}
+
+.calendar-day.study-heat-5 {
+  background:
+    linear-gradient(135deg, rgba(11, 120, 67, 0.86), rgba(232, 251, 241, 0.97) 70%),
+    #fff;
+}
+
+.calendar-day.muted.study-heat-1,
+.calendar-day.muted.study-heat-2,
+.calendar-day.muted.study-heat-3,
+.calendar-day.muted.study-heat-4,
+.calendar-day.muted.study-heat-5 {
+  filter: saturate(0.72);
+}
+
 .calendar-day.today {
   box-shadow: inset 0 0 0 2px rgba(24, 143, 132, 0.55);
 }
 
 .calendar-day:hover {
-  background: #f7fbf9;
+  box-shadow: inset 0 0 0 2px rgba(24, 143, 132, 0.24);
+  transform: translateY(-1px);
 }
 
 .calendar-day-number {
@@ -3212,6 +3256,52 @@ button.review-row:hover {
 .calendar-day.today .calendar-day-number {
   background: var(--teal);
   color: #fff;
+}
+
+.calendar-study-heat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: #487269;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.calendar-study-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #dfe7e2;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.62);
+}
+
+.calendar-day.study-heat-1 .calendar-study-dot {
+  background: #b9e8c9;
+}
+
+.calendar-day.study-heat-2 .calendar-study-dot {
+  background: #84d99e;
+}
+
+.calendar-day.study-heat-3 .calendar-study-dot {
+  background: #4fc47a;
+}
+
+.calendar-day.study-heat-4 .calendar-study-dot {
+  background: #1d9a59;
+}
+
+.calendar-day.study-heat-5 .calendar-study-dot {
+  background: #08713f;
+}
+
+.calendar-study-heat small {
+  overflow: hidden;
+  color: inherit;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .calendar-day-events {
@@ -3251,6 +3341,36 @@ button.review-row:hover {
 .calendar-day-events small {
   background: #eef2ef;
   color: var(--muted);
+}
+
+.calendar-study-tooltip {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 3;
+  max-width: calc(100% - 16px);
+  padding: 5px 8px;
+  border: 1px solid rgba(24, 143, 132, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 24px rgba(22, 40, 34, 0.14);
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+  opacity: 0;
+  pointer-events: none;
+  text-overflow: ellipsis;
+  transform: translateY(4px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+  white-space: nowrap;
+}
+
+.calendar-day:hover .calendar-study-tooltip,
+.calendar-day:focus-visible .calendar-study-tooltip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .planner-event-side {
@@ -3625,6 +3745,31 @@ button.review-row:hover {
   line-height: 1.6;
 }
 
+.longlong-study-timer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+  padding: 9px 10px;
+  border: 1px solid rgba(24, 143, 132, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.longlong-study-timer span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.longlong-study-timer strong {
+  color: var(--teal);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
 .longlong-section {
   display: grid;
   gap: 10px;
@@ -3718,7 +3863,7 @@ button.review-row:hover {
   transition: transform 160ms ease;
 }
 
-.longlong-avatar span {
+.longlong-avatar .longlong-bubble {
   display: block;
   max-width: 190px;
   padding: 8px 10px;
@@ -3730,6 +3875,24 @@ button.review-row:hover {
   font-size: 12px;
   font-weight: 800;
   line-height: 1.4;
+}
+
+.longlong-time-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 112px;
+  padding: 5px 9px;
+  border: 1px solid rgba(24, 143, 132, 0.18);
+  border-radius: 999px;
+  background: rgba(236, 255, 251, 0.94);
+  box-shadow: 0 10px 24px rgba(18, 32, 28, 0.12);
+  color: var(--teal);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
 }
 
 .longlong-avatar:hover img {

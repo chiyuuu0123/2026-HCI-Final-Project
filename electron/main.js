@@ -15,13 +15,16 @@ const isWindows = process.platform === "win32";
 const maxImportBytes = 80 * 1024 * 1024;
 const supportedExtensions = new Set([".pdf", ".md"]);
 const companionWindowWidth = 248;
-const companionWindowHeight = 282;
+const companionWindowHeight = 312;
 let mainWindow = null;
 let companionWindow = null;
 let companionSnapshot = null;
 let companionShouldShow = false;
 let lastMainWindowBounds = null;
 let companionCustomBounds = null;
+let studyTimerState = null;
+let studyTimerInterval = null;
+let studyTimerLastSaveAt = 0;
 
 function getDeepSeekConfigPath() {
   return path.join(app.getPath("userData"), "deepseek-config.json");
@@ -39,6 +42,151 @@ function writeDeepSeekLocalConfig(config) {
   const configPath = getDeepSeekConfigPath();
   fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
   fsSync.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+}
+
+function getStudyTimerPath() {
+  return path.join(app.getPath("userData"), "study-timer.json");
+}
+
+function getTodayStudyDateKey(date = new Date()) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function formatStudyDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const restSeconds = seconds % 60;
+
+  return [hours, minutes, restSeconds].map((value) => String(value).padStart(2, "0")).join(":");
+}
+
+function readStudyTimerState() {
+  try {
+    return JSON.parse(fsSync.readFileSync(getStudyTimerPath(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeStudyTimerState(state) {
+  const statePath = getStudyTimerPath();
+  fsSync.mkdirSync(path.dirname(statePath), { recursive: true });
+  fsSync.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf8");
+}
+
+function ensureStudyTimerState() {
+  const now = Date.now();
+  const today = getTodayStudyDateKey(new Date(now));
+
+  if (!studyTimerState) {
+    const stored = readStudyTimerState();
+    const storedDays = stored.days && typeof stored.days === "object" ? stored.days : {};
+    if (/^\d{4}-\d{2}-\d{2}$/.test(stored.date) && Number(stored.accumulatedMs) > 0) {
+      storedDays[stored.date] = Math.max(
+        Number(storedDays[stored.date]) || 0,
+        Number(stored.accumulatedMs) || 0,
+      );
+    }
+    studyTimerState = {
+      date: stored.date === today ? stored.date : today,
+      accumulatedMs: stored.date === today ? Math.max(0, Number(stored.accumulatedMs) || 0) : 0,
+      days: Object.fromEntries(
+        Object.entries(storedDays)
+          .map(([dateKey, milliseconds]) => [dateKey, Math.max(0, Number(milliseconds) || 0)])
+          .filter(([dateKey]) => /^\d{4}-\d{2}-\d{2}$/.test(dateKey)),
+      ),
+      runningSince: now,
+    };
+  }
+
+  if (studyTimerState.date !== today) {
+    const previousElapsedMs = studyTimerState.accumulatedMs + Math.max(0, now - studyTimerState.runningSince);
+    studyTimerState.days[studyTimerState.date] = Math.max(
+      Number(studyTimerState.days[studyTimerState.date]) || 0,
+      previousElapsedMs,
+    );
+    studyTimerState = {
+      date: today,
+      accumulatedMs: 0,
+      days: studyTimerState.days,
+      runningSince: now,
+    };
+    studyTimerLastSaveAt = 0;
+    writeStudyTimerState(studyTimerState);
+  }
+
+  return studyTimerState;
+}
+
+function getStudyTimerSnapshot() {
+  const state = ensureStudyTimerState();
+  const now = Date.now();
+  const elapsedMs = state.accumulatedMs + Math.max(0, now - state.runningSince);
+  const seconds = Math.floor(elapsedMs / 1000);
+  const dailySeconds = Object.fromEntries(
+    Object.entries(state.days || {}).map(([dateKey, milliseconds]) => [
+      dateKey,
+      Math.floor(Math.max(0, Number(milliseconds) || 0) / 1000),
+    ]),
+  );
+  dailySeconds[state.date] = seconds;
+
+  return {
+    date: state.date,
+    seconds,
+    formatted: formatStudyDuration(seconds),
+    label: `今日学习 ${formatStudyDuration(seconds)}`,
+    dailySeconds,
+    updatedAt: now,
+  };
+}
+
+function persistStudyTimerState() {
+  const state = ensureStudyTimerState();
+  const now = Date.now();
+  state.accumulatedMs += Math.max(0, now - state.runningSince);
+  state.runningSince = now;
+  state.days[state.date] = state.accumulatedMs;
+  studyTimerLastSaveAt = now;
+  writeStudyTimerState({
+    date: state.date,
+    accumulatedMs: state.accumulatedMs,
+    days: state.days,
+    updatedAt: now,
+  });
+}
+
+function sendStudyTimerToWindow(targetWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  targetWindow.webContents.send("study-timer:update", getStudyTimerSnapshot());
+}
+
+function broadcastStudyTimer() {
+  const snapshot = getStudyTimerSnapshot();
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("study-timer:update", snapshot);
+  }
+
+  if (companionWindow && !companionWindow.isDestroyed()) {
+    companionWindow.webContents.send("study-timer:update", snapshot);
+  }
+
+  if (Date.now() - studyTimerLastSaveAt > 15000) {
+    persistStudyTimerState();
+  }
+}
+
+function startStudyTimer() {
+  ensureStudyTimerState();
+  if (studyTimerInterval) return;
+  broadcastStudyTimer();
+  studyTimerInterval = setInterval(broadcastStudyTimer, 1000);
 }
 
 function getDeepSeekRuntimeConfig() {
@@ -362,6 +510,9 @@ function createMainWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, "..", "frontend", "index.html"));
+  mainWindow.webContents.once("did-finish-load", () => {
+    sendStudyTimerToWindow(mainWindow);
+  });
 
   mainWindow.once("ready-to-show", () => {
     lastMainWindowBounds = mainWindow.getBounds();
@@ -481,6 +632,7 @@ function createCompanionWindow() {
   companionWindow.loadFile(path.join(__dirname, "..", "frontend", "companion.html"));
   companionWindow.webContents.once("did-finish-load", () => {
     companionWindow?.webContents.send("companion:snapshot", companionSnapshot);
+    sendStudyTimerToWindow(companionWindow);
     if (companionShouldShow) {
       revealCompanionWindow();
     }
@@ -589,6 +741,10 @@ ipcMain.handle("app:get-info", () => ({
   version: app.getVersion(),
   platform: process.platform,
 }));
+
+ipcMain.handle("study-timer:get", () => {
+  return getStudyTimerSnapshot();
+});
 
 ipcMain.handle("dialog:open-course-file", async (event) => {
   const owner = BrowserWindow.fromWebContents(event.sender);
@@ -726,6 +882,8 @@ ipcMain.on("companion:update-snapshot", (event, snapshot) => {
     mood: String(snapshot?.mood || "陪你学习中").slice(0, 40),
     reminder: String(snapshot?.reminder || "点我回到 MindStudy").slice(0, 80),
     music: String(snapshot?.music || "白噪音 + 轻钢琴").slice(0, 40),
+    studyTime: String(snapshot?.studyTime || "").slice(0, 16),
+    studySeconds: Math.max(0, Math.floor(Number(snapshot?.studySeconds) || 0)),
   };
 
   if (companionWindow && !companionWindow.isDestroyed()) {
@@ -736,6 +894,7 @@ ipcMain.on("companion:update-snapshot", (event, snapshot) => {
 app.whenReady().then(() => {
   configurePermissions();
   buildMenu();
+  startStudyTimer();
   createMainWindow();
   createCompanionWindow();
 
@@ -755,5 +914,10 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  if (studyTimerInterval) {
+    clearInterval(studyTimerInterval);
+    studyTimerInterval = null;
+  }
+  persistStudyTimerState();
   void terminateOcrWorkers();
 });
