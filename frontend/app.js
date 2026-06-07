@@ -4264,7 +4264,8 @@ function sanitizeStudyQuiz(quiz = {}, graph = createFallbackStudyGraph([])) {
 }
 
 function getStudyModule(course = getActiveCourse()) {
-  course.studyModule = sanitizeStudyModule(course.studyModule);
+  const currentStudyModule = course.studyModule && typeof course.studyModule === "object" ? course.studyModule : {};
+  course.studyModule = Object.assign(currentStudyModule, sanitizeStudyModule(currentStudyModule));
   return course.studyModule;
 }
 
@@ -4481,9 +4482,23 @@ function getTopicQuestions(topicId, difficulty = "all") {
   const direct = questions.filter((question) => question.topic === topic?.id);
   const adjacent = questions.filter((question) => question.topic !== topic?.id && related.has(question.topic));
   const fallback = questions.filter((question) => !related.has(question.topic));
-  return [...(direct.length ? direct : createDirectQuestionsForNode(topic)), ...adjacent, ...fallback]
+  const generatedDirect = direct.length ? direct : createDirectQuestionsForNode(topic);
+  const directFiltered = generatedDirect.filter((question) => difficulty === "all" || question.difficulty === difficulty);
+  if (directFiltered.length) {
+    return [
+      ...directFiltered,
+      ...adjacent.filter((question) => difficulty === "all" || question.difficulty === difficulty),
+      ...fallback.filter((question) => difficulty === "all" || question.difficulty === difficulty),
+    ].slice(0, 10);
+  }
+
+  if (topic && difficulty !== "all") return createDirectQuestionsForNode(topic, difficulty).slice(0, 10);
+
+  const filtered = [...generatedDirect, ...adjacent, ...fallback]
     .filter((question) => difficulty === "all" || question.difficulty === difficulty)
     .slice(0, 10);
+
+  return filtered;
 }
 
 function getQuizTypeLabel(type) {
@@ -4510,7 +4525,7 @@ function renderQuizScopeControls() {
 function renderQuizModule() {
   const studyModule = getStudyModule();
   const questions = getCurrentQuizQuestions();
-  const currentIndex = questions.length ? studyModule.quiz.cursor % questions.length : 0;
+  const currentIndex = questions.length ? (Math.max(0, Number(studyModule.quiz.cursor) || 0) % questions.length) : 0;
   const question = questions[currentIndex];
   const titleNode = document.querySelector("#quiz-title");
   const difficultyNode = document.querySelector("#quiz-difficulty");
@@ -4523,6 +4538,11 @@ function renderQuizModule() {
     if (titleNode) titleNode.textContent = "自动测验 · 等待生成";
     if (questionNode) questionNode.textContent = "还没有题目，请先生成知识图谱或点击“生成题组”。";
     if (answerList) answerList.innerHTML = "";
+    if (feedback) {
+      feedback.textContent = "当前筛选条件下没有可用题目，请切换范围或难度后重试。";
+      feedback.className = "answer-feedback";
+    }
+    renderQuizSidebar([]);
     return;
   }
 
@@ -4575,6 +4595,7 @@ function renderQuizModule() {
   }
 
   renderQuizSidebar(questions);
+  bindQuizActionButtons();
   window.lucide?.createIcons();
 }
 
@@ -4590,13 +4611,12 @@ function renderQuizSidebar(questions = getCurrentQuizQuestions()) {
   const scoreLabel = document.querySelector("#quiz-score-label");
   const topicList = document.querySelector("#quiz-topic-list");
   const scope = studyModule.quiz.scope || studyModule.activeQuizTopic;
-  const topicStats = getTopicStats(scope);
-  const answeredQuestionIds = new Set(studyModule.attempts.filter((attempt) => attempt.topic === scope).map((attempt) => attempt.questionId));
+  const quizStats = getQuizAttemptStats(scope, questions);
 
-  if (scoreValue) scoreValue.textContent = `${answeredQuestionIds.size} / ${questions.length}`;
+  if (scoreValue) scoreValue.textContent = `${quizStats.answeredQuestionIds.size} / ${questions.length}`;
   if (scoreLabel) {
-    scoreLabel.textContent = topicStats.total
-      ? `正确率 ${topicStats.accuracy}% · 掌握度 ${topicStats.mastery}%`
+    scoreLabel.textContent = quizStats.total
+      ? `正确率 ${quizStats.accuracy}% · 已练 ${quizStats.total} 次`
       : `题组来源：${studyModule.quiz.source || studyModule.graph.meta.generatedBy}`;
   }
   if (topicList) {
@@ -4614,12 +4634,34 @@ function renderQuizSidebar(questions = getCurrentQuizQuestions()) {
   }
 }
 
+function getQuizAttemptStats(scope, questions = getCurrentQuizQuestions()) {
+  const studyModule = getStudyModule();
+  const questionIds = new Set((questions || []).map((question) => question.id));
+  const attempts = studyModule.attempts.filter((attempt) => {
+    if (questionIds.size) return questionIds.has(attempt.questionId);
+    if (scope === "all") return true;
+    return attempt.topic === scope;
+  });
+  const correct = attempts.filter((attempt) => attempt.correct).length;
+
+  return {
+    total: attempts.length,
+    correct,
+    wrong: attempts.length - correct,
+    accuracy: attempts.length ? Math.round((correct / attempts.length) * 100) : 0,
+    answeredQuestionIds: new Set(attempts.map((attempt) => attempt.questionId)),
+  };
+}
+
 function getCurrentQuizQuestion() {
   const questions = getCurrentQuizQuestions();
-  return questions[getStudyModule().quiz.cursor % questions.length];
+  if (!questions.length) return null;
+  const cursor = Math.max(0, Number(getStudyModule().quiz.cursor) || 0);
+  return questions[cursor % questions.length];
 }
 
 function getQuestionCorrectAnswer(question) {
+  if (!question) return "";
   if (question.type === "choice") return question.options[Number(question.answer)] || "";
   if (question.type === "multi") return (question.answer || []).map((index) => question.options[index]).join("、");
   if (question.type === "judge") return question.answer ? "正确" : "错误";
@@ -4627,9 +4669,27 @@ function getQuestionCorrectAnswer(question) {
   return question.sampleAnswer || question.explanation || "";
 }
 
+function getSelectedObjectiveAnswerText(question, selectedValue) {
+  if (!question) return "";
+  if (question.type === "choice") {
+    const index = Number(selectedValue);
+    return question.options[index] ? `${String.fromCharCode(65 + index)}. ${question.options[index]}` : String(selectedValue);
+  }
+  if (question.type === "judge") return selectedValue === "true" ? "正确" : "错误";
+  return String(selectedValue);
+}
+
+function getSelectedMultiAnswerText(question, selected) {
+  if (!question) return "";
+  return selected.length
+    ? selected.map((index) => `${String.fromCharCode(65 + index)}. ${question.options[index] || index}`).join("、")
+    : "未选择";
+}
+
 function recordQuizAnswer(selectedAnswer, correct) {
   const studyModule = getStudyModule();
   const question = getCurrentQuizQuestion();
+  if (!question) return null;
   const attempt = {
     id: createId("attempt"),
     questionId: question.id,
@@ -4646,11 +4706,15 @@ function recordQuizAnswer(selectedAnswer, correct) {
 
   studyModule.attempts.push(attempt);
   studyModule.progress.studyMinutes = Math.max(0, Number(studyModule.progress.studyMinutes) || 0) + 3;
+  const existing = studyModule.mistakes.find((mistake) => mistake.questionId === question.id);
   if (!correct) {
-    const existing = studyModule.mistakes.find((mistake) => mistake.questionId === question.id);
     if (existing) {
       existing.selectedAnswer = selectedAnswer;
       existing.reviewed = false;
+      existing.attemptId = attempt.id;
+      existing.correctAnswer = attempt.correctAnswer;
+      existing.explanation = question.explanation;
+      existing.source = question.source;
       existing.createdAt = Date.now();
     } else {
       studyModule.mistakes.unshift({
@@ -4667,9 +4731,20 @@ function recordQuizAnswer(selectedAnswer, correct) {
         createdAt: Date.now(),
       });
     }
+  } else if (existing) {
+    existing.reviewed = true;
+    existing.reviewedAt = Date.now();
+    existing.lastCorrectAttemptId = attempt.id;
   }
   updateStudyRecommendations();
   saveWorkspace();
+  return attempt;
+}
+
+function refreshAfterQuizAnswer() {
+  renderQuizSidebar();
+  renderReportModule();
+  renderKnowledgeModule();
 }
 
 function showQuizFeedback(correct, explanation, correctAnswer = "") {
@@ -4686,6 +4761,7 @@ function showQuizFeedback(correct, explanation, correctAnswer = "") {
 
 function submitObjectiveQuizAnswer(answerButton) {
   const question = getCurrentQuizQuestion();
+  if (!question) return;
   const selectedValue = answerButton.dataset.quizAnswer;
   const correct = question.type === "choice"
     ? Number(selectedValue) === Number(question.answer)
@@ -4696,23 +4772,25 @@ function submitObjectiveQuizAnswer(answerButton) {
     if (button === answerButton) button.classList.add("selected", correct ? "correct" : "wrong");
   });
 
-  recordQuizAnswer(selectedValue, correct);
+  recordQuizAnswer(getSelectedObjectiveAnswerText(question, selectedValue), correct);
   showQuizFeedback(correct, question.explanation, getQuestionCorrectAnswer(question));
-  renderStudyModuleViews();
+  refreshAfterQuizAnswer();
 }
 
 function submitMultiQuizAnswer() {
   const question = getCurrentQuizQuestion();
+  if (!question) return;
   const selected = Array.from(document.querySelectorAll("[data-quiz-multi].selected")).map((button) => Number(button.dataset.quizMulti)).sort();
   const expected = [...(question.answer || [])].map(Number).sort();
   const correct = selected.length === expected.length && selected.every((value, index) => value === expected[index]);
-  recordQuizAnswer(selected.join(","), correct);
+  recordQuizAnswer(getSelectedMultiAnswerText(question, selected), correct);
   showQuizFeedback(correct, question.explanation, getQuestionCorrectAnswer(question));
-  renderStudyModuleViews();
+  refreshAfterQuizAnswer();
 }
 
 function submitShortQuizAnswer() {
   const question = getCurrentQuizQuestion();
+  if (!question) return;
   const answer = document.querySelector("#quiz-short-answer")?.value.trim() || "";
   const normalizedAnswer = answer.toLowerCase();
   const hitCount = (question.keywords || []).filter((keyword) => normalizedAnswer.includes(keyword.toLowerCase())).length;
@@ -4720,18 +4798,19 @@ function submitShortQuizAnswer() {
 
   recordQuizAnswer(answer || "未填写", correct);
   showQuizFeedback(correct, `${question.explanation} 参考答案：${question.sampleAnswer}`, getQuestionCorrectAnswer(question));
-  renderStudyModuleViews();
+  refreshAfterQuizAnswer();
 }
 
 function submitMatchQuizAnswer() {
   const question = getCurrentQuizQuestion();
+  if (!question) return;
   const selects = Array.from(document.querySelectorAll("[data-match-index]"));
   const correct = selects.every((select) => question.pairs[Number(select.dataset.matchIndex)]?.[1] === select.value);
   const selectedAnswer = selects.map((select) => `${question.pairs[Number(select.dataset.matchIndex)]?.[0]} -> ${select.value || "未选择"}`).join("; ");
 
   recordQuizAnswer(selectedAnswer, correct);
   showQuizFeedback(correct, question.explanation, getQuestionCorrectAnswer(question));
-  renderStudyModuleViews();
+  refreshAfterQuizAnswer();
 }
 
 function generateQuizForTopic(topicId, difficulty = "all") {
@@ -4750,10 +4829,49 @@ function generateQuizForTopic(topicId, difficulty = "all") {
 function moveQuizCursor(step = 1) {
   const studyModule = getStudyModule();
   const questions = getCurrentQuizQuestions();
-  studyModule.quiz.cursor = (studyModule.quiz.cursor + step + questions.length) % questions.length;
+  if (!questions.length) {
+    studyModule.quiz.cursor = 0;
+    studyModule.quizCursor = 0;
+    saveWorkspace();
+    renderQuizModule();
+    return;
+  }
+  const currentCursor = Math.max(0, Number(studyModule.quiz.cursor) || 0);
+  studyModule.quiz.cursor = (currentCursor + step + questions.length) % questions.length;
   studyModule.quizCursor = studyModule.quiz.cursor;
   saveWorkspace();
   renderQuizModule();
+}
+
+function handleQuizActionButton(quizActionButton) {
+  const action = quizActionButton?.dataset.quizAction;
+  if (!action) return;
+
+  if (action === "generate-current") {
+    const currentNodeTitle = quizActionButton.dataset.quizTopic || document.querySelector("#node-title")?.textContent?.trim() || getStudyModule().selectedNodeId;
+    generateQuizForTopic(currentNodeTitle);
+  }
+  if (action === "generate-filtered") {
+    const scope = document.querySelector("#quiz-scope-select")?.value || getStudyModule().selectedNodeId;
+    const difficulty = document.querySelector("#quiz-difficulty-select")?.value || "all";
+    generateQuizForTopic(scope === "all" ? getStudyModule().selectedNodeId : scope, difficulty);
+  }
+  if (action === "next") moveQuizCursor(1);
+  if (action === "reset") generateQuizForTopic(getStudyModule().quiz.scope || getStudyModule().selectedNodeId);
+  if (action === "submit-multi") submitMultiQuizAnswer();
+  if (action === "submit-short") submitShortQuizAnswer();
+  if (action === "submit-match") submitMatchQuizAnswer();
+}
+
+function bindQuizActionButtons(root = document) {
+  root.querySelectorAll("[data-quiz-action]").forEach((button) => {
+    if (button.dataset.quizActionBound === "true") return;
+    button.dataset.quizActionBound = "true";
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      handleQuizActionButton(button);
+    });
+  });
 }
 
 function getReportStats() {
@@ -5116,15 +5234,16 @@ function createQuestionsFromGraph(graph, documents = [], engine = "local-rules")
   ).slice(0, 24).map((question) => ({ ...question, source: question.source || engine }));
 }
 
-function createDirectQuestionsForNode(node) {
+function createDirectQuestionsForNode(node, preferredDifficulty = "") {
   if (!node) return [];
   const graphNodes = getStudyModule().graph.nodes;
+  const directDifficulty = preferredDifficulty && preferredDifficulty !== "all" ? preferredDifficulty : node.difficulty;
   return [
     normalizeStudyQuestion({
       id: `direct-choice-${node.id}`,
       topic: node.id,
       type: "choice",
-      difficulty: node.difficulty,
+      difficulty: directDifficulty,
       prompt: `关于“${node.label}”，哪一项最符合资料中的解释？`,
       options: [
         node.summary,
@@ -5140,7 +5259,7 @@ function createDirectQuestionsForNode(node) {
       id: `direct-judge-${node.id}`,
       topic: node.id,
       type: "judge",
-      difficulty: node.difficulty === "较难" ? "中等" : "基础",
+      difficulty: preferredDifficulty && preferredDifficulty !== "all" ? preferredDifficulty : node.difficulty === "较难" ? "中等" : "基础",
       prompt: `复习“${node.label}”时，应结合定义、应用例子和相关概念一起理解。`,
       answer: true,
       explanation: `知识图谱会把“${node.label}”与相关节点、原文出处和例子一起呈现。`,
@@ -5150,7 +5269,7 @@ function createDirectQuestionsForNode(node) {
       id: `direct-short-${node.id}`,
       topic: node.id,
       type: "short",
-      difficulty: node.difficulty,
+      difficulty: directDifficulty,
       prompt: `用自己的话解释“${node.label}”的核心含义。`,
       keywords: node.keywords || [node.label],
       sampleAnswer: node.summary,
@@ -7979,21 +8098,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (quizActionButton) {
-    const action = quizActionButton.dataset.quizAction;
-    if (action === "generate-current") {
-      const currentNodeTitle = quizActionButton.dataset.quizTopic || document.querySelector("#node-title")?.textContent?.trim() || getStudyModule().selectedNodeId;
-      generateQuizForTopic(currentNodeTitle);
-    }
-    if (action === "generate-filtered") {
-      const scope = document.querySelector("#quiz-scope-select")?.value || getStudyModule().selectedNodeId;
-      const difficulty = document.querySelector("#quiz-difficulty-select")?.value || "all";
-      generateQuizForTopic(scope === "all" ? getStudyModule().selectedNodeId : scope, difficulty);
-    }
-    if (action === "next") moveQuizCursor(1);
-    if (action === "reset") generateQuizForTopic(getStudyModule().quiz.scope || getStudyModule().selectedNodeId);
-    if (action === "submit-multi") submitMultiQuizAnswer();
-    if (action === "submit-short") submitShortQuizAnswer();
-    if (action === "submit-match") submitMatchQuizAnswer();
+    handleQuizActionButton(quizActionButton);
     return;
   }
 
