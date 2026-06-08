@@ -813,53 +813,91 @@
       </main>
     </div>
     <aside class="longlong-assistant" id="longlong-assistant" aria-label="龙龙 AI 助手">
-      <section class="longlong-panel" id="longlong-panel">
-        <div class="longlong-panel-head">
-          <div>
-            <span class="tag muted">龙龙 AI 助手</span>
-            <h3>陪你学习中</h3>
-          </div>
-          <button class="icon-button" data-longlong-toggle title="收起龙龙">
-            <i data-lucide="minus"></i>
-          </button>
-        </div>
-        <div class="longlong-status-card">
-          <strong id="longlong-mood">等待摄像头</strong>
-          <span id="longlong-mood-detail">我会结合状态识别和音乐建议提醒你。</span>
-          <div class="longlong-study-timer">
-            <span>今日学习</span>
-            <strong id="longlong-study-time">00:00:00</strong>
-          </div>
-        </div>
-        <div class="longlong-section">
-          <div class="longlong-section-title">
-            <span>日程提醒</span>
-            <button class="mini-button" data-longlong-action="planner">查看</button>
-          </div>
-          <div class="longlong-reminders" id="longlong-reminders"></div>
-        </div>
-        <div class="longlong-section">
-          <div class="longlong-section-title">
-            <span>状态与音乐</span>
-            <button class="mini-button" data-longlong-action="focus">打开</button>
-          </div>
-          <p id="longlong-music">白噪音 + 轻钢琴，适合继续专注阅读。</p>
-        </div>
-        <form class="longlong-rag-form" id="longlong-rag-form">
-          <label for="longlong-question">问资料库</label>
-          <textarea id="longlong-question" rows="3" placeholder="问龙龙：这门课的重点是什么？"></textarea>
-          <button class="primary-action full" type="submit">
-            <i data-lucide="sparkles"></i>
-            <span>调用 RAG 接口</span>
-          </button>
-        </form>
-        <div class="longlong-rag-output" id="longlong-rag-output">RAG 向量接口已预留，后续接入资料库向量检索后会在这里回答。</div>
-      </section>
-      <div class="longlong-avatar" data-longlong-toggle role="button" tabindex="0" title="拖拽龙龙，点击展开助手">
+      <div class="longlong-avatar" data-longlong-toggle role="button" tabindex="0" title="拖拽龙龙，点击摸摸">
         <img src="./assets/longlong-guide.gif" alt="龙龙 AI 助手" draggable="false" />
         <span class="longlong-time-pill" id="longlong-time-pill">今日 00:00:00</span>
         <span class="longlong-bubble" id="longlong-bubble">今天也一起学一会儿吧。</span>
       </div>
+      <section class="longlong-panel" id="longlong-panel" aria-label="龙龙快捷操作">
+        <div class="longlong-actions" aria-label="龙龙快捷操作">
+          <button type="button" data-longlong-action="chat" title="和龙龙聊聊">
+            <i data-lucide="messages-square"></i>
+            <span>聊聊</span>
+          </button>
+          <button type="button" data-longlong-action="poke" title="摸摸龙龙">
+            <i data-lucide="hand"></i>
+            <span>摸摸</span>
+          </button>
+          <button type="button" data-longlong-action="tip" title="龙龙提醒">
+            <i data-lucide="lightbulb"></i>
+            <span>提醒</span>
+          </button>
+          <button type="button" data-longlong-action="quote" title="听龙龙语录">
+            <i data-lucide="message-circle-heart"></i>
+            <span>语录</span>
+          </button>
+          <button type="button" data-longlong-action="gift" title="给龙龙送礼">
+            <i data-lucide="gift"></i>
+            <span>送礼</span>
+          </button>
+          <button type="button" data-longlong-action="sleep" title="让龙龙睡觉">
+            <i data-lucide="moon"></i>
+            <span>睡觉</span>
+          </button>
+        </div>
+        <div class="longlong-popover longlong-chat-popover" id="longlong-chat-popover" hidden>
+          <div class="longlong-popover-head">
+            <div>
+              <span>和龙龙聊聊</span>
+              <strong>龙龙在听</strong>
+            </div>
+            <button type="button" class="icon-button" data-longlong-action="close-chat" title="收起聊天">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="longlong-chat-list" id="longlong-chat-list">
+            <article class="longlong-chat-message assistant">
+              <img src="./assets/longlong-guide.gif" alt="" draggable="false" />
+              <div>龙龙在这里。可以直接和龙龙说话，不会关联 RAG、日程或音乐。</div>
+            </article>
+          </div>
+          <form class="longlong-chat-form" id="longlong-chat-form">
+            <textarea id="longlong-chat-input" rows="3" placeholder="和龙龙说点什么..."></textarea>
+            <div class="longlong-chat-actions">
+              <button type="button" data-longlong-action="close-chat">收起</button>
+              <button type="submit">发送</button>
+            </div>
+          </form>
+        </div>
+        <div class="longlong-popover" id="longlong-gift-popover" hidden>
+          <div class="longlong-popover-head">
+            <div>
+              <span>龙龙好感度</span>
+              <strong id="longlong-coins">0 龙币</strong>
+            </div>
+            <button type="button" class="icon-button" data-longlong-action="close-gift" title="收起礼物">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="longlong-bond-meter" aria-label="龙龙好感度">
+            <div>
+              <strong id="longlong-bond-level">初识</strong>
+              <span id="longlong-bond-detail">龙龙刚刚探头</span>
+            </div>
+            <small id="longlong-bond-points">0 好感</small>
+          </div>
+          <div class="longlong-bond-progress">
+            <span id="longlong-bond-progress-bar"></span>
+          </div>
+          <p class="longlong-bond-note" id="longlong-bond-note">10 分钟学习可兑换 1 龙币。</p>
+          <div class="longlong-gift-meta">
+            <span>龙龙商城</span>
+            <small id="longlong-gift-rule">送礼增加好感</small>
+          </div>
+          <div class="longlong-gift-shop" id="longlong-gift-shop"></div>
+          <div class="longlong-inventory" id="longlong-inventory"></div>
+        </div>
+      </section>
     </aside>
   </body>
 </html>

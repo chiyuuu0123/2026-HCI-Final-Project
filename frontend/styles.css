@@ -4268,9 +4268,9 @@ button.review-row:hover {
   bottom: 22px;
   z-index: 4500;
   display: grid;
-  justify-items: end;
-  gap: 10px;
-  width: min(360px, calc(100vw - 32px));
+  justify-items: center;
+  gap: 8px;
+  width: min(240px, calc(100vw - 32px));
   pointer-events: none;
 }
 
@@ -4280,21 +4280,245 @@ button.review-row:hover {
 }
 
 .longlong-panel {
-  display: none;
-  width: min(360px, calc(100vw - 32px));
-  max-height: min(650px, calc(100vh - 132px));
-  overflow: auto;
-  padding: 16px;
-  border: 1px solid rgba(24, 143, 132, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 55px rgba(24, 50, 45, 0.18);
-  backdrop-filter: blur(14px);
+  position: relative;
+  display: block;
+  width: auto;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  pointer-events: none;
 }
 
 .longlong-assistant.expanded .longlong-panel {
+  display: block;
+}
+
+.longlong-actions {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(3, 52px);
+  gap: 7px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px) scale(0.96);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.longlong-assistant.actions-visible .longlong-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.longlong-actions button {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  min-height: 38px;
+  padding: 5px 4px;
+  border: 1px solid rgba(45, 125, 111, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 10px 18px rgba(22, 40, 34, 0.12),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.72);
+  color: #29443d;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.longlong-actions button:hover {
+  border-color: rgba(24, 143, 132, 0.34);
+  background: rgba(236, 255, 251, 0.94);
+  color: #08796f;
+  transform: translateY(-2px);
+}
+
+.longlong-actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+.longlong-actions span {
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.longlong-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 3;
+  display: grid;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(430px, calc(100vh - 170px));
+  overflow: auto;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(24, 143, 132, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 20px 55px rgba(24, 50, 45, 0.18);
+  pointer-events: auto;
+  backdrop-filter: blur(14px);
+}
+
+.longlong-popover[hidden] {
+  display: none;
+}
+
+.longlong-popover-head,
+.longlong-gift-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.longlong-popover-head div {
+  display: grid;
+  gap: 3px;
+}
+
+.longlong-popover-head span,
+.longlong-gift-meta span {
+  color: var(--deep);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.longlong-popover-head strong {
+  color: var(--teal);
+  font-size: 12px;
+}
+
+.longlong-gift-meta small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.longlong-chat-popover {
+  width: min(340px, calc(100vw - 32px));
+}
+
+.longlong-chat-list {
+  display: grid;
+  max-height: 210px;
+  overflow: auto;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.longlong-chat-message {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.longlong-chat-message.user {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.longlong-chat-message img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.longlong-chat-message div {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--teal-soft);
+  color: var(--deep);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.longlong-chat-message.user div {
+  justify-self: end;
+  max-width: 88%;
+  background: #fff8ed;
+}
+
+.longlong-chat-message p,
+.longlong-chat-message ul,
+.longlong-chat-message pre {
+  margin: 0 0 7px;
+}
+
+.longlong-chat-message p:last-child,
+.longlong-chat-message ul:last-child,
+.longlong-chat-message pre:last-child {
+  margin-bottom: 0;
+}
+
+.longlong-chat-message small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.longlong-chat-form {
+  display: grid;
+  gap: 8px;
+}
+
+.longlong-chat-form textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.longlong-chat-form textarea:focus {
+  border-color: rgba(24, 143, 132, 0.42);
+  box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.1);
+}
+
+.longlong-chat-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.longlong-chat-actions button {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid rgba(24, 143, 132, 0.2);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.longlong-chat-actions button[type="submit"] {
+  background: var(--teal);
+  color: #fff;
 }
 
 .longlong-panel-head,
@@ -4356,6 +4580,61 @@ button.review-row:hover {
   letter-spacing: 0;
 }
 
+.longlong-bond-section {
+  background: linear-gradient(135deg, #fff8ed, #effcf8 72%);
+}
+
+.longlong-bond-meter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.longlong-bond-meter div {
+  display: grid;
+  gap: 3px;
+}
+
+.longlong-bond-meter strong {
+  color: var(--deep);
+  font-size: 15px;
+}
+
+.longlong-bond-meter span,
+.longlong-bond-meter small,
+.longlong-bond-note,
+.longlong-inventory {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.longlong-bond-meter small {
+  flex: 0 0 auto;
+  font-weight: 900;
+}
+
+.longlong-bond-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(24, 143, 132, 0.12);
+}
+
+.longlong-bond-progress span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--yellow), var(--teal));
+  transition: width 220ms ease;
+}
+
+.longlong-bond-note {
+  margin: 0;
+}
+
 .longlong-section {
   display: grid;
   gap: 10px;
@@ -4370,6 +4649,98 @@ button.review-row:hover {
   color: var(--deep);
   font-size: 13px;
   font-weight: 900;
+}
+
+.longlong-section-title small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.longlong-section-title strong {
+  flex: 0 0 auto;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.longlong-gift-shop {
+  display: grid;
+  gap: 8px;
+}
+
+.longlong-gift-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(24, 143, 132, 0.12);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.longlong-gift-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.longlong-gift-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.longlong-gift-copy {
+  min-width: 0;
+}
+
+.longlong-gift-copy strong,
+.longlong-gift-copy span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.longlong-gift-copy strong {
+  color: var(--deep);
+  font-size: 13px;
+}
+
+.longlong-gift-copy span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.longlong-gift-row button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(24, 143, 132, 0.2);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.longlong-gift-row button:hover:not(:disabled) {
+  background: var(--teal-soft);
+}
+
+.longlong-gift-row button:disabled {
+  border-color: rgba(42, 52, 48, 0.1);
+  color: rgba(42, 52, 48, 0.42);
+  cursor: not-allowed;
+}
+
+.longlong-inventory {
+  min-height: 18px;
 }
 
 .longlong-reminders {
@@ -4436,7 +4807,7 @@ button.review-row:hover {
   border: 0;
   background: transparent;
   color: var(--deep);
-  cursor: default;
+  cursor: grab;
   touch-action: none;
   user-select: none;
 }
@@ -4494,7 +4865,7 @@ button.review-row:hover {
 }
 
 .longlong-assistant.dragging .longlong-avatar {
-  cursor: default;
+  cursor: grabbing;
 }
 
 .longlong-assistant.dragging .longlong-avatar img {
@@ -4704,7 +5075,7 @@ button.review-row:hover {
   }
 
   .longlong-panel {
-    max-height: min(620px, calc(100vh - 118px));
+    max-height: none;
   }
 
   .longlong-avatar img {

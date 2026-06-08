@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>龙龙</title>
+    <script src="./vendor/lucide.min.js" defer></script>
     <link rel="stylesheet" href="./companion.css" />
   </head>
   <body>
@@ -20,11 +21,30 @@
           <img id="pet-sprite" src="./assets/longlong-guide.gif" alt="龙龙" draggable="false" />
         </div>
         <div class="pet-actions" aria-label="龙龙快捷操作">
-          <button type="button" data-pet-action="chat">聊聊</button>
-          <button type="button" data-pet-action="wake">唤醒</button>
-          <button type="button" data-pet-action="voice" id="pet-voice-action">语音</button>
-          <button type="button" data-pet-action="poke">摸摸</button>
-          <button type="button" data-pet-action="tip">提醒</button>
+          <button type="button" data-pet-action="chat">
+            <i data-lucide="messages-square"></i>
+            <span>聊聊</span>
+          </button>
+          <button type="button" data-pet-action="poke">
+            <i data-lucide="hand"></i>
+            <span>摸摸</span>
+          </button>
+          <button type="button" data-pet-action="tip">
+            <i data-lucide="lightbulb"></i>
+            <span>提醒</span>
+          </button>
+          <button type="button" data-pet-action="quote">
+            <i data-lucide="message-circle-heart"></i>
+            <span>语录</span>
+          </button>
+          <button type="button" data-pet-action="gift">
+            <i data-lucide="gift"></i>
+            <span>送礼</span>
+          </button>
+          <button type="button" data-pet-action="sleep">
+            <i data-lucide="moon"></i>
+            <span>睡觉</span>
+          </button>
         </div>
       </section>
 
@@ -68,6 +88,7 @@
     </main>
     <script>
       const pet = document.querySelector("#desktop-pet");
+      const petBody = document.querySelector("#pet-body");
       const petSprite = document.querySelector("#pet-sprite");
       const tip = document.querySelector("#pet-tip");
       const bubble = document.querySelector("#pet-bubble");
@@ -120,6 +141,14 @@
           "如果开始分心，就把下一步缩小到两分钟。",
           "遇到英文段落，先看术语，再看句子关系。",
         ],
+        quote: [
+          "龙龙吞咽了太多意义，但其实生命只需要呼吸。",
+          "你欠龙龙的眼泪太多，龙龙数不清。",
+          "如果忧郁是一种天赋，那我龙龙将天赋异禀。",
+          "龙龙不胖，龙龙只有两吨；",
+          "今夜星光闪闪，我爱你的心满满！",
+          "每只龙龙都一定会找到自己的小七哦！",
+        ],
         thinking: [
           LONGLONG_THINKING_LINE,
         ],
@@ -149,6 +178,20 @@
         ["做完这一段就喝口水，龙龙给你记着。", "./assets/longlong-voice/tip-08.wav"],
         ["如果开始分心，就把下一步缩小到两分钟。", "./assets/longlong-voice/tip-09.wav"],
         ["遇到英文段落，先看术语，再看句子关系。", "./assets/longlong-voice/tip-10.wav"],
+        ["龙龙吞咽了太多意义，但其实生命只需要呼吸。", "./assets/longlong-voice/quote-01.wav"],
+        ["你欠龙龙的眼泪太多，龙龙数不清。", "./assets/longlong-voice/quote-02.wav"],
+        ["如果忧郁是一种天赋，那我龙龙将天赋异禀。", "./assets/longlong-voice/quote-03.wav"],
+        ["龙龙不胖，龙龙只有两吨；", "./assets/longlong-voice/quote-04.wav"],
+        ["今夜星光闪闪，我爱你的心满满！", "./assets/longlong-voice/quote-05.wav"],
+        ["每只龙龙都一定会找到自己的小七哦！", "./assets/longlong-voice/quote-06.wav"],
+        ["谢谢你的呼吸抱枕。龙龙吞咽了太多意义，但其实生命只需要呼吸。", "./assets/longlong-voice/gift-01.wav"],
+        ["这颗眼泪玻璃珠好亮。你欠龙龙的眼泪太多，龙龙数不清。", "./assets/longlong-voice/gift-02.wav"],
+        ["蓝色小斗篷收到。如果忧郁是一种天赋，那我龙龙将天赋异禀。", "./assets/longlong-voice/gift-03.wav"],
+        ["体重秤就放远一点。龙龙不胖，龙龙只有两吨。", "./assets/longlong-voice/gift-04.wav"],
+        ["星星夜灯亮啦。今夜星光闪闪，我爱你的心满满！", "./assets/longlong-voice/gift-05.wav"],
+        ["小七玩偶到龙龙怀里啦。每只龙龙都一定会找到自己的小七哦！", "./assets/longlong-voice/gift-06.wav"],
+        ["奶油云朵软软的，龙龙今天也被你好好接住了。", "./assets/longlong-voice/gift-07.wav"],
+        ["学习书签收到，龙龙会把你努力的这一页好好夹住。", "./assets/longlong-voice/gift-08.wav"],
         [LONGLONG_THINKING_LINE, "./assets/longlong-voice/ai-thinking.wav"],
         [LONGLONG_ANSWER_LINE, "./assets/longlong-voice/ai-answer.wav"],
       ]);
@@ -174,11 +217,20 @@
         touch: "./assets/longlong-pet/base-frame/gif/longlong-touch.gif",
       };
       const PET_SLEEP_DELAY_MS = 20000;
+      const PET_DRAG_DIRECTION_START_DISTANCE = 8;
+      const PET_DRAG_DIRECTION_SWITCH_DISTANCE = 18;
+      const PET_DRAG_DIRECTION_SWITCH_MS = 180;
+      const PET_DRAG_DIRECTION_RATIO = 1.2;
       let latestSnapshot = null;
       let restoreTipTimer = null;
       let restoreSpriteTimer = null;
       let nativeMoveSpriteTimer = null;
+      let petActionsHideTimer = null;
       let petSleepTimer = null;
+      let petDragState = null;
+      let petDragAnimationFrame = 0;
+      let pendingPetDragBounds = null;
+      let ignoreNativeDragMotionUntil = 0;
       let currentPetSpriteState = "default";
       let companionMode = "pet";
       let chatHistory = [];
@@ -343,8 +395,17 @@
         return "move-up";
       }
 
+      function getStablePetMoveSprite(deltaX, deltaY, minimumDistance, dominanceRatio = 1) {
+        const absX = Math.abs(deltaX);
+        const absY = Math.abs(deltaY);
+        if (Math.hypot(absX, absY) < minimumDistance) return "";
+        if (absX >= absY * dominanceRatio) return deltaX < 0 ? "move-left" : "move-right";
+        if (absY >= absX * dominanceRatio) return "move-up";
+        return "";
+      }
+
       function handleNativeDragMotion(motion = {}) {
-        if (companionMode !== "pet") return;
+        if (companionMode !== "pet" || petDragState || Date.now() < ignoreNativeDragMotionUntil) return;
         const deltaX = Number(motion.deltaX) || 0;
         const deltaY = Number(motion.deltaY) || 0;
         if (Math.abs(deltaX) + Math.abs(deltaY) < 1) return;
@@ -353,6 +414,130 @@
         window.clearTimeout(restoreSpriteTimer);
         window.clearTimeout(nativeMoveSpriteTimer);
         setPetSpriteState(getPetMoveSprite(deltaX, deltaY));
+        nativeMoveSpriteTimer = window.setTimeout(() => {
+          setPetSpriteState("default");
+          schedulePetSleep();
+        }, 320);
+      }
+
+      function getPointerScreenPoint(event) {
+        const screenX = Number(event.screenX);
+        const screenY = Number(event.screenY);
+        return {
+          x: Number.isFinite(screenX) ? screenX : window.screenX + event.clientX,
+          y: Number.isFinite(screenY) ? screenY : window.screenY + event.clientY,
+        };
+      }
+
+      function flushPetDragMove() {
+        petDragAnimationFrame = 0;
+        if (!pendingPetDragBounds) return;
+        ignoreNativeDragMotionUntil = Date.now() + 220;
+        window.mindStudy?.moveCompanionTo?.(pendingPetDragBounds);
+        pendingPetDragBounds = null;
+      }
+
+      function schedulePetDragMove(bounds) {
+        pendingPetDragBounds = bounds;
+        if (petDragAnimationFrame) return;
+        petDragAnimationFrame = window.requestAnimationFrame(flushPetDragMove);
+      }
+
+      function applyPetDragSprite(spriteState) {
+        if (!petDragState || !spriteState || spriteState === petDragState.spriteState) return;
+        petDragState.spriteState = spriteState;
+        petDragState.lastSpriteChangeAt = Date.now();
+        petDragState.directionAnchorX = petDragState.lastX;
+        petDragState.directionAnchorY = petDragState.lastY;
+        setPetSpriteState(spriteState);
+      }
+
+      function updatePetDragSprite() {
+        if (companionMode !== "pet") return;
+        window.clearTimeout(petSleepTimer);
+        window.clearTimeout(restoreSpriteTimer);
+        window.clearTimeout(nativeMoveSpriteTimer);
+        if (!petDragState) return;
+
+        if (petDragState.spriteState === "default") {
+          applyPetDragSprite(getStablePetMoveSprite(
+            petDragState.lastX - petDragState.startX,
+            petDragState.lastY - petDragState.startY,
+            PET_DRAG_DIRECTION_START_DISTANCE,
+            1,
+          ));
+          return;
+        }
+
+        const now = Date.now();
+        if (now - petDragState.lastSpriteChangeAt < PET_DRAG_DIRECTION_SWITCH_MS) return;
+        const nextSpriteState = getStablePetMoveSprite(
+          petDragState.lastX - petDragState.directionAnchorX,
+          petDragState.lastY - petDragState.directionAnchorY,
+          PET_DRAG_DIRECTION_SWITCH_DISTANCE,
+          PET_DRAG_DIRECTION_RATIO,
+        );
+        applyPetDragSprite(nextSpriteState);
+      }
+
+      function startPetDrag(event) {
+        if (event.button !== 0 || (companionMode === "chat" && event.target.closest("[data-pet-action]"))) return;
+        if (event.target.closest("button, input, textarea, select, a") && !event.currentTarget.classList.contains("pet-body")) return;
+
+        const point = getPointerScreenPoint(event);
+        petDragState = {
+          pointerId: event.pointerId,
+          startX: point.x,
+          startY: point.y,
+          lastX: point.x,
+          lastY: point.y,
+          startBounds: {
+            x: Math.round(window.screenX),
+            y: Math.round(window.screenY),
+          },
+          handle: event.currentTarget,
+          spriteState: "default",
+          lastSpriteChangeAt: 0,
+          directionAnchorX: point.x,
+          directionAnchorY: point.y,
+        };
+        event.preventDefault();
+        try {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        } catch {}
+        pet.classList.add("dragging");
+        window.clearTimeout(petSleepTimer);
+        if (currentPetSpriteState === "sleep") setPetSpriteState("default");
+      }
+
+      function movePetDrag(event) {
+        if (!petDragState || event.pointerId !== petDragState.pointerId) return;
+        const point = getPointerScreenPoint(event);
+        const dragDeltaX = point.x - petDragState.startX;
+        const dragDeltaY = point.y - petDragState.startY;
+        petDragState.lastX = point.x;
+        petDragState.lastY = point.y;
+
+        event.preventDefault();
+        schedulePetDragMove({
+          x: Math.round(petDragState.startBounds.x + dragDeltaX),
+          y: Math.round(petDragState.startBounds.y + dragDeltaY),
+        });
+        updatePetDragSprite();
+      }
+
+      function stopPetDrag(event) {
+        if (!petDragState || event.pointerId !== petDragState.pointerId) return;
+        if (petDragAnimationFrame) {
+          window.cancelAnimationFrame(petDragAnimationFrame);
+          flushPetDragMove();
+        }
+        try {
+          petDragState.handle?.releasePointerCapture?.(event.pointerId);
+        } catch {}
+        ignoreNativeDragMotionUntil = Date.now() + 500;
+        petDragState = null;
+        pet.classList.remove("dragging");
         nativeMoveSpriteTimer = window.setTimeout(() => {
           setPetSpriteState("default");
           schedulePetSleep();
@@ -369,6 +554,33 @@
             tip.textContent = latestSnapshot?.reminder || latestSnapshot?.mood || "今天也一起学一会儿吧";
           }, 4200);
         }
+      }
+
+      function setPetActionsVisible(visible) {
+        window.clearTimeout(petActionsHideTimer);
+        pet.classList.toggle("actions-visible", Boolean(visible));
+      }
+
+      function schedulePetActionsHide(delay = 120) {
+        window.clearTimeout(petActionsHideTimer);
+        petActionsHideTimer = window.setTimeout(() => {
+          setPetActionsVisible(false);
+        }, delay);
+      }
+
+      function hidePetActions() {
+        setPetActionsVisible(false);
+        const activeElement = document.activeElement;
+        if (activeElement?.closest?.(".pet-actions")) {
+          activeElement.blur();
+        }
+      }
+
+      function initPetActionHover() {
+        [bubble, petBody, actions].filter(Boolean).forEach((target) => {
+          target.addEventListener("pointerenter", () => setPetActionsVisible(true));
+          target.addEventListener("pointerleave", () => schedulePetActionsHide());
+        });
       }
 
       function pickRandom(items) {
@@ -407,6 +619,10 @@
         if (voiceAction) voiceAction.title = cloneTip;
         if (voiceToggle) voiceToggle.title = cloneTip;
         pet.classList.toggle("voice-enabled", voiceState.enabled);
+      }
+
+      function renderPetIcons() {
+        window.lucide?.createIcons();
       }
 
       function stripSpeechText(text) {
@@ -530,6 +746,7 @@
         chatInput.value = "";
         addChatMessage("user", text);
         chatHistory.push({ role: "user", content: text });
+        window.mindStudy?.addLonglongAffection?.({ amount: 2, reason: "chat" }).catch(() => {});
         const thinking = addChatMessage("assistant", LONGLONG_THINKING_LINE);
         setTip(LONGLONG_THINKING_LINE, { temporary: true, motion: "thinking" });
         speakLonglong(LONGLONG_THINKING_LINE, { maxLength: 80 });
@@ -601,6 +818,32 @@
           resetPetActivity();
           setTip(text, { temporary: true, motion: "thinking" });
           speakLonglong(text, { maxLength: 90 });
+          return;
+        }
+
+        if (action === "quote") {
+          const text = pickRandom(longlongVoicePack.quote);
+          resetPetActivity();
+          setTip(text, { temporary: true, motion: "thinking" });
+          speakLonglong(text, { maxLength: 90 });
+          return;
+        }
+
+        if (action === "gift") {
+          resetPetActivity();
+          window.mindStudy?.wakeMainWindow?.();
+          setTip("送礼在主窗口龙龙下面，龙龙等你来。", { temporary: true, motion: "speaking" });
+          return;
+        }
+
+        if (action === "sleep") {
+          window.clearTimeout(petSleepTimer);
+          window.clearTimeout(restoreSpriteTimer);
+          window.clearTimeout(nativeMoveSpriteTimer);
+          stopLonglongVoice();
+          setPetSpriteState("sleep");
+          setTip("龙龙先睡一小会儿。", { temporary: false, motion: "thinking" });
+          return;
         }
       }
 
@@ -617,6 +860,12 @@
       studyTimerPromise?.then(applyStudyTimerSnapshot).catch(() => {});
       window.mindStudy?.onStudyTimerUpdate?.(applyStudyTimerSnapshot);
       syncVoiceControls();
+      initPetActionHover();
+      if (document.readyState === "loading") {
+        window.addEventListener("DOMContentLoaded", renderPetIcons, { once: true });
+      } else {
+        renderPetIcons();
+      }
       schedulePetSleep();
 
       bubble.addEventListener("click", () => {
@@ -632,8 +881,16 @@
       actions.addEventListener("click", (event) => {
         const actionButton = event.target.closest("[data-pet-action]");
         if (!actionButton) return;
+        hidePetActions();
         handlePetAction(actionButton.dataset.petAction);
       });
+
+      document.querySelectorAll("[data-pet-drag]").forEach((handle) => {
+        handle.addEventListener("pointerdown", startPetDrag);
+      });
+      document.addEventListener("pointermove", movePetDrag);
+      document.addEventListener("pointerup", stopPetDrag);
+      document.addEventListener("pointercancel", stopPetDrag);
 
       document.addEventListener("click", (event) => {
         const actionButton = event.target.closest("[data-pet-action]");
