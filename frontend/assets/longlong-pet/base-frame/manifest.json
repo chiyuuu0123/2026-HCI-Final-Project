@@ -1,0 +1,139 @@
+{
+  "note": "Frame-by-frame assets generated only from the five source-png base images named by the user. Canvas and visible scale are normalized to match frontend/assets/longlong-guide.gif display size more closely.",
+  "frameSize": [
+    320,
+    320
+  ],
+  "transparent": true,
+  "sourceImages": {
+    "sleep": "frontend/assets/longlong-pet/source-png/sleep_base.png",
+    "move-right": "frontend/assets/longlong-pet/source-png/right_base.png",
+    "touch": "frontend/assets/longlong-pet/source-png/touch_base.png",
+    "move-up": "frontend/assets/longlong-pet/source-png/up_base.png",
+    "move-left": "frontend/assets/longlong-pet/source-png/left_base.png"
+  },
+  "actions": {
+    "sleep": {
+      "frames": "frontend/assets/longlong-pet/base-frame/frames/sleep",
+      "gif": "frontend/assets/longlong-pet/base-frame/gif/longlong-sleep.gif",
+      "sheet": "frontend/assets/longlong-pet/base-frame/sheets/longlong-sleep-sheet.png",
+      "frameCount": 16,
+      "durationsMs": [
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135,
+        135
+      ]
+    },
+    "move-right": {
+      "frames": "frontend/assets/longlong-pet/base-frame/frames/move-right",
+      "gif": "frontend/assets/longlong-pet/base-frame/gif/longlong-move-right.gif",
+      "sheet": "frontend/assets/longlong-pet/base-frame/sheets/longlong-move-right-sheet.png",
+      "frameCount": 16,
+      "durationsMs": [
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80
+      ]
+    },
+    "touch": {
+      "frames": "frontend/assets/longlong-pet/base-frame/frames/touch",
+      "gif": "frontend/assets/longlong-pet/base-frame/gif/longlong-touch.gif",
+      "sheet": "frontend/assets/longlong-pet/base-frame/sheets/longlong-touch-sheet.png",
+      "frameCount": 18,
+      "durationsMs": [
+        70,
+        70,
+        65,
+        65,
+        70,
+        75,
+        85,
+        95,
+        100,
+        95,
+        85,
+        80,
+        80,
+        85,
+        90,
+        95,
+        105,
+        115
+      ]
+    },
+    "move-up": {
+      "frames": "frontend/assets/longlong-pet/base-frame/frames/move-up",
+      "gif": "frontend/assets/longlong-pet/base-frame/gif/longlong-move-up.gif",
+      "sheet": "frontend/assets/longlong-pet/base-frame/sheets/longlong-move-up-sheet.png",
+      "frameCount": 16,
+      "durationsMs": [
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85
+      ]
+    },
+    "move-left": {
+      "frames": "frontend/assets/longlong-pet/base-frame/frames/move-left",
+      "gif": "frontend/assets/longlong-pet/base-frame/gif/longlong-move-left.gif",
+      "sheet": "frontend/assets/longlong-pet/base-frame/sheets/longlong-move-left-sheet.png",
+      "frameCount": 16,
+      "durationsMs": [
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80
+      ]
+    }
+  }
+}

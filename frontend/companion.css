@@ -19,6 +19,7 @@ button,
 textarea,
 input {
   font: inherit;
+  -webkit-app-region: no-drag;
 }
 
 .desktop-pet {
@@ -35,9 +36,11 @@ input {
   inset: 0;
   opacity: 1;
   pointer-events: auto;
+  cursor: default;
   transition:
     opacity 180ms ease,
     transform 180ms ease;
+  -webkit-app-region: drag;
 }
 
 .desktop-pet.chat-mode .pet-stage {
@@ -58,13 +61,13 @@ input {
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: grab;
-  -webkit-app-region: no-drag;
+  cursor: default;
+  -webkit-app-region: drag;
 }
 
 .pet-body:active,
 .desktop-pet.dragging .pet-body {
-  cursor: grabbing;
+  cursor: default;
 }
 
 .pet-body::after {
@@ -90,11 +93,20 @@ input {
   z-index: 1;
   width: 132px;
   height: 132px;
+  object-fit: contain;
   pointer-events: none;
   transform-origin: 50% 96%;
   filter: drop-shadow(0 14px 16px rgba(24, 34, 30, 0.24));
   animation: longlong-idle 3.4s ease-in-out infinite;
   will-change: transform;
+  -webkit-app-region: drag;
+}
+
+.desktop-pet.asset-motion .pet-body img,
+.desktop-pet.asset-motion.poked .pet-body img,
+.desktop-pet.asset-motion.thinking .pet-body img,
+.desktop-pet.asset-motion.voice-speaking .pet-body img {
+  animation: none;
 }
 
 .pet-bubble {
@@ -208,6 +220,17 @@ input {
   -webkit-app-region: no-drag;
 }
 
+.pet-actions *,
+.pet-bubble,
+.pet-study-time,
+.pet-study-time *,
+.pet-chat,
+.pet-chat *,
+.pet-toggle,
+.pet-toggle * {
+  -webkit-app-region: no-drag;
+}
+
 .desktop-pet:hover .pet-actions,
 .desktop-pet:focus-within .pet-actions {
   opacity: 1;
@@ -256,6 +279,23 @@ input {
   transform: translateY(-2px);
 }
 
+.desktop-pet.voice-enabled #pet-voice-action {
+  border-color: rgba(24, 143, 132, 0.34);
+  background: rgba(236, 255, 251, 0.94);
+  color: #08796f;
+}
+
+.desktop-pet.voice-speaking .pet-bubble {
+  border-color: rgba(24, 143, 132, 0.32);
+  box-shadow:
+    0 18px 30px rgba(24, 143, 132, 0.18),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.desktop-pet.voice-speaking .pet-body img {
+  animation: longlong-talk 520ms ease-in-out infinite;
+}
+
 .pet-chat {
   position: absolute;
   inset: 10px;
@@ -293,6 +333,7 @@ input {
   padding: 14px 14px 12px;
   border-bottom: 1px solid rgba(37, 65, 58, 0.1);
   cursor: grab;
+  -webkit-app-region: drag;
 }
 
 .pet-chat-head:active,
@@ -319,6 +360,7 @@ input {
 .pet-chat-actions {
   display: flex;
   gap: 7px;
+  -webkit-app-region: no-drag;
 }
 
 .pet-chat-list {
@@ -437,6 +479,25 @@ input {
   font-weight: 900;
 }
 
+.pet-chat-speak {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 4px 9px;
+  border: 1px solid rgba(24, 143, 132, 0.2);
+  border-radius: 999px;
+  background: #eefaf7;
+  color: #087d73;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.pet-chat-speak:hover {
+  background: #d8f4ef;
+}
+
 .pet-chat-form {
   display: grid;
   gap: 8px;
@@ -445,7 +506,13 @@ input {
   background: rgba(255, 255, 255, 0.72);
 }
 
-.pet-screen-toggle {
+.pet-chat-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.pet-toggle {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -455,7 +522,7 @@ input {
   font-weight: 900;
 }
 
-.pet-screen-toggle input {
+.pet-toggle input {
   width: 15px;
   height: 15px;
   accent-color: #189084;
@@ -553,6 +620,17 @@ input {
 
   72% {
     transform: translateX(5px) rotate(2deg);
+  }
+}
+
+@keyframes longlong-talk {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+
+  50% {
+    transform: translateY(-4px) rotate(-1deg) scale(1.028);
   }
 }
 

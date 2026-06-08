@@ -4436,7 +4436,7 @@ button.review-row:hover {
   border: 0;
   background: transparent;
   color: var(--deep);
-  cursor: grab;
+  cursor: default;
   touch-action: none;
   user-select: none;
 }
@@ -4444,6 +4444,7 @@ button.review-row:hover {
 .longlong-avatar img {
   width: 108px;
   height: 108px;
+  object-fit: contain;
   image-rendering: pixelated;
   filter: drop-shadow(0 16px 20px rgba(18, 32, 28, 0.22));
   transition: transform 160ms ease;
@@ -4485,8 +4486,15 @@ button.review-row:hover {
   transform: translateY(-2px);
 }
 
+.longlong-assistant.asset-motion .longlong-avatar img,
+.longlong-assistant.asset-motion .longlong-avatar:hover img,
+.longlong-assistant.asset-motion.dragging .longlong-avatar img {
+  transform: none;
+  transition: none;
+}
+
 .longlong-assistant.dragging .longlong-avatar {
-  cursor: grabbing;
+  cursor: default;
 }
 
 .longlong-assistant.dragging .longlong-avatar img {

@@ -7,6 +7,11 @@
   "scripts": {
     "postinstall": "node scripts/copy-assets.js",
     "prepare:assets": "node scripts/copy-assets.js",
+    "prepare:voice": "powershell -ExecutionPolicy Bypass -File scripts/download-longlong-voice.ps1",
+    "voice:api": "powershell -ExecutionPolicy Bypass -File scripts/start-longlong-voice-api.ps1",
+    "voice:server": "powershell -ExecutionPolicy Bypass -File scripts/start-longlong-voice-server.ps1",
+    "voice:client": "powershell -ExecutionPolicy Bypass -File scripts/configure-longlong-voice-client.ps1",
+    "voice:test": "powershell -ExecutionPolicy Bypass -File scripts/test-longlong-voice-api.ps1",
     "start": "electron .",
     "dev": "electron .",
     "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check b_deepseek_module/ocrImageExtractor.js && node --check scripts/copy-assets.js"

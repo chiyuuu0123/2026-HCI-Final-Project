@@ -1,0 +1,536 @@
+﻿{
+    "name":  "NaiLong selected voice references",
+    "source":  "https://huggingface.co/datasets/pengyichen/NaiLong-Voice-Clone",
+    "license":  "cc-by-nc-sa-4.0",
+    "subset":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)",
+    "modelReference":  {
+                           "promptText":  "啊，我才不要这样，好害羞啊。",
+                           "source":  "https://huggingface.co/pengyichen/NaiLong-Voice-Clone",
+                           "file":  "reference.wav"
+                       },
+    "downloadedAt":  "2026-06-07T15:02:12Z",
+    "totalFiles":  65,
+    "totalBytes":  12906280,
+    "files":  [
+                  {
+                      "file":  "record136.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record136.wav",
+                      "size":  187050,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record137.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record137.wav",
+                      "size":  128976,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record138.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record138.wav",
+                      "size":  183302,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record139.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record139.wav",
+                      "size":  233516,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record140.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record140.wav",
+                      "size":  189996,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record141.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record141.wav",
+                      "size":  163372,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record142.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record142.wav",
+                      "size":  128044,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record143.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record143.wav",
+                      "size":  176684,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record144.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record144.wav",
+                      "size":  192556,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record145.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record145.wav",
+                      "size":  195628,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record146.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record146.wav",
+                      "size":  279596,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record147.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record147.wav",
+                      "size":  269868,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record148.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record148.wav",
+                      "size":  166956,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record149.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record149.wav",
+                      "size":  197164,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record150.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record150.wav",
+                      "size":  186924,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record151.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record151.wav",
+                      "size":  222764,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record152.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record152.wav",
+                      "size":  206892,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record153.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record153.wav",
+                      "size":  181292,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record154.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record154.wav",
+                      "size":  191532,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record155.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record155.wav",
+                      "size":  165932,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record156.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record156.wav",
+                      "size":  204844,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record157.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record157.wav",
+                      "size":  165932,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record158.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record158.wav",
+                      "size":  184364,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record159.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record159.wav",
+                      "size":  462892,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record160.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record160.wav",
+                      "size":  182828,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record161.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record161.wav",
+                      "size":  302124,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record162.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record162.wav",
+                      "size":  150572,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record163.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record163.wav",
+                      "size":  183340,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record164.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record164.wav",
+                      "size":  247852,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record165.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record165.wav",
+                      "size":  189484,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record166.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record166.wav",
+                      "size":  162860,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record167.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record167.wav",
+                      "size":  182828,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record168.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record168.wav",
+                      "size":  189996,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record169.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record169.wav",
+                      "size":  265772,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record170.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record170.wav",
+                      "size":  133676,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record171.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record171.wav",
+                      "size":  179244,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record172.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record172.wav",
+                      "size":  252460,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record173.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record173.wav",
+                      "size":  163884,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record174.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record174.wav",
+                      "size":  196140,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record175.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record175.wav",
+                      "size":  146988,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record176.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record176.wav",
+                      "size":  183340,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record177.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record177.wav",
+                      "size":  221740,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record178.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record178.wav",
+                      "size":  189484,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record179.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record179.wav",
+                      "size":  134700,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record180.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record180.wav",
+                      "size":  210988,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record181.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record181.wav",
+                      "size":  224300,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record182.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record182.wav",
+                      "size":  175660,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record183.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record183.wav",
+                      "size":  153132,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record184.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record184.wav",
+                      "size":  201260,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record185.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record185.wav",
+                      "size":  192556,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record186.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record186.wav",
+                      "size":  247852,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record187.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record187.wav",
+                      "size":  165420,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record188.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record188.wav",
+                      "size":  211500,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record189.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record189.wav",
+                      "size":  129068,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record190.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record190.wav",
+                      "size":  130092,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record191.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record191.wav",
+                      "size":  231980,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record192.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record192.wav",
+                      "size":  300588,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record193.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record193.wav",
+                      "size":  322604,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record194.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record194.wav",
+                      "size":  159276,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record195.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record195.wav",
+                      "size":  199212,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record196.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record196.wav",
+                      "size":  233516,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record197.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record197.wav",
+                      "size":  189484,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record198.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record198.wav",
+                      "size":  185900,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record199.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record199.wav",
+                      "size":  187436,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  },
+                  {
+                      "file":  "record200.wav",
+                      "sourcePath":  "nailong_selected/32kHz, 16-bit, Mono (1-channel)/record200.wav",
+                      "size":  129068,
+                      "sampleRate":  32000,
+                      "channels":  1,
+                      "bits":  16
+                  }
+              ]
+}

@@ -2,6 +2,9 @@ const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, screen, sess
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
+const { spawn } = require("node:child_process");
+const { pathToFileURL } = require("node:url");
 const {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
@@ -17,6 +20,9 @@ const maxImportBytes = 80 * 1024 * 1024;
 const supportedExtensions = new Set([".pdf", ".md"]);
 const companionPetSize = { width: 248, height: 312 };
 const companionChatSize = { width: 440, height: 568 };
+const longlongVoiceProvider = "gpt-sovits";
+const longlongVoiceTextLimit = 420;
+const longlongVoiceStartupTimeoutMs = 30000;
 let mainWindow = null;
 let companionWindow = null;
 let companionSnapshot = null;
@@ -24,9 +30,12 @@ let companionShouldShow = false;
 let companionMode = "pet";
 let lastMainWindowBounds = null;
 let companionCustomBounds = null;
+let companionLastMotionBounds = null;
 let studyTimerState = null;
 let studyTimerInterval = null;
 let studyTimerLastSaveAt = 0;
+let longlongVoiceServiceProcess = null;
+let longlongVoiceServiceStartPromise = null;
 
 function getDeepSeekConfigPath() {
   return path.join(app.getPath("userData"), "deepseek-config.json");
@@ -44,6 +53,429 @@ function writeDeepSeekLocalConfig(config) {
   const configPath = getDeepSeekConfigPath();
   fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
   fsSync.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+}
+
+function getLonglongVoiceConfigPath() {
+  return path.join(app.getPath("userData"), "longlong-voice-config.json");
+}
+
+function getLonglongVoiceCacheDir() {
+  return path.join(app.getPath("userData"), "longlong-voice-cache");
+}
+
+function readLonglongVoiceLocalConfig() {
+  try {
+    return JSON.parse(fsSync.readFileSync(getLonglongVoiceConfigPath(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function readBooleanOption(value, fallback = true) {
+  if (typeof value === "boolean") return value;
+  if (value === undefined || value === null || value === "") return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  return fallback;
+}
+
+function getLonglongVoiceAssetsDir() {
+  return path.join(__dirname, "..", "frontend", "assets", "longlong-voice");
+}
+
+function getLonglongVoiceDefaultServiceScriptPath() {
+  return path.join(__dirname, "..", "..", "LonglongVoiceService", "start-longlong-tts.ps1");
+}
+
+function getLonglongVoiceServiceScriptPath(localConfig = readLonglongVoiceLocalConfig()) {
+  return String(
+    process.env.LONGLONG_TTS_SERVICE_SCRIPT ||
+      localConfig.serviceScriptPath ||
+      getLonglongVoiceDefaultServiceScriptPath()
+  ).trim();
+}
+
+function isLonglongVoiceEndpointLocal(endpoint) {
+  try {
+    const { hostname } = new URL(endpoint);
+    return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname.toLowerCase());
+  } catch {
+    return true;
+  }
+}
+
+function readLonglongVoiceManifest() {
+  try {
+    return JSON.parse(fsSync.readFileSync(path.join(getLonglongVoiceAssetsDir(), "manifest.json"), "utf8"));
+  } catch {
+    return { files: [] };
+  }
+}
+
+function getLonglongReferenceAudioPath(preferredFile = "") {
+  const manifest = readLonglongVoiceManifest();
+  const files = Array.isArray(manifest.files) ? manifest.files : [];
+  const selected =
+    files.find((file) => file.file === preferredFile) ||
+    (preferredFile && fsSync.existsSync(path.join(getLonglongVoiceAssetsDir(), preferredFile)) ? { file: preferredFile } : null) ||
+    (fsSync.existsSync(path.join(getLonglongVoiceAssetsDir(), "reference.wav")) ? { file: "reference.wav" } : null) ||
+    files.find((file) => file.file === "record136.wav") ||
+    files[0];
+
+  if (!selected?.file) return "";
+  return path.join(getLonglongVoiceAssetsDir(), selected.file);
+}
+
+function getLonglongVoiceConfig() {
+  const localConfig = readLonglongVoiceLocalConfig();
+  const endpoint = process.env.LONGLONG_TTS_ENDPOINT || localConfig.endpoint || "http://127.0.0.1:9880/tts";
+  const referenceFile = process.env.LONGLONG_TTS_REFERENCE_FILE || localConfig.referenceFile || "";
+  const serviceScriptPath = getLonglongVoiceServiceScriptPath(localConfig);
+  const endpointIsLocal = isLonglongVoiceEndpointLocal(endpoint);
+  const localReferenceAudioPath = process.env.LONGLONG_TTS_REFERENCE_PATH || localConfig.referenceAudioPath || "";
+  const serverReferenceAudioPath = process.env.LONGLONG_TTS_SERVER_REFERENCE_PATH || localConfig.serverReferenceAudioPath || "";
+  const configuredReferenceAudioPath = endpointIsLocal ? localReferenceAudioPath : serverReferenceAudioPath;
+  const referenceAudioPath = configuredReferenceAudioPath || (endpointIsLocal ? getLonglongReferenceAudioPath(referenceFile) : "");
+
+  return {
+    endpoint: String(endpoint).trim(),
+    endpointIsLocal,
+    provider: process.env.LONGLONG_TTS_PROVIDER || localConfig.provider || longlongVoiceProvider,
+    referenceAudioPath,
+    promptText:
+      process.env.LONGLONG_TTS_PROMPT_TEXT ||
+      localConfig.promptText ||
+      "啊，我才不要这样，好害羞啊。",
+    promptLang: process.env.LONGLONG_TTS_PROMPT_LANG || localConfig.promptLang || "zh",
+    textLang: process.env.LONGLONG_TTS_TEXT_LANG || localConfig.textLang || "zh",
+    autoStartService: readBooleanOption(process.env.LONGLONG_TTS_AUTO_START ?? localConfig.autoStartService, true),
+    serviceScriptPath,
+    timeoutMs: Math.min(45000, Math.max(3000, Number(process.env.LONGLONG_TTS_TIMEOUT_MS || localConfig.timeoutMs) || 18000)),
+    extraPayload: localConfig.extraPayload && typeof localConfig.extraPayload === "object" ? localConfig.extraPayload : {},
+  };
+}
+
+function getLonglongVoiceHealthUrl(endpoint) {
+  try {
+    const url = new URL(endpoint);
+    url.pathname = url.pathname.replace(/\/tts\/?$/, "/health") || "/health";
+    if (!url.pathname.endsWith("/health")) {
+      url.pathname = "/health";
+    }
+    url.search = "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function getLonglongVoiceCacheKey(text, config, payload) {
+  const cachePayload = {
+    provider: config.provider,
+    endpoint: config.endpoint,
+    text,
+    format: payload.media_type || "",
+    textLang: payload.text_lang || payload.textLang || "",
+    promptText: payload.prompt_text || payload.promptText || "",
+    promptLang: payload.prompt_lang || payload.promptLang || "",
+    referenceAudioPath: payload.ref_audio_path || payload.prompt_audio_path || "",
+  };
+
+  return crypto.createHash("sha1").update(JSON.stringify(cachePayload)).digest("hex");
+}
+
+function getLonglongVoiceAudioFormat(format = "wav", contentType = "") {
+  const normalizedFormat = String(format || "").toLowerCase();
+  const normalizedType = String(contentType || "").toLowerCase();
+
+  if (normalizedFormat.includes("mp3") || normalizedType.includes("mpeg") || normalizedType.includes("mp3")) return "mp3";
+  if (normalizedFormat.includes("opus") || normalizedType.includes("opus")) return "opus";
+  if (normalizedFormat.includes("wav") || normalizedType.includes("wav")) return "wav";
+  return "wav";
+}
+
+function getLonglongVoiceContentType(format = "wav") {
+  const audioFormat = getLonglongVoiceAudioFormat(format);
+  if (audioFormat === "mp3") return "audio/mpeg";
+  if (audioFormat === "opus") return "audio/opus";
+  return "audio/wav";
+}
+
+function getLonglongVoiceCacheFormat(payload = {}, contentType = "") {
+  return getLonglongVoiceAudioFormat(payload.format || payload.media_type || "wav", contentType);
+}
+
+function getLonglongVoiceCachePath(cacheKey, format = "wav") {
+  return path.join(getLonglongVoiceCacheDir(), `${cacheKey}.${getLonglongVoiceAudioFormat(format)}`);
+}
+
+function readLonglongVoiceCachedAudio(cacheKey, format = "wav") {
+  const audioFormat = getLonglongVoiceAudioFormat(format);
+  const filePath = getLonglongVoiceCachePath(cacheKey, audioFormat);
+  if (!fsSync.existsSync(filePath)) return null;
+
+  return {
+    available: true,
+    mode: "clone",
+    cached: true,
+    contentType: getLonglongVoiceContentType(audioFormat),
+    fileUrl: pathToFileURL(filePath).toString(),
+  };
+}
+
+function writeLonglongVoiceCachedAudio(cacheKey, audioBuffer, format = "wav") {
+  const filePath = getLonglongVoiceCachePath(cacheKey, format);
+  fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+  fsSync.writeFileSync(filePath, audioBuffer);
+  return pathToFileURL(filePath).toString();
+}
+
+function getLonglongVoiceStatus() {
+  const config = getLonglongVoiceConfig();
+  const manifest = readLonglongVoiceManifest();
+  const files = Array.isArray(manifest.files) ? manifest.files : [];
+
+  return {
+    configured: Boolean(config.endpoint),
+    provider: config.provider,
+    endpoint: config.endpoint,
+    endpointIsLocal: config.endpointIsLocal,
+    referenceAudioPath: config.referenceAudioPath,
+    referenceAudioName: config.referenceAudioPath ? path.basename(config.referenceAudioPath) : "",
+    referenceCount: files.length,
+    autoStartService: config.autoStartService,
+    serviceScriptPath: config.serviceScriptPath,
+    serviceScriptExists: Boolean(config.serviceScriptPath && fsSync.existsSync(config.serviceScriptPath)),
+    healthUrl: getLonglongVoiceHealthUrl(config.endpoint),
+    source: manifest.source || "https://huggingface.co/datasets/pengyichen/NaiLong-Voice-Clone",
+    license: manifest.license || "cc-by-nc-sa-4.0",
+  };
+}
+
+async function isLonglongVoiceServiceHealthy(config = getLonglongVoiceConfig(), timeoutMs = 1600) {
+  const healthUrl = getLonglongVoiceHealthUrl(config.endpoint);
+  if (!healthUrl) return false;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(healthUrl, { method: "GET", signal: controller.signal });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function launchLonglongVoiceService(config = getLonglongVoiceConfig()) {
+  if (!isWindows || !config.serviceScriptPath || !fsSync.existsSync(config.serviceScriptPath)) {
+    return false;
+  }
+
+  try {
+    longlongVoiceServiceProcess = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", config.serviceScriptPath],
+      {
+        cwd: path.dirname(config.serviceScriptPath),
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+        env: {
+          ...process.env,
+          NO_PROXY: process.env.NO_PROXY || "*",
+          no_proxy: process.env.no_proxy || "*",
+        },
+      }
+    );
+    longlongVoiceServiceProcess.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForLonglongVoiceService(config, timeoutMs = longlongVoiceStartupTimeoutMs) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await isLonglongVoiceServiceHealthy(config, 1800)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+  }
+  return false;
+}
+
+async function ensureLonglongVoiceServiceStarted({ wait = false } = {}) {
+  const config = getLonglongVoiceConfig();
+  if (!config.endpoint || !config.endpointIsLocal || !config.autoStartService) {
+    return false;
+  }
+
+  if (await isLonglongVoiceServiceHealthy(config)) {
+    return true;
+  }
+
+  if (!longlongVoiceServiceStartPromise) {
+    const launched = launchLonglongVoiceService(config);
+    if (!launched) {
+      return false;
+    }
+    longlongVoiceServiceStartPromise = waitForLonglongVoiceService(config).finally(() => {
+      longlongVoiceServiceStartPromise = null;
+    });
+  }
+
+  return wait ? longlongVoiceServiceStartPromise : false;
+}
+
+function buildLonglongTtsPayload(text, config, request = {}) {
+  const options = request.options && typeof request.options === "object" ? request.options : {};
+
+  const payload = {
+    text,
+    text_lang: options.textLang || config.textLang,
+    ref_audio_path: options.referenceAudioPath || config.referenceAudioPath,
+    prompt_text: options.promptText || config.promptText,
+    prompt_lang: options.promptLang || config.promptLang,
+    text_split_method: options.textSplitMethod || "cut5",
+    batch_size: 1,
+    media_type: options.mediaType || "wav",
+    streaming_mode: false,
+    ...config.extraPayload,
+    ...(request.payload && typeof request.payload === "object" ? request.payload : {}),
+  };
+
+  if (!payload.ref_audio_path) {
+    delete payload.ref_audio_path;
+  }
+
+  if (config.provider === "cosyvoice") {
+    return {
+      text,
+      prompt_audio_path: payload.ref_audio_path,
+      prompt_text: payload.prompt_text,
+      text_lang: payload.text_lang,
+      prompt_lang: payload.prompt_lang,
+      ...config.extraPayload,
+      ...(request.payload && typeof request.payload === "object" ? request.payload : {}),
+    };
+  }
+
+  return payload;
+}
+
+function buildLonglongTtsHeaders() {
+  return {
+    "Content-Type": "application/json",
+    Accept: "audio/wav,audio/mpeg,audio/mp3,audio/opus,audio/*,application/json",
+  };
+}
+
+async function synthesizeLonglongVoice(request = {}) {
+  const text = String(request.text || request.content || "").trim().slice(0, longlongVoiceTextLimit);
+
+  if (!text) {
+    throw new Error("龙龙语音需要先有要朗读的文字。");
+  }
+
+  const config = getLonglongVoiceConfig();
+
+  if (!config.endpoint) {
+    return {
+      available: false,
+      mode: "fallback",
+      reason: "local-voice-service-missing",
+      status: getLonglongVoiceStatus(),
+    };
+  }
+
+  await ensureLonglongVoiceServiceStarted({ wait: true });
+
+  const payload = buildLonglongTtsPayload(text, config, request);
+  const cacheKey = getLonglongVoiceCacheKey(text, config, payload);
+  const cacheFormat = getLonglongVoiceCacheFormat(payload);
+  const cachedAudio = readLonglongVoiceCachedAudio(cacheKey, cacheFormat);
+  if (cachedAudio) {
+    return {
+      ...cachedAudio,
+      provider: config.provider,
+      referenceAudioName: config.referenceAudioPath ? path.basename(config.referenceAudioPath) : "",
+    };
+  }
+
+  if (config.endpointIsLocal && (!config.referenceAudioPath || !fsSync.existsSync(config.referenceAudioPath))) {
+    throw new Error("没有找到龙龙的本地参考音频，请先准备奶龙精选语音素材。");
+  }
+
+  const headers = buildLonglongTtsHeaders();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+
+  try {
+    const response = await fetch(config.endpoint, {
+      method: "POST",
+      signal: controller.signal,
+      headers,
+      body: JSON.stringify(payload),
+    });
+    const contentType = response.headers.get("content-type") || "audio/wav";
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`龙龙语音合成失败：${response.status}${detail ? ` ${detail.slice(0, 180)}` : ""}`);
+    }
+
+    if (contentType.includes("application/json")) {
+      const data = await response.json();
+      const dataUrl = data.dataUrl || data.audioDataUrl || data.audio_url || data.url || "";
+      const base64 = data.audio || data.audio_base64 || data.base64 || "";
+
+      if (dataUrl) {
+        return {
+          available: true,
+          mode: "clone",
+          provider: config.provider,
+          dataUrl,
+          referenceAudioName: path.basename(config.referenceAudioPath),
+        };
+      }
+
+      if (base64) {
+        return {
+          available: true,
+          mode: "clone",
+          provider: config.provider,
+          dataUrl: `data:audio/wav;base64,${base64}`,
+          referenceAudioName: path.basename(config.referenceAudioPath),
+        };
+      }
+
+      throw new Error("龙龙语音服务返回了 JSON，但里面没有音频数据。");
+    }
+
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
+    if (!audioBuffer.length) {
+      throw new Error("Longlong voice service returned an empty audio buffer.");
+    }
+    const responseFormat = getLonglongVoiceCacheFormat(payload, contentType);
+    const fileUrl = writeLonglongVoiceCachedAudio(cacheKey, audioBuffer, responseFormat);
+
+    return {
+      available: true,
+      mode: "clone",
+      provider: config.provider,
+      contentType,
+      fileUrl,
+      dataUrl: `data:${contentType};base64,${audioBuffer.toString("base64")}`,
+      referenceAudioName: path.basename(config.referenceAudioPath),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function getStudyTimerPath() {
@@ -880,6 +1312,7 @@ function resizeCompanionWindowForMode(nextMode) {
     y: currentBounds.y + currentBounds.height - size.height,
   });
   companionCustomBounds = nextBounds;
+  companionLastMotionBounds = nextBounds;
   companionWindow.setFocusable(companionMode === "chat");
   companionWindow.setBounds(nextBounds, false);
   companionWindow.webContents.send("companion:mode", companionMode);
@@ -903,13 +1336,30 @@ function moveCompanionWindowTo(bounds = {}) {
     x: Number.isFinite(nextX) ? nextX : currentBounds.x,
     y: Number.isFinite(nextY) ? nextY : currentBounds.y,
   });
+  companionLastMotionBounds = companionCustomBounds;
   companionWindow.setBounds(companionCustomBounds, false);
+}
+
+function notifyCompanionNativeMove(bounds) {
+  if (!companionWindow || companionWindow.isDestroyed() || companionMode !== "pet") return;
+  if (!companionLastMotionBounds) {
+    companionLastMotionBounds = bounds;
+    return;
+  }
+
+  const deltaX = bounds.x - companionLastMotionBounds.x;
+  const deltaY = bounds.y - companionLastMotionBounds.y;
+  companionLastMotionBounds = bounds;
+
+  if (Math.abs(deltaX) + Math.abs(deltaY) < 1) return;
+  companionWindow.webContents.send("companion:drag-motion", { deltaX, deltaY });
 }
 
 function createCompanionWindow() {
   if (companionWindow && !companionWindow.isDestroyed()) return companionWindow;
 
   const bounds = getCompanionBounds();
+  companionLastMotionBounds = bounds;
   companionWindow = new BrowserWindow({
     ...bounds,
     frame: false,
@@ -955,7 +1405,9 @@ function createCompanionWindow() {
   });
   companionWindow.on("move", () => {
     if (companionShouldShow) {
-      companionCustomBounds = clampCompanionBounds(companionWindow.getBounds());
+      const bounds = clampCompanionBounds(companionWindow.getBounds());
+      companionCustomBounds = bounds;
+      notifyCompanionNativeMove(bounds);
     }
   });
   companionWindow.on("closed", () => {
@@ -968,7 +1420,9 @@ function createCompanionWindow() {
 function revealCompanionWindow() {
   if (!companionWindow || companionWindow.isDestroyed()) return;
 
-  companionWindow.setBounds(getCompanionBounds(), false);
+  const bounds = getCompanionBounds();
+  companionLastMotionBounds = bounds;
+  companionWindow.setBounds(bounds, false);
   companionWindow.setAlwaysOnTop(true, "screen-saver");
   companionWindow.show();
   companionWindow.moveTop();

@@ -162,6 +162,12 @@ npm install
 npm run prepare:assets
 ```
 
+龙龙桌宠已内置 Hugging Face `NaiLong-Voice-Clone` 精选参考音频。如果换机后素材缺失，可以重新准备：
+
+```bash
+npm.cmd run prepare:voice
+```
+
 启动桌面端应用：
 
 ```bash
@@ -184,6 +190,30 @@ npm.cmd install
 
 如果只是查看前端原型，也可以直接用本地静态服务打开 `frontend/index.html`。但正式演示建议使用 Electron 窗口启动，因为“导入资料”等能力会调用桌面端文件选择框。
 
+## 龙龙固定语音包
+
+当前版本为了降低延迟，桌宠和主窗口 AI 对话不再在交互时实时生成语音，也不会回退到系统人机朗读。龙龙只播放项目里已经生成好的固定音频，用于上线问候、摸摸反馈、学习提醒、AI 思考提示和回答开场。
+
+固定音频位于 `frontend/assets/longlong-voice`，主要包括：
+
+- `boot-01.wav` 至 `boot-06.wav`：上线问候。
+- `poke-01.wav` 至 `poke-08.wav`：摸摸反馈。
+- `tip-01.wav` 至 `tip-10.wav`：学习提醒。
+- `ai-thinking.wav`、`ai-answer.wav`：AI 思考提示和回答开场。
+
+如果之后要新增固定文案，可以临时使用 GPT-SoVITS / CosyVoice 等本地服务生成音频。生成完成后，把音频放进 `frontend/assets/longlong-voice`，再在 `frontend/companion.html` 的 `hardcodedLonglongAudio` 里添加对应关系。
+
+本地生成服务可以在启动前设置：
+
+```bash
+$env:LONGLONG_TTS_ENDPOINT="http://127.0.0.1:9880/tts"
+$env:LONGLONG_TTS_REFERENCE_FILE="reference.wav"
+$env:LONGLONG_TTS_PROMPT_TEXT="啊，我才不要这样，好害羞啊。"
+npm.cmd start
+```
+
+默认请求格式按 GPT-SoVITS 的 `/tts` JSON 接口组织，包含文本、参考音频路径、参考文本和语言。这个接口现在主要用于制作新的固定音频，不作为桌宠日常运行依赖。
+
 ## 已实现的文件能力
 
 当前版本已经实装了基础课程资料库和文件工作流：
@@ -200,7 +230,7 @@ npm.cmd install
 10. 首页工作台提供大日历，用于记录考试、DDL、答辩、面试等重要事件；独立 TodoList 页提供类似飞书多维表格的学习计划表和今日待办，支持筛选状态、调整进度和设置重要程度。
 11. 状态与音乐页可以开启本机摄像头，显示实时画面，并同步顶部摄像头状态。
 12. 按住 `Ctrl` 滑动鼠标滚轮可以调整全局页面缩放比例；`Ctrl + 0` 可以恢复到 100%。
-13. 右下角常驻龙龙桌宠助手，可以拖拽调整位置，提醒学习日程、提示状态和音乐建议，并提供资料库 RAG 问答接口占位。
+13. 右下角常驻龙龙桌宠助手，可以拖拽调整位置，提醒学习日程、提示状态和音乐建议，并提供资料库 RAG 问答接口占位；问候和提醒语音使用内置固定音频包，不再运行时合成或回退系统朗读。
 
 说明：当前版本只允许导入 PDF 和 Markdown；PDF 的插图、加页和删页会作用在当前副本上，不会直接破坏原文件；Markdown 只有在用户主动点击保存原文件时才会写回本地文件。
 

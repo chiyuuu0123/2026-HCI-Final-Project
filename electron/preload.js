@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld("mindStudy", {
     ipcRenderer.on("companion:mode", listener);
     return () => ipcRenderer.removeListener("companion:mode", listener);
   },
+  onCompanionDragMotion: (callback) => {
+    const listener = (event, motion) => callback(motion);
+    ipcRenderer.on("companion:drag-motion", listener);
+    return () => ipcRenderer.removeListener("companion:drag-motion", listener);
+  },
   getZoomFactor: () => webFrame.getZoomFactor(),
   setZoomFactor: (factor) => {
     const numericFactor = Number(factor);

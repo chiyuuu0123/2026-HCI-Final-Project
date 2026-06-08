@@ -16,12 +16,13 @@
           <span>今日学习</span>
           <strong>00:00:00</strong>
         </div>
-        <button class="pet-body" id="pet-body" type="button" data-pet-drag title="拖动龙龙，点击和龙龙聊天">
-          <img src="./assets/longlong-guide.gif" alt="龙龙" draggable="false" />
-        </button>
+        <div class="pet-body" id="pet-body" data-pet-drag aria-label="龙龙桌宠" title="拖动龙龙，使用下方按钮和龙龙聊天">
+          <img id="pet-sprite" src="./assets/longlong-guide.gif" alt="龙龙" draggable="false" />
+        </div>
         <div class="pet-actions" aria-label="龙龙快捷操作">
           <button type="button" data-pet-action="chat">聊聊</button>
           <button type="button" data-pet-action="wake">唤醒</button>
+          <button type="button" data-pet-action="voice" id="pet-voice-action">语音</button>
           <button type="button" data-pet-action="poke">摸摸</button>
           <button type="button" data-pet-action="tip">提醒</button>
         </div>
@@ -47,10 +48,16 @@
           </article>
         </div>
         <form class="pet-chat-form" id="pet-chat-form">
-          <label class="pet-screen-toggle">
-            <input id="pet-screen-toggle" type="checkbox" checked />
-            <span>读取屏幕文字</span>
-          </label>
+          <div class="pet-chat-options">
+            <label class="pet-toggle">
+              <input id="pet-screen-toggle" type="checkbox" checked />
+              <span>读取屏幕文字</span>
+            </label>
+            <label class="pet-toggle">
+              <input id="pet-voice-toggle" type="checkbox" checked />
+              <span>龙龙语音</span>
+            </label>
+          </div>
           <textarea id="pet-chat-input" rows="3" placeholder="问龙龙：帮我看看屏幕文字里的代码哪里可以优化？"></textarea>
           <div class="pet-chat-actions">
             <button type="button" data-pet-action="pet">回到桌宠</button>
@@ -61,7 +68,7 @@
     </main>
     <script>
       const pet = document.querySelector("#desktop-pet");
-      const petBody = document.querySelector("#pet-body");
+      const petSprite = document.querySelector("#pet-sprite");
       const tip = document.querySelector("#pet-tip");
       const bubble = document.querySelector("#pet-bubble");
       const actions = document.querySelector(".pet-actions");
@@ -69,7 +76,82 @@
       const chatForm = document.querySelector("#pet-chat-form");
       const chatInput = document.querySelector("#pet-chat-input");
       const screenToggle = document.querySelector("#pet-screen-toggle");
+      const voiceToggle = document.querySelector("#pet-voice-toggle");
+      const voiceAction = document.querySelector("#pet-voice-action");
       const studyTime = document.querySelector("#pet-study-time strong");
+      const VOICE_STORAGE_KEY = "mindstudy.longlongVoice.v1";
+      const LONGLONG_CLONE_PROVIDER = "nailong-clone";
+      const LONGLONG_THINKING_LINE = "这个问题让龙龙想一下";
+      const LONGLONG_ANSWER_LINE = "嘿嘿，龙龙一语道破天机啦！";
+      const longlongVoicePack = {
+        profile: {
+          name: "龙龙清亮陪伴音",
+          rate: 1.03,
+          pitch: 1.28,
+          volume: 0.92,
+        },
+        boot: [
+          "龙龙上线啦，今天也一起稳稳推进。",
+          "我在右下角陪你，有问题就叫龙龙。",
+          "龙龙就位，今天的学习小船稳稳开。",
+          "早呀，龙龙已经把专注模式打开啦。",
+          "今天也不要怕资料厚，龙龙陪你一页一页拆。",
+          "龙龙来啦，先挑一个最小任务开工。",
+        ],
+        poke: [
+          "摸摸收到，龙龙继续陪你。",
+          "嘿嘿，龙龙精神满满。",
+          "先别跑偏，我们把这一小步做完。",
+          "收到召唤，龙龙把注意力捡回来啦。",
+          "摸摸可以，但这页也要读完喔。",
+          "龙龙在岗，放心大胆问。",
+          "嘿嘿，奖励已收到，继续冲。",
+          "龙龙拍拍你，别急，慢慢来。",
+        ],
+        tip: [
+          "先做最重要的一小步，完成后再休息。",
+          "眼睛有点累的话，龙龙建议你看远处十秒。",
+          "如果资料太多，就先抓标题和关键词。",
+          "先把问题写清楚，答案就会靠近一点。",
+          "读不动的时候，先圈出三个关键词。",
+          "复习别贪多，今天先把一个知识点讲明白。",
+          "卡住不是失败，是龙龙提醒你该换个角度。",
+          "做完这一段就喝口水，龙龙给你记着。",
+          "如果开始分心，就把下一步缩小到两分钟。",
+          "遇到英文段落，先看术语，再看句子关系。",
+        ],
+        thinking: [
+          LONGLONG_THINKING_LINE,
+        ],
+      };
+      const hardcodedLonglongAudio = new Map([
+        ["龙龙上线啦，今天也一起稳稳推进。", "./assets/longlong-voice/boot-01.wav"],
+        ["我在右下角陪你，有问题就叫龙龙。", "./assets/longlong-voice/boot-02.wav"],
+        ["龙龙就位，今天的学习小船稳稳开。", "./assets/longlong-voice/boot-03.wav"],
+        ["早呀，龙龙已经把专注模式打开啦。", "./assets/longlong-voice/boot-04.wav"],
+        ["今天也不要怕资料厚，龙龙陪你一页一页拆。", "./assets/longlong-voice/boot-05.wav"],
+        ["龙龙来啦，先挑一个最小任务开工。", "./assets/longlong-voice/boot-06.wav"],
+        ["摸摸收到，龙龙继续陪你。", "./assets/longlong-voice/poke-01.wav"],
+        ["嘿嘿，龙龙精神满满。", "./assets/longlong-voice/poke-02.wav"],
+        ["先别跑偏，我们把这一小步做完。", "./assets/longlong-voice/poke-03.wav"],
+        ["收到召唤，龙龙把注意力捡回来啦。", "./assets/longlong-voice/poke-04.wav"],
+        ["摸摸可以，但这页也要读完喔。", "./assets/longlong-voice/poke-05.wav"],
+        ["龙龙在岗，放心大胆问。", "./assets/longlong-voice/poke-06.wav"],
+        ["嘿嘿，奖励已收到，继续冲。", "./assets/longlong-voice/poke-07.wav"],
+        ["龙龙拍拍你，别急，慢慢来。", "./assets/longlong-voice/poke-08.wav"],
+        ["先做最重要的一小步，完成后再休息。", "./assets/longlong-voice/tip-01.wav"],
+        ["眼睛有点累的话，龙龙建议你看远处十秒。", "./assets/longlong-voice/tip-02.wav"],
+        ["如果资料太多，就先抓标题和关键词。", "./assets/longlong-voice/tip-03.wav"],
+        ["先把问题写清楚，答案就会靠近一点。", "./assets/longlong-voice/tip-04.wav"],
+        ["读不动的时候，先圈出三个关键词。", "./assets/longlong-voice/tip-05.wav"],
+        ["复习别贪多，今天先把一个知识点讲明白。", "./assets/longlong-voice/tip-06.wav"],
+        ["卡住不是失败，是龙龙提醒你该换个角度。", "./assets/longlong-voice/tip-07.wav"],
+        ["做完这一段就喝口水，龙龙给你记着。", "./assets/longlong-voice/tip-08.wav"],
+        ["如果开始分心，就把下一步缩小到两分钟。", "./assets/longlong-voice/tip-09.wav"],
+        ["遇到英文段落，先看术语，再看句子关系。", "./assets/longlong-voice/tip-10.wav"],
+        [LONGLONG_THINKING_LINE, "./assets/longlong-voice/ai-thinking.wav"],
+        [LONGLONG_ANSWER_LINE, "./assets/longlong-voice/ai-answer.wav"],
+      ]);
       const idleTips = [
         "点击我可以直接聊天",
         "按住我可以拖到桌面任意位置",
@@ -82,12 +164,27 @@
         "龙龙精神满满。",
         "先别分心，读完这一页。",
       ];
+      const PET_DEFAULT_SPRITE = "./assets/longlong-guide.gif";
+      const PET_ANIMATION_SPRITES = {
+        default: PET_DEFAULT_SPRITE,
+        sleep: "./assets/longlong-pet/base-frame/gif/longlong-sleep.gif",
+        "move-left": "./assets/longlong-pet/base-frame/gif/longlong-move-left.gif",
+        "move-right": "./assets/longlong-pet/base-frame/gif/longlong-move-right.gif",
+        "move-up": "./assets/longlong-pet/base-frame/gif/longlong-move-up.gif",
+        touch: "./assets/longlong-pet/base-frame/gif/longlong-touch.gif",
+      };
+      const PET_SLEEP_DELAY_MS = 20000;
       let latestSnapshot = null;
       let restoreTipTimer = null;
+      let restoreSpriteTimer = null;
+      let nativeMoveSpriteTimer = null;
+      let petSleepTimer = null;
+      let currentPetSpriteState = "default";
       let companionMode = "pet";
       let chatHistory = [];
-      let dragState = null;
-      let dragFrame = 0;
+      let voiceState = loadVoiceState();
+      let voiceRequestId = 0;
+      let currentVoiceAudio = null;
 
       function escapeHtml(value) {
         return String(value)
@@ -171,6 +268,12 @@
         return blocks.join("");
       }
 
+      function withLonglongAnswerLine(content) {
+        const text = String(content || "龙龙没有收到有效回答。").trim();
+        if (text.startsWith(LONGLONG_ANSWER_LINE)) return text;
+        return `${LONGLONG_ANSWER_LINE}\n\n${text}`;
+      }
+
       function formatStudyDuration(totalSeconds) {
         const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
         const hours = Math.floor(seconds / 3600);
@@ -193,6 +296,69 @@
         });
       }
 
+      function setPetSpriteState(state = "default") {
+        const nextState = PET_ANIMATION_SPRITES[state] ? state : "default";
+        const nextSource = PET_ANIMATION_SPRITES[nextState];
+        currentPetSpriteState = nextState;
+        if (petSprite && petSprite.getAttribute("src") !== nextSource) {
+          petSprite.setAttribute("src", nextSource);
+        }
+        pet.dataset.spriteState = nextState;
+        pet.classList.toggle("asset-motion", nextState !== "default");
+      }
+
+      function schedulePetSleep() {
+        window.clearTimeout(petSleepTimer);
+        if (companionMode !== "pet") return;
+        petSleepTimer = window.setTimeout(() => {
+          window.clearTimeout(restoreSpriteTimer);
+          setPetSpriteState("sleep");
+        }, PET_SLEEP_DELAY_MS);
+      }
+
+      function resetPetActivity() {
+        window.clearTimeout(petSleepTimer);
+        window.clearTimeout(nativeMoveSpriteTimer);
+        if (currentPetSpriteState === "sleep") {
+          setPetSpriteState("default");
+        }
+        schedulePetSleep();
+      }
+
+      function playPetSprite(state, duration = 1300) {
+        window.clearTimeout(petSleepTimer);
+        window.clearTimeout(restoreSpriteTimer);
+        window.clearTimeout(nativeMoveSpriteTimer);
+        setPetSpriteState(state);
+        restoreSpriteTimer = window.setTimeout(() => {
+          setPetSpriteState("default");
+          schedulePetSleep();
+        }, duration);
+      }
+
+      function getPetMoveSprite(deltaX, deltaY) {
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+          return deltaX < 0 ? "move-left" : "move-right";
+        }
+        return "move-up";
+      }
+
+      function handleNativeDragMotion(motion = {}) {
+        if (companionMode !== "pet") return;
+        const deltaX = Number(motion.deltaX) || 0;
+        const deltaY = Number(motion.deltaY) || 0;
+        if (Math.abs(deltaX) + Math.abs(deltaY) < 1) return;
+
+        window.clearTimeout(petSleepTimer);
+        window.clearTimeout(restoreSpriteTimer);
+        window.clearTimeout(nativeMoveSpriteTimer);
+        setPetSpriteState(getPetMoveSprite(deltaX, deltaY));
+        nativeMoveSpriteTimer = window.setTimeout(() => {
+          setPetSpriteState("default");
+          schedulePetSleep();
+        }, 320);
+      }
+
       function setTip(text, { temporary = false, motion = "speaking" } = {}) {
         tip.textContent = text || latestSnapshot?.reminder || "点我和龙龙聊天";
         showPetMotion(motion);
@@ -209,10 +375,115 @@
         return items[Math.floor(Math.random() * items.length)];
       }
 
+      function loadVoiceState() {
+        try {
+          const stored = JSON.parse(localStorage.getItem(VOICE_STORAGE_KEY) || "{}");
+          return {
+            enabled: stored.enabled !== false,
+            voiceName: stored.voiceName || "",
+            provider: LONGLONG_CLONE_PROVIDER,
+          };
+        } catch {
+          return {
+            enabled: true,
+            voiceName: "",
+            provider: LONGLONG_CLONE_PROVIDER,
+          };
+        }
+      }
+
+      function saveVoiceState() {
+        try {
+          localStorage.setItem(VOICE_STORAGE_KEY, JSON.stringify(voiceState));
+        } catch {
+          // 语音偏好保存失败不影响龙龙继续说话。
+        }
+      }
+
+      function syncVoiceControls() {
+        if (voiceToggle) voiceToggle.checked = voiceState.enabled;
+        if (voiceAction) voiceAction.textContent = voiceState.enabled ? "静音" : "语音";
+        const cloneTip = "龙龙现在只播放内置问候和提醒音频，不会实时生成语音。";
+        if (voiceAction) voiceAction.title = cloneTip;
+        if (voiceToggle) voiceToggle.title = cloneTip;
+        pet.classList.toggle("voice-enabled", voiceState.enabled);
+      }
+
+      function stripSpeechText(text) {
+        return String(text || "")
+          .replace(/```[\s\S]*?```/g, "这段代码龙龙已经放在文字里了。")
+          .replace(/`([^`]+)`/g, "$1")
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+          .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+          .replace(/^#{1,6}\s+/gm, "")
+          .replace(/^[-*+]\s+/gm, "")
+          .replace(/\*\*|__|~~/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      function stopLonglongVoice() {
+        voiceRequestId += 1;
+        if (currentVoiceAudio) {
+          currentVoiceAudio.pause();
+          currentVoiceAudio.src = "";
+          currentVoiceAudio = null;
+        }
+        pet.classList.remove("voice-speaking");
+      }
+
+      function playLonglongAudio(sourceUrl, requestId) {
+        if (!sourceUrl || requestId !== voiceRequestId) return false;
+        if (currentVoiceAudio) currentVoiceAudio.pause();
+        currentVoiceAudio = new Audio(sourceUrl);
+        currentVoiceAudio.volume = longlongVoicePack.profile.volume;
+        pet.classList.add("voice-speaking");
+        currentVoiceAudio.onended = () => {
+          if (requestId === voiceRequestId) pet.classList.remove("voice-speaking");
+        };
+        currentVoiceAudio.onerror = () => {
+          if (requestId === voiceRequestId) pet.classList.remove("voice-speaking");
+        };
+        currentVoiceAudio.play().catch(() => {
+          if (requestId === voiceRequestId) pet.classList.remove("voice-speaking");
+        });
+        return true;
+      }
+
+      function speakLonglong(text, options = {}) {
+        if (!voiceState.enabled) return;
+        const content = stripSpeechText(text).slice(0, options.maxLength || 180);
+        if (!content) return;
+
+        stopLonglongVoice();
+        const requestId = voiceRequestId;
+        const audioSource = options.audio || hardcodedLonglongAudio.get(content);
+        if (audioSource) playLonglongAudio(audioSource, requestId);
+      }
+
+      function toggleVoice(enabled = !voiceState.enabled) {
+        voiceState.enabled = Boolean(enabled);
+        saveVoiceState();
+        syncVoiceControls();
+        if (voiceState.enabled) {
+          speakLonglong(pickRandom(longlongVoicePack.boot), { maxLength: 80 });
+        } else {
+          stopLonglongVoice();
+        }
+      }
+
       function applyMode(mode) {
         companionMode = mode === "chat" ? "chat" : "pet";
         pet.classList.toggle("chat-mode", companionMode === "chat");
         pet.classList.toggle("pet-mode", companionMode === "pet");
+        if (companionMode === "chat") {
+          window.clearTimeout(petSleepTimer);
+          window.clearTimeout(restoreSpriteTimer);
+          window.clearTimeout(nativeMoveSpriteTimer);
+          setPetSpriteState("default");
+        } else {
+          schedulePetSleep();
+        }
       }
 
       async function setMode(mode) {
@@ -259,7 +530,9 @@
         chatInput.value = "";
         addChatMessage("user", text);
         chatHistory.push({ role: "user", content: text });
-        const thinking = addChatMessage("assistant", screenToggle.checked ? "龙龙正在读取屏幕文字..." : "龙龙正在想...");
+        const thinking = addChatMessage("assistant", LONGLONG_THINKING_LINE);
+        setTip(LONGLONG_THINKING_LINE, { temporary: true, motion: "thinking" });
+        speakLonglong(LONGLONG_THINKING_LINE, { maxLength: 80 });
 
         try {
           const response = await window.mindStudy?.askLonglongCompanion?.({
@@ -271,7 +544,8 @@
               temperature: 0.28,
             },
           });
-          const answer = response?.answer || "龙龙没有收到有效回答。";
+          const rawAnswer = response?.answer || "龙龙没有收到有效回答。";
+          const answer = withLonglongAnswerLine(rawAnswer);
           const screenMeta = response?.screen?.captured
             ? response.screen.textExtracted
               ? `已读取屏幕文字${response.screen.textLength ? ` · ${response.screen.textLength} 字` : ""}`
@@ -280,80 +554,53 @@
               ? "未能读取屏幕文字"
               : "";
           updateChatMessage(thinking, answer, { meta: screenMeta });
-          chatHistory.push({ role: "assistant", content: answer });
+          speakLonglong(LONGLONG_ANSWER_LINE, { maxLength: 80 });
+          chatHistory.push({ role: "assistant", content: rawAnswer });
           chatHistory = chatHistory.slice(-10);
         } catch (error) {
-          updateChatMessage(thinking, `龙龙这次没连上：${error.message || String(error)}`);
+          const errorText = `龙龙这次没连上：${error.message || String(error)}`;
+          updateChatMessage(thinking, errorText);
         }
-      }
-
-      async function beginDrag(event) {
-        const dragHandle = event.target.closest("[data-pet-drag]");
-        if (!dragHandle || event.target.closest("textarea, input, button:not(#pet-body)")) return;
-
-        const bounds = await window.mindStudy?.getCompanionBounds?.();
-        if (!bounds) return;
-
-        event.preventDefault();
-        dragHandle.setPointerCapture?.(event.pointerId);
-        dragState = {
-          bounds,
-          startX: event.screenX,
-          startY: event.screenY,
-          openChatOnClick: event.target.closest("#pet-body"),
-          moved: false,
-        };
-        pet.classList.add("dragging");
-      }
-
-      function updateDrag(event) {
-        if (!dragState) return;
-
-        const dx = event.screenX - dragState.startX;
-        const dy = event.screenY - dragState.startY;
-        if (Math.abs(dx) + Math.abs(dy) > 5) dragState.moved = true;
-        window.cancelAnimationFrame(dragFrame);
-        dragFrame = window.requestAnimationFrame(() => {
-          window.mindStudy?.moveCompanionTo?.({
-            width: dragState.bounds.width,
-            height: dragState.bounds.height,
-            x: dragState.bounds.x + dx,
-            y: dragState.bounds.y + dy,
-          });
-        });
-      }
-
-      function finishDrag() {
-        if (!dragState) return;
-        const shouldOpenChat = dragState.openChatOnClick && !dragState.moved;
-        dragState = null;
-        pet.classList.remove("dragging");
-        if (shouldOpenChat) setMode("chat");
       }
 
       function handlePetAction(action) {
         if (action === "chat") {
+          resetPetActivity();
           setMode("chat");
           return;
         }
 
         if (action === "pet") {
+          resetPetActivity();
           setMode("pet");
           return;
         }
 
         if (action === "wake") {
+          resetPetActivity();
           window.mindStudy?.wakeMainWindow?.();
           return;
         }
 
+        if (action === "voice") {
+          resetPetActivity();
+          toggleVoice();
+          return;
+        }
+
         if (action === "poke") {
-          setTip(pickRandom(pokeTips), { temporary: true, motion: "poked" });
+          const text = pickRandom(longlongVoicePack.poke);
+          playPetSprite("touch", 1500);
+          setTip(text, { temporary: true, motion: "poked" });
+          speakLonglong(text, { maxLength: 80 });
           return;
         }
 
         if (action === "tip") {
-          setTip(pickRandom(idleTips), { temporary: true, motion: "thinking" });
+          const text = pickRandom(longlongVoicePack.tip);
+          resetPetActivity();
+          setTip(text, { temporary: true, motion: "thinking" });
+          speakLonglong(text, { maxLength: 90 });
         }
       }
 
@@ -364,13 +611,22 @@
         setTip(snapshot.reminder || snapshot.mood || "点我和龙龙聊天");
       });
       window.mindStudy?.onCompanionMode?.((mode) => applyMode(mode));
+      window.mindStudy?.onCompanionDragMotion?.(handleNativeDragMotion);
 
       const studyTimerPromise = window.mindStudy?.getStudyTimer?.();
       studyTimerPromise?.then(applyStudyTimerSnapshot).catch(() => {});
       window.mindStudy?.onStudyTimerUpdate?.(applyStudyTimerSnapshot);
+      syncVoiceControls();
+      schedulePetSleep();
 
       bubble.addEventListener("click", () => {
+        resetPetActivity();
         window.mindStudy?.wakeMainWindow?.();
+      });
+
+      voiceToggle.addEventListener("change", () => {
+        resetPetActivity();
+        toggleVoice(voiceToggle.checked);
       });
 
       actions.addEventListener("click", (event) => {
@@ -384,10 +640,6 @@
         if (!actionButton || actions.contains(actionButton)) return;
         handlePetAction(actionButton.dataset.petAction);
       });
-      document.addEventListener("pointerdown", beginDrag);
-      document.addEventListener("pointermove", updateDrag);
-      document.addEventListener("pointerup", finishDrag);
-      document.addEventListener("pointercancel", finishDrag);
       chatForm.addEventListener("submit", submitChat);
 
       window.setInterval(() => {

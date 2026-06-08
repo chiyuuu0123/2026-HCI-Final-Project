@@ -5,8 +5,25 @@ const APP_ZOOM_MIN = 0.75;
 const APP_ZOOM_MAX = 1.4;
 const APP_ZOOM_STEP = 0.05;
 const LONGLONG_POSITION_STORAGE_KEY = "mindstudy.longlongPosition.v1";
+const LONGLONG_DEFAULT_SPRITE = "./assets/longlong-guide.gif";
+const LONGLONG_ANIMATION_SPRITES = {
+  default: LONGLONG_DEFAULT_SPRITE,
+  sleep: "./assets/longlong-pet/base-frame/gif/longlong-sleep.gif",
+  "move-left": "./assets/longlong-pet/base-frame/gif/longlong-move-left.gif",
+  "move-right": "./assets/longlong-pet/base-frame/gif/longlong-move-right.gif",
+  "move-up": "./assets/longlong-pet/base-frame/gif/longlong-move-up.gif",
+  touch: "./assets/longlong-pet/base-frame/gif/longlong-touch.gif",
+};
+const LONGLONG_SLEEP_DELAY_MS = 20000;
 const LONGLONG_RAG_TEXT_LIMIT = 1600;
 const LONGLONG_REMINDER_LIMIT = 3;
+const LONGLONG_THINKING_LINE = "这个问题让龙龙想一下";
+const LONGLONG_ANSWER_LINE = "嘿嘿，龙龙一语道破天机啦！";
+const LONGLONG_FIXED_AUDIO = new Map([
+  [LONGLONG_THINKING_LINE, "./assets/longlong-voice/ai-thinking.wav"],
+  [LONGLONG_ANSWER_LINE, "./assets/longlong-voice/ai-answer.wav"],
+]);
+let longlongFixedAudio = null;
 
 const viewTitles = {
   dashboard: "学习工作台",
@@ -150,7 +167,7 @@ const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
 const GRAPH_GENERATION_STEPS = {
   idle: { title: "等待生成", detail: "导入资料后可用 DeepSeek / 本地规则生成课程图谱和题目。", progress: 0 },
   extracting: { title: "正在整理资料", detail: "提取 PDF / Markdown 文本，准备生成课程知识结构。", progress: 18 },
-  ai: { title: "正在调用 DeepSeek", detail: "正在用 AI 生成结构化知识图谱和题目 JSON。", progress: 56 },
+  ai: { title: LONGLONG_THINKING_LINE, detail: "龙龙正在生成结构化知识图谱和题目 JSON。", progress: 56 },
   validating: { title: "正在校验结果", detail: "检查节点、边、题目、出处和薄弱知识点。", progress: 76 },
   done: { title: "生成完成", detail: "知识图谱、自动题组、错题本和报告已准备好。", progress: 100 },
   fallback: { title: "已使用本地兜底", detail: "外部生成不可用，已根据资料标题、关键词和内置题库生成稳定演示内容。", progress: 100 },
@@ -260,6 +277,9 @@ const longlongDragState = {
   startLeft: 0,
   startTop: 0,
 };
+let longlongSpriteState = "default";
+let longlongSpriteRestoreTimer = null;
+let longlongSleepTimer = null;
 const graphPanState = {
   active: false,
   pointerId: null,
@@ -271,6 +291,34 @@ const graphPanState = {
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function withLonglongAnswerLine(markdown) {
+  const content = String(markdown || "AI 没有返回内容。").trim();
+  if (content.startsWith(LONGLONG_ANSWER_LINE)) return content;
+  return `${LONGLONG_ANSWER_LINE}\n\n${content}`;
+}
+
+function playLonglongFixedLine(line) {
+  const source = LONGLONG_FIXED_AUDIO.get(line);
+  if (!source) return;
+
+  if (longlongFixedAudio) {
+    longlongFixedAudio.pause();
+    longlongFixedAudio.src = "";
+  }
+
+  longlongFixedAudio = new Audio(source);
+  longlongFixedAudio.volume = 0.92;
+  longlongFixedAudio.play().catch(() => {});
+}
+
+function playLonglongThinkingLine() {
+  playLonglongFixedLine(LONGLONG_THINKING_LINE);
+}
+
+function playLonglongAnswerLine() {
+  playLonglongFixedLine(LONGLONG_ANSWER_LINE);
 }
 
 function clampAppZoom(value) {
@@ -355,6 +403,7 @@ function handleAppZoomWheel(event) {
 function getLonglongElements() {
   return {
     root: document.querySelector("#longlong-assistant"),
+    avatarImage: document.querySelector(".longlong-avatar img"),
     panel: document.querySelector("#longlong-panel"),
     bubble: document.querySelector("#longlong-bubble"),
     mood: document.querySelector("#longlong-mood"),
@@ -510,6 +559,54 @@ function toggleLonglongPanel() {
   setLonglongExpanded(!longlongState.expanded);
 }
 
+function setLonglongSpriteState(state = "default") {
+  const nextState = LONGLONG_ANIMATION_SPRITES[state] ? state : "default";
+  const nextSource = LONGLONG_ANIMATION_SPRITES[nextState];
+  const elements = getLonglongElements();
+  longlongSpriteState = nextState;
+
+  if (elements.avatarImage && elements.avatarImage.getAttribute("src") !== nextSource) {
+    elements.avatarImage.setAttribute("src", nextSource);
+  }
+
+  elements.root?.classList.toggle("asset-motion", nextState !== "default");
+  if (elements.root) elements.root.dataset.spriteState = nextState;
+}
+
+function scheduleLonglongSleep() {
+  window.clearTimeout(longlongSleepTimer);
+  longlongSleepTimer = window.setTimeout(() => {
+    window.clearTimeout(longlongSpriteRestoreTimer);
+    setLonglongSpriteState("sleep");
+  }, LONGLONG_SLEEP_DELAY_MS);
+}
+
+function resetLonglongActivity() {
+  window.clearTimeout(longlongSleepTimer);
+  if (longlongSpriteState === "sleep") {
+    setLonglongSpriteState("default");
+  }
+  scheduleLonglongSleep();
+}
+
+function playLonglongSprite(state, duration = 1300) {
+  window.clearTimeout(longlongSleepTimer);
+  window.clearTimeout(longlongSpriteRestoreTimer);
+  setLonglongSpriteState(state);
+  longlongSpriteRestoreTimer = window.setTimeout(() => {
+    setLonglongSpriteState("default");
+    scheduleLonglongSleep();
+  }, duration);
+}
+
+function getLonglongMoveSprite(deltaX, deltaY) {
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    return deltaX < 0 ? "move-left" : "move-right";
+  }
+
+  return "move-up";
+}
+
 function beginLonglongDrag(event, mode = "pointer") {
   const avatar = event.target.closest?.(".longlong-avatar");
   const root = getLonglongElements().root;
@@ -525,6 +622,7 @@ function beginLonglongDrag(event, mode = "pointer") {
   longlongDragState.startLeft = rect.left;
   longlongDragState.startTop = rect.top;
   root.classList.add("dragging");
+  resetLonglongActivity();
   if (event.pointerId !== undefined) avatar.setPointerCapture?.(event.pointerId);
 }
 
@@ -538,6 +636,9 @@ function updateLonglongDrag(event) {
   if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
     longlongDragState.moved = true;
     event.preventDefault?.();
+    window.clearTimeout(longlongSleepTimer);
+    window.clearTimeout(longlongSpriteRestoreTimer);
+    setLonglongSpriteState(getLonglongMoveSprite(deltaX, deltaY));
   }
 
   longlongPosition = clampLonglongPosition(
@@ -556,9 +657,12 @@ function finishLonglongDrag(event) {
   if (longlongDragState.moved) {
     longlongDragState.suppressToggle = true;
     saveLonglongPosition();
+    playLonglongSprite("default", 180);
     window.setTimeout(() => {
       longlongDragState.suppressToggle = false;
     }, 80);
+  } else {
+    scheduleLonglongSleep();
   }
 
   longlongDragState.active = false;
@@ -585,6 +689,7 @@ function handleLonglongKeyboardToggle(event) {
   if (!event.target.closest?.(".longlong-avatar")) return;
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
+  playLonglongSprite("touch", 1400);
   toggleLonglongPanel();
 }
 
@@ -700,7 +805,7 @@ function formatLonglongRagResponse(response) {
   const sources = Array.isArray(response.sources) && response.sources.length
     ? `\n\n资料入口：${response.sources.map((source) => source.name).join("、")}`
     : "";
-  return `${response.answer || "RAG 接口已收到请求。"}${sources}`;
+  return withLonglongAnswerLine(`${response.answer || "RAG 接口已收到请求。"}${sources}`);
 }
 
 async function submitLonglongRagQuestion(event) {
@@ -713,7 +818,8 @@ async function submitLonglongRagQuestion(event) {
     return;
   }
 
-  setAiMarkdownContent(elements.ragOutput, "龙龙正在整理课程资料接口...");
+  setAiMarkdownContent(elements.ragOutput, LONGLONG_THINKING_LINE);
+  playLonglongThinkingLine();
 
   try {
     const request = buildLonglongRagRequest(question);
@@ -726,6 +832,7 @@ async function submitLonglongRagQuestion(event) {
           sources: request.documents.slice(0, 4),
         };
     longlongState.ragAnswer = formatLonglongRagResponse(response);
+    playLonglongAnswerLine();
   } catch (error) {
     longlongState.ragAnswer = `RAG 接口调用失败：${getAiErrorMessage(error)}`;
   }
@@ -735,6 +842,8 @@ async function submitLonglongRagQuestion(event) {
 }
 
 function handleLonglongAction(action) {
+  resetLonglongActivity();
+
   if (action === "planner") {
     showView("planner");
     setLonglongExpanded(true);
@@ -1713,7 +1822,7 @@ function formatAiSources(sources = []) {
 }
 
 function formatAiAnswer(result) {
-  return `${result?.answer || "AI 没有返回内容。"}${formatAiSources(result?.sources)}`;
+  return withLonglongAnswerLine(`${result?.answer || "AI 没有返回内容。"}${formatAiSources(result?.sources)}`);
 }
 
 function formatAiSummary(result) {
@@ -1742,7 +1851,7 @@ function formatAiSummary(result) {
     parts.push(`可加入笔记：\n${result.takeaways.map((item) => `- ${item}`).join("\n")}`);
   }
 
-  return `${parts.join("\n\n") || result?.raw || "AI 没有返回内容。"}${formatAiSources(result?.sources)}`;
+  return withLonglongAnswerLine(`${parts.join("\n\n") || result?.raw || "AI 没有返回内容。"}${formatAiSources(result?.sources)}`);
 }
 
 function getRuntimeDocumentAiText(doc) {
@@ -2350,7 +2459,8 @@ async function submitRagQuestion(event) {
 
   addRagMessage({ role: "user", text: question });
   input.value = "";
-  setRagStatus(settings.includeWeb ? "正在检索知识库与联网结果..." : "正在检索知识库...", "working");
+  setRagStatus(LONGLONG_THINKING_LINE, "working");
+  playLonglongThinkingLine();
 
   try {
     await ensureAiConfigured();
@@ -2369,10 +2479,11 @@ async function submitRagQuestion(event) {
 
     addRagMessage({
       role: "assistant",
-      text: response.answer || "AI 没有返回内容。",
+      text: withLonglongAnswerLine(response.answer || "AI 没有返回内容。"),
       sources: response.sources || [],
       webSearch: response.webSearch || null,
     });
+    playLonglongAnswerLine();
     setRagStatus("回答完成", "ready");
   } catch (error) {
     addRagMessage({
@@ -2407,11 +2518,12 @@ async function submitCodingAssistant(event) {
     return;
   }
 
-  setCodingStatus(code ? "正在分析代码..." : "正在生成解法...", "working");
+  setCodingStatus(LONGLONG_THINKING_LINE, "working");
+  playLonglongThinkingLine();
   if (output) {
     output.innerHTML = `
       <div class="coding-empty">
-        <strong>阿龙正在 coding...</strong>
+        <strong>${LONGLONG_THINKING_LINE}</strong>
         <span>${code ? "正在检查复杂度、可行性和优化空间。" : "正在整理思路并生成推荐代码。"}</span>
       </div>
     `;
@@ -2433,7 +2545,8 @@ async function submitCodingAssistant(event) {
       },
     });
 
-    setAiMarkdownContent(output, response.answer);
+    setAiMarkdownContent(output, withLonglongAnswerLine(response.answer));
+    playLonglongAnswerLine();
     setCodingStatus(code ? "代码分析完成" : "解法生成完成", "ready");
   } catch (error) {
     if (output) {
@@ -6444,9 +6557,11 @@ async function updateAiReadingOutput(mode) {
     return;
   }
 
-  setAiMarkdownContent(output, mode === "translate" ? "DeepSeek 正在翻译..." : "DeepSeek 正在解析...");
+  setAiMarkdownContent(output, LONGLONG_THINKING_LINE);
+  playLonglongThinkingLine();
 
   let result = "";
+  let answeredWithAi = false;
 
   try {
     await ensureAiConfigured();
@@ -6465,6 +6580,7 @@ async function updateAiReadingOutput(mode) {
         },
       });
       result = formatAiAnswer(response);
+      answeredWithAi = true;
     } else {
       const response = await window.mindStudy.ai.summarizeDocuments({
         topic: "解析当前阅读内容，提炼学习要点、关键词和可加入笔记的内容",
@@ -6477,6 +6593,7 @@ async function updateAiReadingOutput(mode) {
         },
       });
       result = formatAiSummary(response);
+      answeredWithAi = true;
     }
   } catch (error) {
     const fallback = mode === "translate" ? translateEnglishToChinese(source) : analyzeReadingText(source);
@@ -6496,6 +6613,7 @@ async function updateAiReadingOutput(mode) {
     doc.meta.aiOutput = result;
   }
   setAiMarkdownContent(output, result);
+  if (answeredWithAi) playLonglongAnswerLine();
   saveWorkspace();
 }
 
@@ -7834,7 +7952,8 @@ document.querySelectorAll(".prompt-chip").forEach((chip) => {
     userBubble.className = "chat-bubble user";
     aiBubble.className = "chat-bubble ai";
     userBubble.textContent = chip.dataset.prompt;
-    setAiMarkdownContent(aiBubble, "DeepSeek 正在根据当前课程资料整理回答...");
+    setAiMarkdownContent(aiBubble, LONGLONG_THINKING_LINE);
+    playLonglongThinkingLine();
     chatList.append(userBubble, aiBubble);
     chatList.scrollTop = chatList.scrollHeight;
     chip.disabled = true;
@@ -7852,6 +7971,7 @@ document.querySelectorAll(".prompt-chip").forEach((chip) => {
         },
       });
       setAiMarkdownContent(aiBubble, formatAiAnswer(response));
+      playLonglongAnswerLine();
     } catch (error) {
       setAiMarkdownContent(aiBubble, getAiErrorMessage(error));
     } finally {
@@ -8156,6 +8276,7 @@ document.addEventListener("click", (event) => {
 
   if (longlongToggleButton) {
     if (longlongDragState.suppressToggle) return;
+    playLonglongSprite("touch", 1400);
     toggleLonglongPanel();
     return;
   }
@@ -8322,6 +8443,7 @@ window.addEventListener("DOMContentLoaded", () => {
   window.lucide?.createIcons();
   syncAiStatusButtons();
   syncLonglongAssistant();
+  scheduleLonglongSleep();
 
   window.mindStudy?.getAppInfo?.().then((info) => {
     document.body.dataset.platform = info.platform;
