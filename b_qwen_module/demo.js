@@ -23,7 +23,7 @@ async function main() {
   const question = questionParts.join(" ").trim();
 
   if (!filePath || !question) {
-    console.error("Usage: node b_deepseek_module/demo.js <file.md|file.txt> <question>");
+    console.error("Usage: node b_qwen_module/demo.js <file.md|file.txt> <question>");
     process.exitCode = 1;
     return;
   }

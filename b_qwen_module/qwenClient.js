@@ -1,7 +1,8 @@
 "use strict";
 
-const DEFAULT_BASE_URL = "https://api.deepseek.com";
-const DEFAULT_MODEL = "deepseek-v4-flash";
+const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+const DEFAULT_MODEL = "qwen3.6-plus";
+const DEFAULT_MULTIMODAL_MODEL = "qwen3.6-plus";
 
 function safeJsonParse(text) {
   if (!text) {
@@ -28,14 +29,27 @@ function extractApiErrorMessage(data) {
     return data.rawText.slice(0, 500);
   }
 
-  return "Unknown DeepSeek API error";
+  return "Unknown Qwen API error";
 }
 
-class DeepSeekClient {
+function getEnvApiKey() {
+  return process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || "";
+}
+
+function getEnvBaseUrl() {
+  return process.env.DASHSCOPE_BASE_URL || process.env.QWEN_BASE_URL || DEFAULT_BASE_URL;
+}
+
+function getEnvModel() {
+  return process.env.QWEN_MODEL || process.env.DASHSCOPE_MODEL || DEFAULT_MODEL;
+}
+
+class QwenClient {
   constructor(options = {}) {
-    this.apiKey = options.apiKey || process.env.DEEPSEEK_API_KEY || "";
-    this.baseUrl = (options.baseUrl || process.env.DEEPSEEK_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
-    this.model = options.model || process.env.DEEPSEEK_MODEL || DEFAULT_MODEL;
+    this.apiKey = options.apiKey || getEnvApiKey();
+    this.baseUrl = (options.baseUrl || getEnvBaseUrl()).replace(/\/+$/, "");
+    this.model = options.model || getEnvModel();
+    this.multimodalModel = options.multimodalModel || process.env.QWEN_MULTIMODAL_MODEL || DEFAULT_MULTIMODAL_MODEL;
   }
 
   getStatus() {
@@ -43,6 +57,8 @@ class DeepSeekClient {
       configured: Boolean(this.apiKey),
       baseUrl: this.baseUrl,
       model: this.model,
+      multimodalModel: this.multimodalModel,
+      provider: "qwen",
     };
   }
 
@@ -52,15 +68,15 @@ class DeepSeekClient {
     }
 
     if (!this.apiKey) {
-      throw new Error("Missing DEEPSEEK_API_KEY.");
+      throw new Error("Missing DASHSCOPE_API_KEY.");
     }
 
     if (!options || !Array.isArray(options.messages) || options.messages.length === 0) {
-      throw new Error("DeepSeek chat requires a non-empty messages array.");
+      throw new Error("Qwen chat requires a non-empty messages array.");
     }
 
     const body = {
-      model: options.model || this.model,
+      model: options.model || (options.multimodal ? this.multimodalModel : this.model),
       messages: options.messages,
       temperature: options.temperature ?? 0.2,
       max_tokens: options.maxTokens ?? 900,
@@ -81,7 +97,7 @@ class DeepSeekClient {
     const data = safeJsonParse(responseText);
 
     if (!response.ok) {
-      throw new Error(`DeepSeek API ${response.status}: ${extractApiErrorMessage(data)}`);
+      throw new Error(`Qwen API ${response.status}: ${extractApiErrorMessage(data)}`);
     }
 
     const message = data.choices && data.choices[0] && data.choices[0].message;
@@ -96,9 +112,10 @@ class DeepSeekClient {
 }
 
 module.exports = {
-  DeepSeekClient,
+  QwenClient,
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
+  DEFAULT_MULTIMODAL_MODEL,
   extractApiErrorMessage,
   safeJsonParse,
 };

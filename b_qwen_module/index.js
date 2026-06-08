@@ -1,7 +1,7 @@
 "use strict";
 
 module.exports = {
-  ...require("./deepseekClient"),
+  ...require("./qwenClient"),
   ...require("./documentNormalizer"),
   ...require("./ocrImageExtractor"),
   ...require("./pdfTextExtractor"),

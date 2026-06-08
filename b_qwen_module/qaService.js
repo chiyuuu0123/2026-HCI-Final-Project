@@ -1,6 +1,6 @@
 "use strict";
 
-const { DeepSeekClient } = require("./deepseekClient");
+const { QwenClient } = require("./qwenClient");
 const { collectLeadingChunks } = require("./textChunker");
 const { normalizeDocumentsForAi } = require("./documentNormalizer");
 const { buildRagIndex, queryRagIndex } = require("./ragIndex");
@@ -128,7 +128,7 @@ function extractJsonPayload(text) {
 }
 
 function createStudyAiService(options = {}) {
-  const client = options.client || new DeepSeekClient(options.clientOptions);
+  const client = options.client || new QwenClient(options.clientOptions);
 
   return {
     getStatus() {
@@ -146,6 +146,7 @@ function createStudyAiService(options = {}) {
       const response = await client.chat({
         messages: buildQuestionMessages(request.question, chunks, options),
         model: options.model,
+        multimodal: options.multimodal === true,
         temperature: options.temperature != null ? options.temperature : 0.2,
         maxTokens: options.maxTokens != null ? options.maxTokens : 900,
         signal: options.signal,
@@ -172,6 +173,7 @@ function createStudyAiService(options = {}) {
       const response = await client.chat({
         messages: buildSummarizeMessages(topic, chunks, options),
         model: options.model,
+        multimodal: options.multimodal === true,
         temperature: options.temperature != null ? options.temperature : 0.2,
         maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
         signal: options.signal,
@@ -203,7 +205,7 @@ async function summarizeDocuments(request, dependencies = {}) {
 }
 
 function getStudyAiStatus(options = {}) {
-  return (options.client || new DeepSeekClient(options.clientOptions)).getStatus();
+  return (options.client || new QwenClient(options.clientOptions)).getStatus();
 }
 
 module.exports = {

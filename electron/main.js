@@ -8,12 +8,13 @@ const { pathToFileURL } = require("node:url");
 const {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
-  DeepSeekClient,
+  DEFAULT_MULTIMODAL_MODEL,
+  QwenClient,
   createStudyAiService,
   extractPdfTextFromBase64,
   recognizeImageTextFromBase64,
   terminateOcrWorkers,
-} = require("../b_deepseek_module");
+} = require("../b_qwen_module");
 
 const isWindows = process.platform === "win32";
 const maxImportBytes = 80 * 1024 * 1024;
@@ -122,20 +123,20 @@ let longlongVoiceServiceProcess = null;
 let longlongVoiceServiceStartPromise = null;
 let longlongBondState = null;
 
-function getDeepSeekConfigPath() {
-  return path.join(app.getPath("userData"), "deepseek-config.json");
+function getQwenConfigPath() {
+  return path.join(app.getPath("userData"), "qwen-config.json");
 }
 
-function readDeepSeekLocalConfig() {
+function readQwenLocalConfig() {
   try {
-    return JSON.parse(fsSync.readFileSync(getDeepSeekConfigPath(), "utf8"));
+    return JSON.parse(fsSync.readFileSync(getQwenConfigPath(), "utf8"));
   } catch {
     return {};
   }
 }
 
-function writeDeepSeekLocalConfig(config) {
-  const configPath = getDeepSeekConfigPath();
+function writeQwenLocalConfig(config) {
+  const configPath = getQwenConfigPath();
   fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
   fsSync.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
 }
@@ -887,49 +888,54 @@ function startStudyTimer() {
   studyTimerInterval = setInterval(broadcastStudyTimer, 1000);
 }
 
-function getDeepSeekRuntimeConfig() {
-  const localConfig = readDeepSeekLocalConfig();
-  const envApiKey = process.env.DEEPSEEK_API_KEY || "";
+function getQwenRuntimeConfig() {
+  const localConfig = readQwenLocalConfig();
+  const envApiKey = process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || "";
   const localApiKey = typeof localConfig.apiKey === "string" ? localConfig.apiKey : "";
 
   return {
     apiKey: envApiKey || localApiKey,
-    baseUrl: process.env.DEEPSEEK_BASE_URL || localConfig.baseUrl || DEFAULT_BASE_URL,
-    model: process.env.DEEPSEEK_MODEL || localConfig.model || DEFAULT_MODEL,
+    baseUrl: process.env.DASHSCOPE_BASE_URL || process.env.QWEN_BASE_URL || localConfig.baseUrl || DEFAULT_BASE_URL,
+    model: process.env.QWEN_MODEL || process.env.DASHSCOPE_MODEL || localConfig.model || DEFAULT_MODEL,
+    multimodalModel: process.env.QWEN_MULTIMODAL_MODEL || localConfig.multimodalModel || DEFAULT_MULTIMODAL_MODEL,
     source: envApiKey ? "environment" : localApiKey ? "app-settings" : "missing",
   };
 }
 
-function getDeepSeekStatus() {
-  const config = getDeepSeekRuntimeConfig();
+function getQwenStatus() {
+  const config = getQwenRuntimeConfig();
 
   return {
     configured: Boolean(config.apiKey),
     baseUrl: config.baseUrl,
     model: config.model,
+    multimodalModel: config.multimodalModel,
+    provider: "qwen",
     source: config.source,
   };
 }
 
 function createCurrentStudyAiService() {
-  const config = getDeepSeekRuntimeConfig();
+  const config = getQwenRuntimeConfig();
 
   return createStudyAiService({
     clientOptions: {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       model: config.model,
+      multimodalModel: config.multimodalModel,
     },
   });
 }
 
-function createCurrentDeepSeekClient() {
-  const config = getDeepSeekRuntimeConfig();
+function createCurrentQwenClient() {
+  const config = getQwenRuntimeConfig();
 
-  return new DeepSeekClient({
+  return new QwenClient({
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
     model: config.model,
+    multimodalModel: config.multimodalModel,
   });
 }
 
@@ -984,7 +990,7 @@ function buildCodingAssistantMessages(request = {}) {
 async function askCodingAssistant(request = {}) {
   const { mode, messages } = buildCodingAssistantMessages(request);
   const options = request.options || {};
-  const response = await createCurrentDeepSeekClient().chat({
+  const response = await createCurrentQwenClient().chat({
     messages,
     temperature: options.temperature != null ? options.temperature : 0.18,
     maxTokens: options.maxTokens != null ? options.maxTokens : 2200,
@@ -1070,7 +1076,7 @@ function normalizeLonglongChatHistory(history = []) {
     .filter((message) => message.content.trim());
 }
 
-function buildLonglongChatMessages(request = {}, screenContext = null, screenError = "") {
+function buildLonglongChatMessages(request = {}, screenContext = null, screenError = "", screenCapture = null) {
   const message = String(request.message || request.question || "").trim().slice(0, 8000);
   const history = normalizeLonglongChatHistory(request.history);
 
@@ -1081,7 +1087,7 @@ function buildLonglongChatMessages(request = {}, screenContext = null, screenErr
   const system = [
     "你是 MindStudy 的桌宠 AI 助手龙龙。",
     "你必须自然自称“龙龙”，像一直陪在用户身边的学习搭子一样说话，亲和、简洁、有行动建议。",
-    "如果用户的问题和屏幕内容相关，请优先根据本机 OCR 提取出的屏幕文字回答；看不清或无法判断时要坦诚说明。",
+    "如果用户的问题和屏幕内容相关，请优先结合截图图像和本机 OCR 文字回答；看不清或无法判断时要坦诚说明。",
     "不要声称你读取了用户没有提供的文件、后台窗口或隐私内容。",
     "请使用中文 Markdown 排版，标题和列表要清晰，回答不要过长。",
   ].join(" ");
@@ -1104,18 +1110,24 @@ function buildLonglongChatMessages(request = {}, screenContext = null, screenErr
     "",
     `用户对龙龙说：${message}`,
   ].join("\n");
+  const userContent = screenCapture?.dataUrl
+    ? [
+        { type: "text", text: userText },
+        { type: "image_url", image_url: { url: screenCapture.dataUrl } },
+      ]
+    : userText;
 
   return [
     { role: "system", content: system },
     ...history,
-    { role: "user", content: userText },
+    { role: "user", content: userContent },
   ];
 }
 
 async function askLonglongCompanion(request = {}) {
   const options = request.options || {};
   const includeScreen = request.includeScreen !== false;
-  const client = createCurrentDeepSeekClient();
+  const client = createCurrentQwenClient();
   let screenCapture = null;
   let screenContext = null;
   let screenError = "";
@@ -1149,7 +1161,8 @@ async function askLonglongCompanion(request = {}) {
   }
 
   const response = await client.chat({
-    messages: buildLonglongChatMessages(request, screenContext, screenError),
+    messages: buildLonglongChatMessages(request, screenContext, screenError, screenCapture),
+    multimodal: Boolean(screenCapture?.dataUrl),
     temperature: options.temperature != null ? options.temperature : 0.28,
     maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
     model: options.model,
@@ -1175,29 +1188,29 @@ async function askLonglongCompanion(request = {}) {
   };
 }
 
-function saveDeepSeekApiKey(apiKey) {
+function saveQwenApiKey(apiKey) {
   const nextApiKey = String(apiKey || "").trim();
 
   if (!nextApiKey) {
-    throw new Error("DeepSeek API key cannot be empty.");
+    throw new Error("Qwen API key cannot be empty.");
   }
 
-  const localConfig = readDeepSeekLocalConfig();
-  writeDeepSeekLocalConfig({
+  const localConfig = readQwenLocalConfig();
+  writeQwenLocalConfig({
     ...localConfig,
     apiKey: nextApiKey,
     updatedAt: Date.now(),
   });
 
-  return getDeepSeekStatus();
+  return getQwenStatus();
 }
 
-function clearDeepSeekApiKey() {
-  const localConfig = readDeepSeekLocalConfig();
+function clearQwenApiKey() {
+  const localConfig = readQwenLocalConfig();
   delete localConfig.apiKey;
   localConfig.updatedAt = Date.now();
-  writeDeepSeekLocalConfig(localConfig);
-  return getDeepSeekStatus();
+  writeQwenLocalConfig(localConfig);
+  return getQwenStatus();
 }
 
 function getBase64Payload(payload) {
@@ -1834,15 +1847,15 @@ ipcMain.handle("file:save-markdown", async (event, options) => {
 });
 
 ipcMain.handle("b:ai:get-status", () => {
-  return getDeepSeekStatus();
+  return getQwenStatus();
 });
 
 ipcMain.handle("b:ai:save-api-key", async (event, apiKey) => {
-  return saveDeepSeekApiKey(apiKey);
+  return saveQwenApiKey(apiKey);
 });
 
 ipcMain.handle("b:ai:clear-api-key", () => {
-  return clearDeepSeekApiKey();
+  return clearQwenApiKey();
 });
 
 ipcMain.handle("b:ai:ask-question", async (event, request) => {

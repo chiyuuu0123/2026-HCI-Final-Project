@@ -1,7 +1,7 @@
 # B Module Contracts
 
 These shapes are kept small so the other team members do not need to know the
-DeepSeek request details.
+Qwen request details.
 
 ## Document
 
@@ -34,7 +34,7 @@ PDF documents may also be passed without pre-extracted text:
   question: "How does the system work?",
   documents: [Document],
   options: {
-    model: "deepseek-v4-flash",
+    model: "qwen3.6-plus",
     maxContextChars: 12000,
     maxChunks: 6,
     temperature: 0.2,
@@ -43,6 +43,9 @@ PDF documents may also be passed without pre-extracted text:
 }
 ```
 
+Set `options.multimodal = true` when the request includes image content or needs
+the vision-capable default model.
+
 ## SummarizeDocuments
 
 ```js
@@ -50,7 +53,7 @@ PDF documents may also be passed without pre-extracted text:
   documents: [Document],
   topic: "overall summary",
   options: {
-    model: "deepseek-v4-flash",
+    model: "qwen3.6-plus",
     maxContextChars: 12000,
     maxChunks: 8
   }
@@ -74,7 +77,7 @@ PDF documents may also be passed without pre-extracted text:
     selectedChunks: 6,
     sourceDocuments: 1
   },
-  model: "deepseek-v4-flash",
+  model: "qwen3.6-plus",
   usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
 }
 ```

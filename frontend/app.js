@@ -214,7 +214,7 @@ const GRAPH_TEXT_LIMIT = 28000;
 const GRAPH_NODE_LIMIT = 18;
 const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
 const GRAPH_GENERATION_STEPS = {
-  idle: { title: "等待生成", detail: "导入资料后可用 DeepSeek / 本地规则生成课程图谱和题目。", progress: 0 },
+  idle: { title: "等待生成", detail: "导入资料后可用 Qwen / 本地规则生成课程图谱和题目。", progress: 0 },
   extracting: { title: "正在整理资料", detail: "提取 PDF / Markdown 文本，准备生成课程知识结构。", progress: 18 },
   ai: { title: LONGLONG_THINKING_LINE, detail: "龙龙正在生成结构化知识图谱和题目 JSON。", progress: 56 },
   validating: { title: "正在校验结果", detail: "检查节点、边、题目、出处和薄弱知识点。", progress: 76 },
@@ -258,7 +258,7 @@ const PDF_OCR_MAX_CANVAS_SIDE = 2200;
 const PDF_OCR_AUTO_MAX_PAGES = 8;
 const AI_CONTEXT_TEXT_LIMIT = 12000;
 const AI_READING_TEXT_LIMIT = 8000;
-const RAG_KNOWLEDGE_TEXT_LIMIT = 60000;
+const RAG_KNOWLEDGE_TEXT_LIMIT = 240000;
 const RAG_DEFAULT_CHUNK_SIZE = 1400;
 const RAG_DEFAULT_MAX_CHUNKS = 6;
 const RAG_MIN_CHUNK_SIZE = 500;
@@ -1690,7 +1690,10 @@ function sanitizeRagKnowledge(ragKnowledge = {}) {
         learnedAt: Number(documentMeta.learnedAt) || Date.now(),
         sourceType: documentMeta.sourceType || "course",
         ocrPageCount: Math.max(0, Number(documentMeta.ocrPageCount) || 0),
+        ocrAttemptedPageCount: Math.max(0, Number(documentMeta.ocrAttemptedPageCount) || 0),
         ocrSkippedPageCount: Math.max(0, Number(documentMeta.ocrSkippedPageCount) || 0),
+        pdfLearningComplete: Boolean(documentMeta.pdfLearningComplete),
+        pdfLearningTextLimitReached: Boolean(documentMeta.pdfLearningTextLimitReached),
         pageRange: documentMeta.pageRange || null,
       };
     })
@@ -1954,7 +1957,9 @@ function getPdfOcrCandidatePageNumbers(extracted, options = {}) {
   const uniqueCandidates = Array.from(new Set(candidates))
     .filter((pageNumber) => pageNumber >= 1 && pageNumber <= pageCount)
     .filter((pageNumber) => options.ocrMode === "always" || !textPageNumbers.has(pageNumber));
-  const maxPages = Math.max(0, Number(options.ocrMaxPages) || PDF_OCR_AUTO_MAX_PAGES);
+  const maxPages = options.ocrAllPages || options.ocrMaxPages === "all"
+    ? uniqueCandidates.length
+    : Math.max(0, Number(options.ocrMaxPages) || PDF_OCR_AUTO_MAX_PAGES);
 
   return {
     pageNumbers: uniqueCandidates.slice(0, maxPages),
@@ -2046,12 +2051,14 @@ function mergePdfTextAndOcrExtraction(extracted, ocrPages, metadata = {}) {
 
   const pages = Array.from(pagesByNumber.values())
     .sort((left, right) => Number(left.pageNumber) - Number(right.pageNumber));
-  const text = normalizeExtractedPdfText(
+  const textLimit = Math.max(PDF_TEXT_LIMIT, Number(metadata.totalTextLimit) || PDF_TEXT_LIMIT);
+  const mergedText = normalizeExtractedPdfText(
     pages
       .filter((page) => page.text)
       .map((page) => `第 ${page.pageNumber} 页\n${page.text}`)
       .join("\n\n"),
-  ).slice(0, PDF_TEXT_LIMIT);
+  );
+  const text = mergedText.slice(0, textLimit);
   const ocrPageCount = pages.filter((page) => page.source === "ocr" && page.text).length;
 
   return {
@@ -2060,22 +2067,40 @@ function mergePdfTextAndOcrExtraction(extracted, ocrPages, metadata = {}) {
     text,
     extractedPageCount: pages.filter((page) => page.text).length,
     ocrPageCount,
+    ocrAttemptedPageCount: Math.max(0, Number(metadata.attemptedPageCount) || ocrPageCount),
     ocrSkippedPageCount: metadata.skippedPageCount || 0,
     ocrErrors: metadata.ocrErrors || [],
+    textLimitReached: mergedText.length > textLimit,
     extractionMethods: ocrPageCount ? ["text-layer", "ocr"] : ["text-layer"],
   };
 }
 
 async function appendOcrTextFromPdfPages(bytes, extracted, options = {}) {
-  if (options.enableOcr === false || !window.mindStudy?.ai?.recognizeImageText) {
+  if (options.enableOcr === false) {
     return extracted;
   }
 
   const { pageNumbers, skippedPageCount } = getPdfOcrCandidatePageNumbers(extracted, options);
+  const recognizeImageText = window.mindStudy?.ai?.recognizeImageText;
   if (!pageNumbers.length) {
     return {
       ...extracted,
+      ocrAttemptedPageCount: 0,
       ocrSkippedPageCount: skippedPageCount,
+    };
+  }
+
+  if (!recognizeImageText) {
+    return {
+      ...extracted,
+      ocrAttemptedPageCount: 0,
+      ocrSkippedPageCount: skippedPageCount + pageNumbers.length,
+      ocrErrors: [
+        {
+          pageNumber: pageNumbers[0],
+          message: "OCR 接口尚未可用。",
+        },
+      ],
     };
   }
 
@@ -2119,8 +2144,10 @@ async function appendOcrTextFromPdfPages(bytes, extracted, options = {}) {
   }
 
   return mergePdfTextAndOcrExtraction(extracted, ocrPages, {
+    attemptedPageCount: pageNumbers.length,
     skippedPageCount,
     ocrErrors,
+    totalTextLimit: options.totalTextLimit,
   });
 }
 
@@ -2133,7 +2160,7 @@ async function extractPdfTextFromBytes(bytes, options = {}) {
         base64: uint8ArrayToBase64(bytes),
         options: {
           pageTextLimit: PDF_PAGE_TEXT_LIMIT,
-          totalTextLimit: PDF_TEXT_LIMIT,
+          totalTextLimit: options.totalTextLimit || PDF_TEXT_LIMIT,
         },
       });
     } catch (error) {
@@ -2167,6 +2194,7 @@ async function extractPdfTextFromBytes(bytes, options = {}) {
     }
   }
 
+  const totalTextLimit = Math.max(PDF_TEXT_LIMIT, Number(options.totalTextLimit) || PDF_TEXT_LIMIT);
   const fullText = normalizeExtractedPdfText(
     pages
       .filter((page) => page.text)
@@ -2177,7 +2205,8 @@ async function extractPdfTextFromBytes(bytes, options = {}) {
   return await appendOcrTextFromPdfPages(bytes, {
     pageCount,
     pages,
-    text: fullText.slice(0, PDF_TEXT_LIMIT),
+    text: fullText.slice(0, totalTextLimit),
+    textLimitReached: fullText.length > totalTextLimit,
     extractedAt: Date.now(),
   }, options);
 }
@@ -2234,8 +2263,8 @@ function getAiBridge() {
 function getAiErrorMessage(error) {
   const message = error?.message || String(error || "AI 调用失败");
 
-  if (message.includes("DEEPSEEK_API_KEY") || message.includes("API key")) {
-    return "请先设置 DeepSeek API Key。";
+  if (message.includes("DASHSCOPE_API_KEY") || message.includes("QWEN_API_KEY") || message.includes("API key")) {
+    return "请先设置 Qwen API Key。";
   }
 
   return message;
@@ -2270,14 +2299,14 @@ async function getAiStatus() {
 function getAiStatusText(status) {
   if (status?.configured) {
     const sourceText = status.source === "environment" ? "环境变量" : "软件内保存";
-    return `DeepSeek 已配置（${sourceText}，${status.model || "默认模型"}）`;
+    return `Qwen 已配置（${sourceText}，${status.model || "默认模型"}）`;
   }
 
   if (status?.error) {
     return status.error;
   }
 
-  return "DeepSeek API Key 尚未设置。";
+  return "Qwen API Key 尚未设置。";
 }
 
 async function syncAiStatusButtons() {
@@ -2296,7 +2325,7 @@ async function ensureAiConfigured() {
 
   if (!status.configured) {
     openAiSettingsDialog(status);
-    throw new Error("请先设置 DeepSeek API Key。");
+    throw new Error("请先设置 Qwen API Key。");
   }
 
   return status;
@@ -2355,15 +2384,26 @@ function getRuntimeDocumentAiText(doc) {
   return String(doc.meta.aiSource || "").slice(0, AI_CONTEXT_TEXT_LIMIT);
 }
 
-async function buildAiDocumentFromMeta(meta) {
+async function buildAiDocumentFromMeta(meta, options = {}) {
   if (!meta) return null;
 
+  const textLimit = Math.max(1000, Number(options.textLimit) || AI_CONTEXT_TEXT_LIMIT);
   const runtimeDoc = documentState.current?.meta?.id === meta.id ? documentState.current : null;
   if (runtimeDoc) {
+    if (runtimeDoc.kind === "pdf" && options.requireCompletePdfOcr) {
+      return {
+        id: meta.id,
+        title: meta.name,
+        text: normalizeExtractedPdfText(await getRagDocumentText(meta, options)).slice(0, textLimit),
+        mimeType: meta.mimeType,
+        extension: meta.extension,
+      };
+    }
+
     return {
       id: meta.id,
       title: meta.name,
-      text: getRuntimeDocumentAiText(runtimeDoc),
+      text: getRuntimeDocumentAiText(runtimeDoc).slice(0, textLimit),
       mimeType: meta.mimeType,
       extension: meta.extension,
     };
@@ -2376,18 +2416,20 @@ async function buildAiDocumentFromMeta(meta) {
     return {
       id: meta.id,
       title: meta.name,
-      text: stripMarkdown(base64ToText(file.base64 || "")).slice(0, AI_CONTEXT_TEXT_LIMIT),
+      text: stripMarkdown(base64ToText(file.base64 || "")).slice(0, textLimit),
       mimeType: file.mimeType,
       extension,
     };
   }
 
   if (extension === "PDF") {
-    const extracted = await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""));
+    const extractedText = options.requireCompletePdfOcr
+      ? await getRagDocumentText(meta, options)
+      : (await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""))).text;
     return {
       id: meta.id,
       title: meta.name,
-      text: extracted.text.slice(0, AI_CONTEXT_TEXT_LIMIT),
+      text: normalizeExtractedPdfText(extractedText).slice(0, textLimit),
       mimeType: file.mimeType,
       extension,
     };
@@ -2643,6 +2685,75 @@ function setRagStatus(text, tone = "ready") {
   status.className = `rag-status ${tone}`;
 }
 
+function isPdfMeta(meta) {
+  return String(meta?.extension || "").toUpperCase() === "PDF";
+}
+
+function canUseCachedPdfText(meta, options = {}) {
+  if (!isPdfMeta(meta) || !meta.extractedText || meta.pdfTextStale) return false;
+  if (!options.requireCompletePdfOcr) return true;
+  return Boolean(meta.pdfLearningComplete) && !meta.ocrSkippedPageCount;
+}
+
+function buildLearningPdfExtractionOptions(meta, callbacks = {}) {
+  return {
+    ocrMissingPages: true,
+    ocrAllPages: true,
+    totalTextLimit: callbacks.totalTextLimit || RAG_KNOWLEDGE_TEXT_LIMIT,
+    onOcrStart: ({ total, skippedPageCount }) => {
+      callbacks.onStatus?.(
+        total
+          ? `正在识别 ${meta.name} 的 ${total} 页扫描内容...`
+          : `正在整理 ${meta.name} 的文字...`,
+        { total, skippedPageCount },
+      );
+    },
+    onOcrProgress: ({ index, total, pageNumber }) => {
+      callbacks.onStatus?.(`正在识别 ${meta.name}：${index}/${total} 页（第 ${pageNumber} 页）`, {
+        index,
+        total,
+        pageNumber,
+      });
+    },
+  };
+}
+
+function compactExtractedPagesForStorage(pages = [], totalLimit = PDF_TEXT_LIMIT) {
+  const storedPages = [];
+  let storedLength = 0;
+
+  for (const page of pages || []) {
+    if (!page?.text) continue;
+    const text = String(page.text || "").slice(0, PDF_PAGE_TEXT_LIMIT);
+    if (storedLength + text.length > totalLimit && storedPages.length > 0) break;
+    storedPages.push({
+      pageNumber: page.pageNumber,
+      text,
+      source: page.source || "text-layer",
+      confidence: page.confidence,
+    });
+    storedLength += text.length;
+  }
+
+  return storedPages;
+}
+
+function rememberPdfTextExtraction(meta, extracted, options = {}) {
+  meta.extractedText = extracted.text;
+  meta.extractedPages = compactExtractedPagesForStorage(extracted.pages || [], Math.min(RAG_KNOWLEDGE_TEXT_LIMIT, options.totalStoredPageTextLimit || RAG_KNOWLEDGE_TEXT_LIMIT));
+  meta.extractedPageCount = extracted.extractedPageCount || meta.extractedPages.filter((page) => page.text).length;
+  meta.ocrPageCount = extracted.ocrPageCount || 0;
+  meta.ocrAttemptedPageCount = extracted.ocrAttemptedPageCount || 0;
+  meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
+  meta.ocrErrors = extracted.ocrErrors || [];
+  meta.pdfLearningTextLimitReached = Boolean(extracted.textLimitReached);
+  meta.pdfLearningComplete = Boolean(options.requireCompletePdfOcr)
+    ? !extracted.ocrSkippedPageCount && !(extracted.ocrErrors || []).length
+    : Boolean(meta.pdfLearningComplete && !extracted.ocrSkippedPageCount);
+  meta.extractedAt = extracted.extractedAt || Date.now();
+  meta.pdfTextStale = false;
+}
+
 function formatRagDate(value) {
   if (!value) return "尚未学习";
   return new Date(value).toLocaleString("zh-CN", {
@@ -2687,12 +2798,16 @@ function renderRagAssistant() {
     list.innerHTML = knowledge.documents.length
       ? knowledge.documents
           .map((documentMeta) => {
-            const ocrLabel = documentMeta.ocrPageCount ? ` · OCR ${documentMeta.ocrPageCount} 页` : "";
+            const ocrPageTotal = Math.max(Number(documentMeta.ocrAttemptedPageCount) || 0, Number(documentMeta.ocrPageCount) || 0);
+            const ocrLabel = ocrPageTotal ? ` · OCR ${ocrPageTotal} 页` : "";
+            const completeLabel = documentMeta.pdfLearningComplete
+              ? documentMeta.pdfLearningTextLimitReached ? " · 已全页识别（已压缩）" : " · 已全页识别"
+              : "";
             return `
               <article class="rag-learned-card">
                 <div>
                   <strong>${escapeHtml(documentMeta.title)}</strong>
-                  <span>${escapeHtml(documentMeta.extension || "TXT")} · ${documentMeta.chunkCount} 段知识 · ${documentMeta.textLength} 字${ocrLabel}</span>
+                  <span>${escapeHtml(documentMeta.extension || "TXT")} · ${documentMeta.chunkCount} 段知识 · ${documentMeta.textLength} 字${ocrLabel}${completeLabel}</span>
                 </div>
                 <small>${escapeHtml(formatRagDate(documentMeta.learnedAt))}</small>
               </article>
@@ -2757,7 +2872,7 @@ function addRagMessage(message) {
   renderRagMessages();
 }
 
-async function getRagDocumentText(meta) {
+async function getRagDocumentText(meta, options = {}) {
   const activeDoc = documentState.current?.meta?.id === meta.id ? documentState.current : null;
 
   if (activeDoc?.kind === "md") {
@@ -2765,18 +2880,15 @@ async function getRagDocumentText(meta) {
   }
 
   if (activeDoc?.kind === "pdf") {
-    if (activeDoc.meta.extractedText && !activeDoc.meta.pdfTextStale) {
+    if (canUseCachedPdfText(activeDoc.meta, options)) {
       return activeDoc.meta.extractedText;
     }
 
-    const extracted = await extractPdfTextFromBytes(activeDoc.bytes);
+    const extracted = await extractPdfTextFromBytes(activeDoc.bytes, {
+      ...options.extractionOptions,
+    });
     activeDoc.pdfText = extracted;
-    activeDoc.meta.extractedText = extracted.text;
-    activeDoc.meta.extractedPages = extracted.pages || [];
-    activeDoc.meta.ocrPageCount = extracted.ocrPageCount || 0;
-    activeDoc.meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
-    activeDoc.meta.extractedAt = extracted.extractedAt;
-    activeDoc.meta.pdfTextStale = false;
+    rememberPdfTextExtraction(activeDoc.meta, extracted, options);
     saveWorkspace();
     return extracted.text;
   }
@@ -2789,13 +2901,14 @@ async function getRagDocumentText(meta) {
   }
 
   if (extension === "PDF") {
-    const extracted = await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""));
-    meta.extractedText = extracted.text;
-    meta.extractedPages = extracted.pages || [];
-    meta.ocrPageCount = extracted.ocrPageCount || 0;
-    meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
-    meta.extractedAt = extracted.extractedAt;
-    meta.pdfTextStale = false;
+    if (canUseCachedPdfText(meta, options)) {
+      return meta.extractedText;
+    }
+
+    const extracted = await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""), {
+      ...options.extractionOptions,
+    });
+    rememberPdfTextExtraction(meta, extracted, options);
     saveWorkspace();
     return extracted.text;
   }
@@ -2803,9 +2916,9 @@ async function getRagDocumentText(meta) {
   return "";
 }
 
-async function buildRagKnowledgeDocument(meta) {
+async function buildRagKnowledgeDocument(meta, options = {}) {
   const settings = getRagSettingsFromInputs();
-  const text = normalizeExtractedPdfText(await getRagDocumentText(meta)).slice(0, RAG_KNOWLEDGE_TEXT_LIMIT);
+  const text = normalizeExtractedPdfText(await getRagDocumentText(meta, options)).slice(0, RAG_KNOWLEDGE_TEXT_LIMIT);
 
   if (!text) {
     throw new Error(`${meta.name} 没有可学习的文本。`);
@@ -2823,7 +2936,10 @@ async function buildRagKnowledgeDocument(meta) {
     learnedAt: Date.now(),
     sourceType: "course",
     ocrPageCount: Math.max(0, Number(meta.ocrPageCount) || 0),
+    ocrAttemptedPageCount: Math.max(0, Number(meta.ocrAttemptedPageCount) || 0),
     ocrSkippedPageCount: Math.max(0, Number(meta.ocrSkippedPageCount) || 0),
+    pdfLearningComplete: Boolean(meta.pdfLearningComplete),
+    pdfLearningTextLimitReached: Boolean(meta.pdfLearningTextLimitReached),
   };
 }
 
@@ -2852,8 +2968,17 @@ async function learnRagKnowledge(scope) {
   setRagStatus(scope === "course" ? "正在学习本课程..." : "正在学习当前文件...", "working");
 
   try {
-    for (const meta of metas) {
-      const learnedDocument = await buildRagKnowledgeDocument(meta);
+    for (const [index, meta] of metas.entries()) {
+      setRagStatus(scope === "course" ? `正在学习 ${index + 1}/${metas.length}：${meta.name}` : `正在学习 ${meta.name}`, "working");
+      const learningOptions = isPdfMeta(meta)
+        ? {
+            requireCompletePdfOcr: true,
+            extractionOptions: buildLearningPdfExtractionOptions(meta, {
+              onStatus: (message) => setRagStatus(message, "working"),
+            }),
+          }
+        : {};
+      const learnedDocument = await buildRagKnowledgeDocument(meta, learningOptions);
       upsertRagKnowledgeDocument(learnedDocument);
     }
 
@@ -2874,7 +2999,8 @@ async function learnActivePdfRange() {
     const subPdf = await createPdfRangeBytes(source.bytes, range.startPage, range.endPage);
     const extracted = await extractPdfTextFromBytes(subPdf.bytes, {
       ocrMissingPages: true,
-      ocrMaxPages: subPdf.pageCount,
+      ocrAllPages: true,
+      totalTextLimit: RAG_KNOWLEDGE_TEXT_LIMIT,
       onOcrStart: ({ total }) => {
         setRagStatus(`正在识别 ${total} 页扫描内容...`, "working");
       },
@@ -2901,7 +3027,10 @@ async function learnActivePdfRange() {
       learnedAt: Date.now(),
       sourceType: "pdf-range",
       ocrPageCount: extracted.ocrPageCount || 0,
+      ocrAttemptedPageCount: extracted.ocrAttemptedPageCount || 0,
       ocrSkippedPageCount: extracted.ocrSkippedPageCount || 0,
+      pdfLearningComplete: !extracted.ocrSkippedPageCount && !(extracted.ocrErrors || []).length,
+      pdfLearningTextLimitReached: Boolean(extracted.textLimitReached),
       pageRange: {
         startPage: subPdf.startPage,
         endPage: subPdf.endPage,
@@ -3440,6 +3569,7 @@ function updatePdfBytes(doc, bytes, pageCount, options = {}) {
     doc.meta.extractedText = "";
     doc.meta.extractedPages = [];
     doc.meta.extractedPageCount = 0;
+    doc.meta.pdfLearningComplete = false;
     doc.meta.aiSourcesByPage = {};
     doc.meta.aiOutputsByPage = {};
     doc.meta.aiSource = "";
@@ -3484,7 +3614,9 @@ async function applyPdfTextExtraction(doc, shouldRender = true) {
     doc.meta.extractedPages = storedPages;
     doc.meta.extractedPageCount = textPages.length;
     doc.meta.ocrPageCount = extracted.ocrPageCount || 0;
+    doc.meta.ocrAttemptedPageCount = extracted.ocrAttemptedPageCount || 0;
     doc.meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
+    doc.meta.pdfLearningComplete = false;
     doc.meta.extractedAt = extracted.extractedAt;
     doc.meta.pdfExtractError = "";
     doc.meta.pdfTextStale = false;
@@ -5621,13 +5753,24 @@ function extractJsonFromAiText(text) {
   }
 }
 
-async function buildStudyAiDocumentsForCourse() {
+async function buildStudyAiDocumentsForCourse(options = {}) {
   const course = getActiveCourse();
   const documents = [];
 
-  for (const meta of course.documents || []) {
+  for (const [index, meta] of (course.documents || []).entries()) {
     try {
-      const aiDocument = await buildAiDocumentFromMeta(meta);
+      options.onStatus?.(`正在读取 ${index + 1}/${course.documents.length}：${meta.name}`);
+      const extractionOptions = isPdfMeta(meta) && options.requireCompletePdfOcr
+        ? {
+            ...options,
+            extractionOptions: buildLearningPdfExtractionOptions(meta, {
+              totalTextLimit: RAG_KNOWLEDGE_TEXT_LIMIT,
+              onStatus: options.onStatus,
+            }),
+            textLimit: options.textLimit || GRAPH_TEXT_LIMIT,
+          }
+        : options;
+      const aiDocument = await buildAiDocumentFromMeta(meta, extractionOptions);
       if (aiDocument?.text?.trim()) documents.push(aiDocument);
     } catch {
       // 单个资料读取失败时继续处理其他资料，避免整门课生成中断。
@@ -5892,7 +6035,15 @@ async function generateStudyModuleFromUploads() {
     saveWorkspace();
     renderStudyModuleViews();
 
-    documents = await buildStudyAiDocumentsForCourse();
+    documents = await buildStudyAiDocumentsForCourse({
+      requireCompletePdfOcr: true,
+      textLimit: GRAPH_TEXT_LIMIT,
+      onStatus: (message) => {
+        studyModule.generation = { state: "extracting", engine: "", message, updatedAt: Date.now() };
+        saveWorkspace();
+        renderStudyModuleViews();
+      },
+    });
     if (!documents.length) throw new Error("没有可用于生成的资料文本。");
     documents = documents.map((documentMeta) => ({
       ...documentMeta,
@@ -5900,7 +6051,7 @@ async function generateStudyModuleFromUploads() {
     }));
 
     if (!graph && window.mindStudy?.ai?.askQuestion) {
-      studyModule.generation = { state: "ai", engine: "DeepSeek", message: "", updatedAt: Date.now() };
+      studyModule.generation = { state: "ai", engine: "Qwen", message: "", updatedAt: Date.now() };
       saveWorkspace();
       renderStudyModuleViews();
       try {
@@ -5914,14 +6065,15 @@ async function generateStudyModuleFromUploads() {
             maxTokens: 2600,
             temperature: 0.15,
             persona: false,
+            multimodal: true,
           },
         });
         const parsed = extractJsonFromAiText(response.answer);
         if (parsed) {
-          graph = adaptExternalGraphPayload(parsed, documents, "deepseek");
+          graph = adaptExternalGraphPayload(parsed, documents, "qwen");
           questions = (parsed.quiz?.questions || []).map((question) => normalizeStudyQuestion(question, graph.nodes)).filter(Boolean);
           studyModule.recommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
-          engine = "deepseek";
+          engine = "qwen";
         }
       } catch (error) {
         studyModule.generation.message = `AI 生成不可用，使用本地规则：${getAiErrorMessage(error)}`;
@@ -6983,7 +7135,7 @@ function renderAiReadingWindow(doc) {
           <span class="tag muted">AI 阅读窗口</span>
           <h3>解析与翻译</h3>
         </div>
-        <button class="mini-button" data-ai-action="settings" title="设置 DeepSeek API Key">
+        <button class="mini-button" data-ai-action="settings" title="设置 Qwen API Key">
           <i data-lucide="key-round"></i>
           <span>Key</span>
         </button>
@@ -8153,7 +8305,7 @@ async function openAiSettingsDialog(preloadedStatus = null) {
         <section class="course-modal" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
           <div class="modal-heading">
             <div>
-              <span class="tag muted">DeepSeek</span>
+              <span class="tag muted">Qwen</span>
               <h2 id="ai-settings-title">AI API Key</h2>
             </div>
             <button class="icon-button light" data-modal-action="close" title="关闭">
@@ -8162,10 +8314,10 @@ async function openAiSettingsDialog(preloadedStatus = null) {
           </div>
           <form class="course-form" id="ai-settings-form">
             <label>
-              <span>DeepSeek API Key</span>
-              <input id="deepseek-api-key-input" name="apiKey" type="password" placeholder="${escapeHtml(placeholder)}" autocomplete="off" />
+              <span>Qwen / DashScope API Key</span>
+              <input id="qwen-api-key-input" name="apiKey" type="password" placeholder="${escapeHtml(placeholder)}" autocomplete="off" />
             </label>
-            <p class="ai-settings-note">Key 会保存在本机应用数据目录，不会写入 Git 仓库。环境变量 DEEPSEEK_API_KEY 优先级更高。</p>
+            <p class="ai-settings-note">Key 会保存在本机应用数据目录，不会写入 Git 仓库。环境变量 DASHSCOPE_API_KEY 或 QWEN_API_KEY 优先级更高。</p>
             <p class="ai-status-line ${statusClass}" id="ai-settings-status">${escapeHtml(getAiStatusText(status))}</p>
             <div class="modal-actions">
               <button type="button" class="ghost-action compact" data-ai-action="clear-key">清除本地 Key</button>
@@ -8179,7 +8331,7 @@ async function openAiSettingsDialog(preloadedStatus = null) {
   );
 
   window.lucide?.createIcons();
-  document.querySelector("#deepseek-api-key-input")?.focus();
+  document.querySelector("#qwen-api-key-input")?.focus();
 }
 
 async function submitAiSettingsForm(event) {
@@ -8192,7 +8344,7 @@ async function submitAiSettingsForm(event) {
   if (!apiKey) {
     input.focus();
     if (statusLine) {
-      statusLine.textContent = "请输入 DeepSeek API Key。";
+      statusLine.textContent = "请输入 Qwen API Key。";
       statusLine.className = "ai-status-line warning";
     }
     return;
