@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld("mindStudy", {
     summarizeDocuments: (request) => ipcRenderer.invoke("b:ai:summarize-documents", request),
     extractPdfText: (payload) => ipcRenderer.invoke("b:ai:extract-pdf-text", payload),
     recognizeImageText: (payload) => ipcRenderer.invoke("b:ai:recognize-image-text", payload),
+    transcribeAudio: (payload) => ipcRenderer.invoke("b:ai:transcribe-audio", payload),
   },
   rag: {
     askLibrary: (request) => ipcRenderer.invoke("b:rag:ask-library", request),

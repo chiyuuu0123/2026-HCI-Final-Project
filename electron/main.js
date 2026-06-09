@@ -9,6 +9,7 @@ const {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
   DEFAULT_MULTIMODAL_MODEL,
+  DEFAULT_ASR_MODEL,
   QwenClient,
   createStudyAiService,
   extractPdfTextFromBase64,
@@ -898,6 +899,7 @@ function getQwenRuntimeConfig() {
     baseUrl: process.env.DASHSCOPE_BASE_URL || process.env.QWEN_BASE_URL || localConfig.baseUrl || DEFAULT_BASE_URL,
     model: process.env.QWEN_MODEL || process.env.DASHSCOPE_MODEL || localConfig.model || DEFAULT_MODEL,
     multimodalModel: process.env.QWEN_MULTIMODAL_MODEL || localConfig.multimodalModel || DEFAULT_MULTIMODAL_MODEL,
+    asrModel: process.env.QWEN_ASR_MODEL || process.env.DASHSCOPE_ASR_MODEL || localConfig.asrModel || DEFAULT_ASR_MODEL,
     source: envApiKey ? "environment" : localApiKey ? "app-settings" : "missing",
   };
 }
@@ -910,6 +912,7 @@ function getQwenStatus() {
     baseUrl: config.baseUrl,
     model: config.model,
     multimodalModel: config.multimodalModel,
+    asrModel: config.asrModel,
     provider: "qwen",
     source: config.source,
   };
@@ -924,6 +927,7 @@ function createCurrentStudyAiService() {
       baseUrl: config.baseUrl,
       model: config.model,
       multimodalModel: config.multimodalModel,
+      asrModel: config.asrModel,
     },
   });
 }
@@ -936,6 +940,7 @@ function createCurrentQwenClient() {
     baseUrl: config.baseUrl,
     model: config.model,
     multimodalModel: config.multimodalModel,
+    asrModel: config.asrModel,
   });
 }
 
@@ -1248,6 +1253,21 @@ function getOcrOptions(payload) {
     textLimit: options.textLimit,
     pageNumber: options.pageNumber,
     cachePath: path.join(app.getPath("userData"), "ocr-cache"),
+  };
+}
+
+function getAudioTranscriptionOptions(payload) {
+  const options = payload && typeof payload === "object" && payload.options ? payload.options : {};
+
+  return {
+    dataUrl: typeof payload?.dataUrl === "string" ? payload.dataUrl : "",
+    base64: getBase64Payload(payload),
+    mimeType: payload?.mimeType || options.mimeType || "audio/webm",
+    model: options.model,
+    prompt: options.prompt,
+    maxTokens: options.maxTokens,
+    language: options.language,
+    asrOptions: options.asrOptions,
   };
 }
 
@@ -1949,6 +1969,16 @@ ipcMain.handle("b:ai:recognize-image-text", async (event, payload) => {
   }
 
   return recognizeImageTextFromBase64(base64, getOcrOptions(payload));
+});
+
+ipcMain.handle("b:ai:transcribe-audio", async (event, payload) => {
+  const options = getAudioTranscriptionOptions(payload);
+
+  if (!options.base64) {
+    throw new Error("Voice recognition requires base64 audio data.");
+  }
+
+  return createCurrentQwenClient().transcribeAudio(options);
 });
 
 ipcMain.handle("b:rag:ask-library", async (event, request) => {

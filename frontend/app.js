@@ -270,6 +270,8 @@ const RAG_MIN_CHUNK_SIZE = 500;
 const RAG_MAX_CHUNK_SIZE = 4000;
 const RAG_MIN_MAX_CHUNKS = 2;
 const RAG_MAX_MAX_CHUNKS = 12;
+const VOICE_COMMAND_MAX_RECORDING_MS = 14000;
+const VOICE_COMMAND_TRANSCRIBE_PROMPT = "这是一段中文语音控制指令，可能包含打开资料、切换页面、学习资料、生成知识图谱等操作。请只输出用户说的话。";
 const cameraState = {
   stream: null,
   sampleTimer: null,
@@ -374,6 +376,16 @@ const longlongDragState = {
 let longlongSpriteState = "default";
 let longlongSpriteRestoreTimer = null;
 let longlongSleepTimer = null;
+const voiceCommandState = {
+  open: false,
+  recording: false,
+  recognizing: false,
+  mediaRecorder: null,
+  stream: null,
+  chunks: [],
+  stopTimer: null,
+  sessionId: 0,
+};
 const graphPanState = {
   active: false,
   pointerId: null,
@@ -1916,6 +1928,74 @@ function uint8ArrayToBase64(bytes) {
   }
 
   return window.btoa(binary);
+}
+
+function writeAsciiToDataView(view, offset, text) {
+  for (let index = 0; index < text.length; index += 1) {
+    view.setUint8(offset + index, text.charCodeAt(index));
+  }
+}
+
+function encodeMonoPcm16Wav(samples, sampleRate) {
+  const clampedRate = Math.max(8000, Math.floor(Number(sampleRate) || 16000));
+  const dataSize = samples.length * 2;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  writeAsciiToDataView(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeAsciiToDataView(view, 8, "WAVE");
+  writeAsciiToDataView(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, clampedRate, true);
+  view.setUint32(28, clampedRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAsciiToDataView(view, 36, "data");
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (const sample of samples) {
+    const clamped = Math.max(-1, Math.min(1, sample));
+    view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+    offset += 2;
+  }
+
+  return new Uint8Array(buffer);
+}
+
+async function audioBlobToWavPayload(blob) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+  if (!AudioContextClass) {
+    throw new Error("当前环境不支持音频解码。");
+  }
+
+  const audioContext = new AudioContextClass();
+
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(await blob.arrayBuffer());
+    const length = audioBuffer.length;
+    const samples = new Float32Array(length);
+
+    for (let channel = 0; channel < audioBuffer.numberOfChannels; channel += 1) {
+      const channelData = audioBuffer.getChannelData(channel);
+      for (let index = 0; index < length; index += 1) {
+        samples[index] += channelData[index] / audioBuffer.numberOfChannels;
+      }
+    }
+
+    const wavBytes = encodeMonoPcm16Wav(samples, audioBuffer.sampleRate);
+    return {
+      base64: uint8ArrayToBase64(wavBytes),
+      mimeType: "audio/wav",
+      byteLength: wavBytes.byteLength,
+    };
+  } finally {
+    audioContext.close?.();
+  }
 }
 
 function getMimeTypeFromName(fileName) {
@@ -5155,6 +5235,414 @@ function showView(viewName) {
   if (viewName === "report") {
     renderReportModule();
   }
+}
+
+function getVoiceCommandElements() {
+  return {
+    toggle: document.querySelector("#voice-control-toggle"),
+    toggleText: document.querySelector("#voice-control-status-text"),
+    panel: document.querySelector("#voice-command-panel"),
+    close: document.querySelector("#voice-control-close"),
+    record: document.querySelector("#voice-command-record"),
+    recordLabel: document.querySelector("#voice-command-record-label"),
+    title: document.querySelector("#voice-command-title"),
+    transcript: document.querySelector("#voice-command-transcript"),
+  };
+}
+
+function setVoiceCommandStatus(titleText, detailText = "", tone = "ready") {
+  const elements = getVoiceCommandElements();
+  const titleValue = titleText || "等待语音指令";
+
+  if (elements.title) elements.title.textContent = titleValue;
+  if (elements.transcript) elements.transcript.textContent = detailText || "按下开始后说出操作。";
+  if (elements.toggleText) elements.toggleText.textContent = voiceCommandState.recording ? "正在听" : "语音控制";
+  if (elements.panel) {
+    elements.panel.classList.toggle("listening", tone === "listening");
+    elements.panel.classList.toggle("ready", tone === "ready");
+    elements.panel.classList.toggle("warning", tone === "warning");
+  }
+  if (elements.toggle) {
+    elements.toggle.classList.toggle("active", voiceCommandState.open);
+    elements.toggle.classList.toggle("recording", voiceCommandState.recording);
+  }
+  if (elements.recordLabel) {
+    elements.recordLabel.textContent = voiceCommandState.recording ? "停止" : voiceCommandState.recognizing ? "识别中" : "开始";
+  }
+  if (elements.record) {
+    elements.record.disabled = voiceCommandState.recognizing;
+    elements.record.classList.toggle("recording", voiceCommandState.recording);
+  }
+  window.lucide?.createIcons();
+}
+
+function setVoiceCommandPanelOpen(open) {
+  voiceCommandState.open = Boolean(open);
+  const elements = getVoiceCommandElements();
+  if (elements.panel) elements.panel.hidden = !voiceCommandState.open;
+
+  if (voiceCommandState.open) {
+    setVoiceCommandStatus("等待语音指令", "按下开始后说出操作。", "ready");
+  } else {
+    setVoiceCommandStatus("等待语音指令", "", "ready");
+  }
+}
+
+function closeVoiceCommandPanel() {
+  voiceCommandState.sessionId += 1;
+  if (voiceCommandState.recording) {
+    stopVoiceCommandRecording({ cancel: true });
+  }
+  cleanupVoiceCommandStream();
+  voiceCommandState.open = false;
+  voiceCommandState.recognizing = false;
+  setVoiceCommandPanelOpen(false);
+}
+
+function getVoiceRecordingMimeType() {
+  if (!window.MediaRecorder) return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+  ];
+
+  return candidates.find((mimeType) => MediaRecorder.isTypeSupported?.(mimeType)) || "";
+}
+
+function cleanupVoiceCommandStream() {
+  window.clearTimeout(voiceCommandState.stopTimer);
+  voiceCommandState.stopTimer = null;
+  voiceCommandState.stream?.getTracks?.().forEach((track) => track.stop());
+  voiceCommandState.stream = null;
+  voiceCommandState.mediaRecorder = null;
+}
+
+async function startVoiceCommandRecording() {
+  if (voiceCommandState.recording || voiceCommandState.recognizing) return;
+
+  if (!window.mindStudy?.ai?.transcribeAudio) {
+    throw new Error("当前环境没有语音识别接口。");
+  }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    throw new Error("当前环境不支持麦克风录音。");
+  }
+
+  await ensureAiConfigured();
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
+  const mimeType = getVoiceRecordingMimeType();
+  const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  const sessionId = voiceCommandState.sessionId + 1;
+
+  voiceCommandState.sessionId = sessionId;
+  voiceCommandState.stream = stream;
+  voiceCommandState.mediaRecorder = mediaRecorder;
+  voiceCommandState.chunks = [];
+  voiceCommandState.recording = true;
+  voiceCommandState.recognizing = false;
+
+  mediaRecorder.addEventListener("dataavailable", (event) => {
+    if (event.data?.size) voiceCommandState.chunks.push(event.data);
+  });
+
+  mediaRecorder.addEventListener("stop", () => {
+    handleVoiceCommandRecordingStopped(sessionId, mediaRecorder.mimeType || mimeType || "audio/webm");
+  }, { once: true });
+
+  mediaRecorder.start();
+  voiceCommandState.stopTimer = window.setTimeout(() => {
+    stopVoiceCommandRecording();
+  }, VOICE_COMMAND_MAX_RECORDING_MS);
+  setVoiceCommandStatus("正在听", "说出要执行的控制指令。", "listening");
+}
+
+function stopVoiceCommandRecording(options = {}) {
+  const recorder = voiceCommandState.mediaRecorder;
+  window.clearTimeout(voiceCommandState.stopTimer);
+  voiceCommandState.stopTimer = null;
+  voiceCommandState.recording = false;
+
+  if (options.cancel) {
+    voiceCommandState.chunks = [];
+  }
+
+  if (recorder && recorder.state !== "inactive") {
+    recorder.stop();
+  } else {
+    cleanupVoiceCommandStream();
+  }
+
+  setVoiceCommandStatus("正在整理语音", "录音已结束，正在准备识别。", "ready");
+}
+
+async function handleVoiceCommandRecordingStopped(sessionId, mimeType) {
+  const chunks = voiceCommandState.chunks;
+  const isCurrentSession = sessionId === voiceCommandState.sessionId;
+  cleanupVoiceCommandStream();
+  voiceCommandState.chunks = [];
+
+  if (!isCurrentSession || !chunks.length) {
+    voiceCommandState.recording = false;
+    voiceCommandState.recognizing = false;
+    setVoiceCommandStatus("等待语音指令", "按下开始后说出操作。", "ready");
+    return;
+  }
+
+  voiceCommandState.recording = false;
+  voiceCommandState.recognizing = true;
+  setVoiceCommandStatus("正在识别", "正在把语音转成控制指令。", "ready");
+
+  try {
+    const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
+    const wavPayload = await audioBlobToWavPayload(blob);
+    const result = await window.mindStudy.ai.transcribeAudio({
+      base64: wavPayload.base64,
+      mimeType: wavPayload.mimeType,
+      options: {
+        language: "zh",
+        prompt: VOICE_COMMAND_TRANSCRIBE_PROMPT,
+        maxTokens: 220,
+      },
+    });
+    const transcript = normalizeVoiceCommandTranscript(result?.text);
+
+    if (!transcript) {
+      throw new Error("没有识别到有效语音指令。");
+    }
+
+    const commandResult = await executeVoiceCommand(transcript);
+    setVoiceCommandStatus("已执行", `${transcript}\n${commandResult}`, "ready");
+  } catch (error) {
+    setVoiceCommandStatus("语音控制失败", getAiErrorMessage(error), "warning");
+  } finally {
+    voiceCommandState.recognizing = false;
+    setVoiceCommandStatus(
+      document.querySelector("#voice-command-title")?.textContent || "等待语音指令",
+      document.querySelector("#voice-command-transcript")?.textContent || "",
+      document.querySelector("#voice-command-panel")?.classList.contains("warning") ? "warning" : "ready",
+    );
+  }
+}
+
+function normalizeVoiceCommandTranscript(value) {
+  return String(value || "")
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeVoiceCommandText(value) {
+  return normalizeVoiceCommandTranscript(value)
+    .toLowerCase()
+    .replace(/[，。！？、,.!?;；:：“”"'\s]/g, "")
+    .trim();
+}
+
+function parseChineseInteger(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  if (/^\d+$/.test(raw)) return Number(raw);
+
+  const digits = {
+    零: 0,
+    〇: 0,
+    一: 1,
+    二: 2,
+    两: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+  };
+  let total = 0;
+  let section = 0;
+  let number = 0;
+
+  for (const char of raw) {
+    if (Object.hasOwn(digits, char)) {
+      number = digits[char];
+      continue;
+    }
+    if (char === "十") {
+      section += (number || 1) * 10;
+      number = 0;
+      continue;
+    }
+    if (char === "百") {
+      section += (number || 1) * 100;
+      number = 0;
+    }
+  }
+
+  total += section + number;
+  return total;
+}
+
+function parseVoiceNumber(value) {
+  const match = String(value || "").match(/[0-9一二两三四五六七八九十百零〇]+/);
+  return match ? parseChineseInteger(match[0]) : 0;
+}
+
+function getDocumentIndexById(documents, documentId) {
+  return Math.max(0, documents.findIndex((documentMeta) => documentMeta.id === documentId));
+}
+
+function resolveVoiceDocumentTarget(normalizedText) {
+  const course = getActiveCourse();
+  const documents = course?.documents || [];
+  if (!documents.length) return null;
+
+  const activeIndex = getDocumentIndexById(documents, course.activeDocumentId);
+  if (/下(一个|一份|份|个)?(资料|文件|文档)/.test(normalizedText)) {
+    return documents[Math.min(documents.length - 1, activeIndex + 1)];
+  }
+  if (/上(一个|一份|份|个)?(资料|文件|文档)/.test(normalizedText)) {
+    return documents[Math.max(0, activeIndex - 1)];
+  }
+
+  const indexMatch =
+    normalizedText.match(/第([0-9一二两三四五六七八九十百零〇]+)(个|份|篇)?(资料|文件|文档)/) ||
+    normalizedText.match(/(资料|文件|文档)([0-9一二两三四五六七八九十百零〇]+)/);
+  const indexValue = indexMatch ? parseVoiceNumber(indexMatch[1] || indexMatch[2]) : 0;
+  if (indexValue >= 1 && indexValue <= documents.length) {
+    return documents[indexValue - 1];
+  }
+
+  const nameCandidate = normalizedText
+    .replace(/^(打开|进入|切换到|选择|查看)/, "")
+    .replace(/(资料|文件|文档)/g, "")
+    .trim();
+  if (nameCandidate.length >= 2) {
+    return documents.find((documentMeta) =>
+      normalizeVoiceCommandText(documentMeta.name).includes(nameCandidate) ||
+      nameCandidate.includes(normalizeVoiceCommandText(documentMeta.name).slice(0, 8)),
+    ) || null;
+  }
+
+  return null;
+}
+
+function resolveVoiceView(normalizedText) {
+  const viewMatchers = [
+    { view: "dashboard", patterns: ["工作台", "首页", "主页"] },
+    { view: "reader", patterns: ["资料阅读", "阅读区", "资料区", "文档区"] },
+    { view: "rag", patterns: ["知识库", "问答", "rag"] },
+    { view: "coding", patterns: ["coding", "代码", "编程"] },
+    { view: "planner", patterns: ["todo", "待办", "计划", "日程"] },
+    { view: "map", patterns: ["知识图谱", "图谱", "知识图"] },
+    { view: "quiz", patterns: ["测验", "测试", "刷题", "题目"] },
+    { view: "report", patterns: ["报告", "学习报告"] },
+    { view: "focus", patterns: ["状态", "摄像头", "音乐", "专注"] },
+  ];
+
+  return viewMatchers.find((item) => item.patterns.some((pattern) => normalizedText.includes(pattern)))?.view || "";
+}
+
+async function openVoiceDocumentTarget(documentMeta) {
+  if (!documentMeta) throw new Error("没有找到要打开的资料。");
+  await loadDocumentById(documentMeta.id);
+  showView("reader");
+  return `已打开资料：${documentMeta.name}`;
+}
+
+function executeVoicePdfPageCommand(normalizedText) {
+  const doc = documentState.current;
+  if (!doc || doc.kind !== "pdf") return "";
+
+  const pageCount = Math.max(1, doc.pageCount || doc.meta.pageCount || 1);
+  let pageNumber = 0;
+
+  if (/(下一页|下页|后一页|往后翻)/.test(normalizedText)) {
+    pageNumber = (doc.activePdfPage || 1) + 1;
+  } else if (/(上一页|上页|前一页|往前翻)/.test(normalizedText)) {
+    pageNumber = (doc.activePdfPage || 1) - 1;
+  } else {
+    const pageMatch = normalizedText.match(/(?:第|到|跳到|打开)?([0-9一二两三四五六七八九十百零〇]+)页/);
+    pageNumber = pageMatch ? parseVoiceNumber(pageMatch[1]) : 0;
+  }
+
+  if (!pageNumber) return "";
+
+  const safePage = Math.min(pageCount, Math.max(1, pageNumber));
+  setActivePdfPage(doc, safePage);
+  showView("reader");
+  return `已跳到第 ${safePage} 页`;
+}
+
+async function executeVoiceCommand(transcript) {
+  const normalizedText = normalizeVoiceCommandText(transcript);
+  if (!normalizedText) throw new Error("没有识别到有效语音指令。");
+
+  if (/(关闭语音|退出语音|停止语音控制)/.test(normalizedText)) {
+    closeVoiceCommandPanel();
+    return "已关闭语音控制。";
+  }
+
+  if (/(导入|上传).*(资料|文件|文档)/.test(normalizedText)) {
+    await handleCourseImport();
+    return "已打开资料导入。";
+  }
+
+  if (/(学习|读取).*(全部|整门|整个|课程|所有).*(资料|文件|文档)?/.test(normalizedText)) {
+    showView("rag");
+    await learnRagKnowledge("course");
+    return "已开始学习本课程资料。";
+  }
+
+  if (/(学习|读取).*(当前|这个|这份).*(资料|文件|文档)?/.test(normalizedText)) {
+    showView("rag");
+    await learnRagKnowledge("active");
+    return "已开始学习当前资料。";
+  }
+
+  if (/(生成|创建|重建).*(知识图谱|图谱|知识图)/.test(normalizedText)) {
+    showView("map");
+    await generateStudyModuleFromUploads();
+    return "已开始生成知识图谱。";
+  }
+
+  const documentTarget = resolveVoiceDocumentTarget(normalizedText);
+  if (documentTarget && /(打开|进入|切换|选择|查看|上一个|下一个)/.test(normalizedText)) {
+    return openVoiceDocumentTarget(documentTarget);
+  }
+
+  const pdfPageResult = executeVoicePdfPageCommand(normalizedText);
+  if (pdfPageResult) return pdfPageResult;
+
+  if (/(打开|开启).*(摄像头|状态识别)/.test(normalizedText)) {
+    showView("focus");
+    startCamera();
+    return "已打开状态识别。";
+  }
+
+  if (/(关闭|停止).*(摄像头|状态识别)/.test(normalizedText)) {
+    stopCamera();
+    return "已关闭状态识别。";
+  }
+
+  if (/(龙龙|助手).*(聊天|对话)|聊天/.test(normalizedText)) {
+    setLonglongChatPopover(true);
+    setLonglongBubbleText("龙龙在听。", { temporary: false });
+    return "已打开龙龙聊天。";
+  }
+
+  const view = resolveVoiceView(normalizedText);
+  if (view) {
+    showView(view);
+    return `已切换到${viewTitles[view] || "目标模块"}。`;
+  }
+
+  throw new Error("暂时没有匹配到可执行的语音控制指令。");
 }
 
 function setParseStatus(text, tone = "ready") {
@@ -9239,6 +9727,9 @@ document.addEventListener("click", (event) => {
   const modalBackdrop = event.target.matches(".modal-backdrop");
   const aiSettingsButton = event.target.closest("[data-ai-action='settings']");
   const aiClearKeyButton = event.target.closest("[data-ai-action='clear-key']");
+  const voiceControlToggleButton = event.target.closest("#voice-control-toggle");
+  const voiceControlCloseButton = event.target.closest("#voice-control-close");
+  const voiceCommandRecordButton = event.target.closest("#voice-command-record");
   const deleteDocumentButton = event.target.closest("[data-delete-document-id]");
   const confirmDeleteDocumentButton = event.target.closest("[data-confirm-delete-document]");
   const confirmDeletePdfPageButton = event.target.closest("[data-confirm-delete-pdf-page]");
@@ -9272,6 +9763,30 @@ document.addEventListener("click", (event) => {
   const graphZoomButton = event.target.closest("[data-graph-zoom]");
   const mistakeReviewButton = event.target.closest("[data-mistake-review]");
   const actionButton = event.target.closest("button");
+
+  if (voiceControlToggleButton) {
+    setVoiceCommandPanelOpen(!voiceCommandState.open);
+    return;
+  }
+
+  if (voiceControlCloseButton) {
+    closeVoiceCommandPanel();
+    return;
+  }
+
+  if (voiceCommandRecordButton) {
+    if (voiceCommandState.recording) {
+      stopVoiceCommandRecording();
+    } else {
+      startVoiceCommandRecording().catch((error) => {
+        voiceCommandState.recording = false;
+        voiceCommandState.recognizing = false;
+        cleanupVoiceCommandStream();
+        setVoiceCommandStatus("语音控制不可用", getAiErrorMessage(error), "warning");
+      });
+    }
+    return;
+  }
 
   if (ragActionButton) {
     const action = ragActionButton.dataset.ragAction;
