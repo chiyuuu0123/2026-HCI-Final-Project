@@ -34,7 +34,7 @@ Current local config file:
 
 Default model choices:
 
-- `qwen3.6-plus` for normal AI, RAG, knowledge graph generation, and multimodal tasks.
+- `qwen3-vl-32b-thinking` for normal AI, RAG, knowledge graph generation, multimodal tasks, and short-answer semantic grading.
 - `QWEN_MULTIMODAL_MODEL` can override the vision-capable model without touching UI code.
 
 Advanced override:
@@ -53,8 +53,8 @@ Optional overrides:
 
 ```powershell
 $env:DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
-$env:QWEN_MODEL="qwen3.6-plus"
-$env:QWEN_MULTIMODAL_MODEL="qwen3.6-plus"
+$env:QWEN_MODEL="qwen3-vl-32b-thinking"
+$env:QWEN_MULTIMODAL_MODEL="qwen3-vl-32b-thinking"
 ```
 
 For users outside mainland China, change the base URL to the international
@@ -85,7 +85,7 @@ details isolated behind Electron IPC.
     { id: "doc-2", title: "lecture.pdf", mimeType: "application/pdf", extension: "PDF", base64: "..." }
   ],
   options: {
-    model: "qwen3.6-plus"
+    model: "qwen3-vl-32b-thinking"
   }
 }
 ```
@@ -102,7 +102,7 @@ sends those chunks to Qwen.
     { id: "doc-1", title: "chapter1.md", text: "..." }
   ],
   options: {
-    model: "qwen3.6-plus"
+    model: "qwen3-vl-32b-thinking"
   }
 }
 ```

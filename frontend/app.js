@@ -1540,6 +1540,7 @@ function createDefaultStudyModule() {
     graph,
     quiz: {
       scope: "评估方法",
+      mode: "adaptive",
       difficulty: "all",
       questions,
       cursor: 0,
@@ -6119,6 +6120,7 @@ function normalizeStudyQuestion(question, nodes = getStudyModule().graph.nodes) 
     sampleAnswer: question.sampleAnswer || question.referenceAnswer || node?.summary || "",
     explanation: question.explanation || `这道题关联知识点：${node?.label || topic}。`,
     source: question.source || node?.source || "课程资料",
+    sourceSnippet: question.sourceSnippet || question.snippet || (node?.sourceSnippets || [])[0] || "",
   };
 
   if (normalized.type === "judge" && typeof normalized.answer !== "boolean") {
@@ -6145,6 +6147,7 @@ function sanitizeStudyQuiz(quiz = {}, graph = createFallbackStudyGraph([])) {
 
   return {
     scope: quiz?.scope || graph.nodes[0]?.id || "all",
+    mode: ["adaptive", "diagnostic", "weak", "review", "exam"].includes(quiz?.mode) ? quiz.mode : "adaptive",
     difficulty: quiz?.difficulty || "all",
     questions,
     cursor: Math.max(0, Number(quiz?.cursor) || 0),
@@ -6580,22 +6583,137 @@ function showKnowledgeSource() {
   }
 }
 
+function getQuizModeLabel(mode = "adaptive") {
+  return {
+    adaptive: "自适应练习",
+    diagnostic: "快速诊断",
+    weak: "薄弱巩固",
+    review: "今日复习",
+    exam: "考前冲刺",
+  }[mode] || "自适应练习";
+}
+
+function getRelatedTopicIds(topicId) {
+  const studyModule = getStudyModule();
+  return new Set([
+    topicId,
+    ...(studyModule.graph.edges || [])
+      .filter((edge) => edge.source === topicId || edge.target === topicId)
+      .map((edge) => edge.source === topicId ? edge.target : edge.source),
+  ].filter(Boolean));
+}
+
+function getQuestionAttemptHistory(questionId) {
+  return getStudyModule().attempts.filter((attempt) => attempt.questionId === questionId);
+}
+
+function getDueReviewMistakes() {
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  return getStudyModule().mistakes
+    .filter((mistake) => !mistake.reviewed && Number(mistake.nextReviewAt || mistake.createdAt || 0) <= endOfToday.getTime())
+    .sort((a, b) => Number(a.nextReviewAt || 0) - Number(b.nextReviewAt || 0) || Number(b.createdAt || 0) - Number(a.createdAt || 0));
+}
+
+function getQuestionPriority(question, context = {}) {
+  const studyModule = getStudyModule();
+  const mode = context.mode || studyModule.quiz.mode || "adaptive";
+  const stats = getTopicStats(question.topic);
+  const history = getQuestionAttemptHistory(question.id);
+  const lastAttempt = history[history.length - 1];
+  const dueMistake = studyModule.mistakes.find((mistake) => mistake.questionId === question.id && !mistake.reviewed);
+  const related = context.relatedTopicIds?.has(question.topic);
+  const difficultyBoost = mode === "exam"
+    ? { 基础: 4, 中等: 8, 较难: 12 }[question.difficulty] || 6
+    : { 基础: 8, 中等: 6, 较难: 4 }[question.difficulty] || 5;
+
+  return [
+    dueMistake ? 70 : 0,
+    stats.mastery < 60 ? 34 : stats.mastery < 78 ? 18 : 4,
+    lastAttempt && !lastAttempt.correct ? 26 : 0,
+    history.length === 0 ? 18 : Math.max(0, 10 - history.length * 2),
+    related ? 12 : 0,
+    difficultyBoost,
+    question.type === "short" && mode !== "diagnostic" ? 6 : 0,
+  ].reduce((sum, value) => sum + value, 0);
+}
+
+function uniqueQuestions(questions = []) {
+  const seen = new Set();
+  return questions.filter((question) => {
+    if (!question || seen.has(question.id)) return false;
+    seen.add(question.id);
+    return true;
+  });
+}
+
+function sortQuestionsForMode(questions, context = {}) {
+  return uniqueQuestions(questions)
+    .map((question, index) => ({
+      question,
+      score: getQuestionPriority(question, context),
+      index,
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((item) => item.question);
+}
+
+function getReviewQueueQuestions(questions, difficulty = "all") {
+  const dueMistakes = getDueReviewMistakes();
+  const byId = new Map(questions.map((question) => [question.id, question]));
+  const reviewQuestions = dueMistakes
+    .map((mistake) => byId.get(mistake.questionId) || normalizeStudyQuestion({
+      id: mistake.questionId,
+      topic: mistake.topic,
+      type: "short",
+      difficulty: "中等",
+      prompt: mistake.question,
+      sampleAnswer: mistake.correctAnswer,
+      explanation: mistake.explanation,
+      source: mistake.source,
+      sourceSnippet: mistake.sourceSnippet,
+    }))
+    .filter((question) => question && (difficulty === "all" || question.difficulty === difficulty));
+  return uniqueQuestions(reviewQuestions);
+}
+
+function getDiagnosticQuestions(questions, difficulty = "all") {
+  const selected = [];
+  const usedTopics = new Set();
+  sortQuestionsForMode(questions, { mode: "diagnostic" }).forEach((question) => {
+    if (usedTopics.has(question.topic)) return;
+    if (difficulty !== "all" && question.difficulty !== difficulty) return;
+    selected.push(question);
+    usedTopics.add(question.topic);
+  });
+  return selected;
+}
+
 function getTopicQuestions(topicId, difficulty = "all") {
   const studyModule = getStudyModule();
   const questions = studyModule.quiz.questions.length ? studyModule.quiz.questions : createFallbackQuizQuestions(studyModule.graph.nodes);
   const topic = getKnowledgeTopic(topicId);
+  const mode = studyModule.quiz.mode || "adaptive";
+  if (mode === "review") {
+    const reviewQuestions = getReviewQueueQuestions(questions, difficulty);
+    if (reviewQuestions.length) return reviewQuestions.slice(0, 10);
+  }
+  if (mode === "diagnostic") {
+    return getDiagnosticQuestions(questions, difficulty).slice(0, 12);
+  }
+  if (mode === "weak") {
+    const weakTopics = new Set(studyModule.graph.nodes
+      .filter((node) => getTopicStats(node.id).mastery < 72 || studyModule.mistakes.some((mistake) => mistake.topic === node.id && !mistake.reviewed))
+      .map((node) => node.id));
+    const weakQuestions = questions.filter((question) => weakTopics.has(question.topic) && (difficulty === "all" || question.difficulty === difficulty));
+    if (weakQuestions.length) return sortQuestionsForMode(weakQuestions, { mode }).slice(0, 10);
+  }
   if (topicId === "all") {
-    return questions
-      .filter((question) => difficulty === "all" || question.difficulty === difficulty)
-      .slice(0, 10);
+    const filtered = questions.filter((question) => difficulty === "all" || question.difficulty === difficulty);
+    return sortQuestionsForMode(filtered, { mode }).slice(0, mode === "exam" ? 16 : 10);
   }
 
-  const related = new Set([
-    topic?.id,
-    ...(studyModule.graph.edges || [])
-      .filter((edge) => edge.source === topic?.id || edge.target === topic?.id)
-      .map((edge) => edge.source === topic?.id ? edge.target : edge.source),
-  ]);
+  const related = getRelatedTopicIds(topic?.id);
   const direct = questions.filter((question) => question.topic === topic?.id);
   const adjacent = questions.filter((question) => question.topic !== topic?.id && related.has(question.topic));
   const fallback = questions.filter((question) => !related.has(question.topic));
@@ -6615,7 +6733,7 @@ function getTopicQuestions(topicId, difficulty = "all") {
     .filter((question) => difficulty === "all" || question.difficulty === difficulty)
     .slice(0, 10);
 
-  return filtered;
+  return sortQuestionsForMode(filtered, { mode, relatedTopicIds: related });
 }
 
 function getQuizTypeLabel(type) {
@@ -6630,8 +6748,10 @@ function getQuizTypeLabel(type) {
 
 function renderQuizScopeControls() {
   const studyModule = getStudyModule();
+  const modeSelect = document.querySelector("#quiz-mode-select");
   const scopeSelect = document.querySelector("#quiz-scope-select");
   const difficultySelect = document.querySelector("#quiz-difficulty-select");
+  if (modeSelect) modeSelect.value = studyModule.quiz.mode || "adaptive";
   if (scopeSelect) {
     scopeSelect.innerHTML = `<option value="all">整份资料</option>${studyModule.graph.nodes.map((node) => `<option value="${escapeHtml(node.id)}">${escapeHtml(node.label)}</option>`).join("")}`;
     scopeSelect.value = studyModule.quiz.scope || studyModule.activeQuizTopic || "all";
@@ -6660,16 +6780,17 @@ function renderQuizModule() {
       feedback.className = "answer-feedback";
     }
     renderQuizSidebar([]);
+    renderQuizSessionReport([]);
     return;
   }
 
   studyModule.quiz.cursor = currentIndex;
   studyModule.quizCursor = currentIndex;
   if (titleNode) titleNode.textContent = `${question.topic} · 第 ${currentIndex + 1} 题`;
-  if (difficultyNode) difficultyNode.textContent = `${getQuizTypeLabel(question.type)} · ${question.difficulty}`;
+  if (difficultyNode) difficultyNode.textContent = `${getQuizModeLabel(studyModule.quiz.mode)} · ${getQuizTypeLabel(question.type)} · ${question.difficulty}`;
   if (questionNode) questionNode.textContent = question.prompt;
   if (feedback) {
-    feedback.textContent = `来源：${question.source || "课程资料"}。提交后显示答案解析。`;
+    feedback.textContent = `来源：${question.source || "课程资料"}。提交后显示答案解析、来源片段和下一步建议。`;
     feedback.className = "answer-feedback";
   }
 
@@ -6712,6 +6833,7 @@ function renderQuizModule() {
   }
 
   renderQuizSidebar(questions);
+  renderQuizSessionReport(questions);
   bindQuizActionButtons();
   window.lucide?.createIcons();
 }
@@ -6749,6 +6871,52 @@ function renderQuizSidebar(questions = getCurrentQuizQuestions()) {
       })
       .join("");
   }
+
+  const reviewList = document.querySelector("#quiz-review-list");
+  if (reviewList) {
+    const dueMistakes = getDueReviewMistakes().slice(0, 5);
+    reviewList.innerHTML = `
+      <span class="tag muted">今日复习</span>
+      ${dueMistakes.length
+        ? dueMistakes.map((mistake) => `
+          <button class="quiz-review-item" data-report-review-topic="${escapeHtml(mistake.topic)}">
+            <strong>${escapeHtml(getKnowledgeTopic(mistake.topic)?.label || mistake.topic)}</strong>
+            <span>${escapeHtml(mistake.question || "重做错题")}</span>
+          </button>
+        `).join("")
+        : `<p>当前没有待复习错题，继续完成本组练习即可。</p>`}
+    `;
+  }
+}
+
+function renderQuizSessionReport(questions = getCurrentQuizQuestions()) {
+  const studyModule = getStudyModule();
+  const reportNode = document.querySelector("#quiz-session-report");
+  if (!reportNode) return;
+  const stats = getQuizAttemptStats(studyModule.quiz.scope || "all", questions);
+  const weakTopics = studyModule.graph.nodes
+    .map((node) => ({ node, stats: getTopicStats(node.id) }))
+    .sort((a, b) => a.stats.mastery - b.stats.mastery)
+    .slice(0, 3);
+  const dueCount = getDueReviewMistakes().length;
+
+  reportNode.innerHTML = `
+    <div>
+      <strong>${getQuizModeLabel(studyModule.quiz.mode)}</strong>
+      <span>${stats.total ? `本组正确率 ${stats.accuracy}%` : "完成第一题后生成本组诊断"}</span>
+    </div>
+    <div>
+      <strong>${dueCount}</strong>
+      <span>今日待复习</span>
+    </div>
+    <div>
+      <strong>${weakTopics[0]?.node.label || "暂无"}</strong>
+      <span>优先补强</span>
+    </div>
+    <div class="quiz-report-actions">
+      ${weakTopics.map(({ node }) => `<button class="mini-button" data-report-review-topic="${escapeHtml(node.id)}">${escapeHtml(node.label)}</button>`).join("")}
+    </div>
+  `;
 }
 
 function getQuizAttemptStats(scope, questions = getCurrentQuizQuestions()) {
@@ -6803,7 +6971,15 @@ function getSelectedMultiAnswerText(question, selected) {
     : "未选择";
 }
 
-function recordQuizAnswer(selectedAnswer, correct) {
+function inferQuizMistakeReason(question, selectedAnswer = "") {
+  if (question.type === "short") return "要点缺失";
+  if (question.type === "match") return "概念匹配混淆";
+  if (question.type === "multi") return "多选条件遗漏";
+  if (String(selectedAnswer).includes("未选择") || String(selectedAnswer).includes("未填写")) return "未完成作答";
+  return "概念判断偏差";
+}
+
+function recordQuizAnswer(selectedAnswer, correct, meta = {}) {
   const studyModule = getStudyModule();
   const question = getCurrentQuizQuestion();
   if (!question) return null;
@@ -6818,6 +6994,10 @@ function recordQuizAnswer(selectedAnswer, correct) {
     correctAnswer: getQuestionCorrectAnswer(question),
     explanation: question.explanation,
     source: question.source,
+    sourceSnippet: question.sourceSnippet,
+    aiScore: Number.isFinite(meta.score) ? meta.score : null,
+    feedback: meta.feedback || "",
+    missingPoints: Array.isArray(meta.missingPoints) ? meta.missingPoints : [],
     answeredAt: Date.now(),
   };
 
@@ -6825,6 +7005,7 @@ function recordQuizAnswer(selectedAnswer, correct) {
   studyModule.progress.studyMinutes = Math.max(0, Number(studyModule.progress.studyMinutes) || 0) + 3;
   const existing = studyModule.mistakes.find((mistake) => mistake.questionId === question.id);
   if (!correct) {
+    const nextReviewAt = Date.now();
     if (existing) {
       existing.selectedAnswer = selectedAnswer;
       existing.reviewed = false;
@@ -6832,6 +7013,10 @@ function recordQuizAnswer(selectedAnswer, correct) {
       existing.correctAnswer = attempt.correctAnswer;
       existing.explanation = question.explanation;
       existing.source = question.source;
+      existing.sourceSnippet = question.sourceSnippet;
+      existing.reason = meta.reason || inferQuizMistakeReason(question, selectedAnswer);
+      existing.nextReviewAt = nextReviewAt;
+      existing.reviewLevel = 0;
       existing.createdAt = Date.now();
     } else {
       studyModule.mistakes.unshift({
@@ -6844,14 +7029,20 @@ function recordQuizAnswer(selectedAnswer, correct) {
         correctAnswer: attempt.correctAnswer,
         explanation: question.explanation,
         source: question.source,
+        sourceSnippet: question.sourceSnippet,
+        reason: meta.reason || inferQuizMistakeReason(question, selectedAnswer),
+        nextReviewAt,
+        reviewLevel: 0,
         reviewed: false,
         createdAt: Date.now(),
       });
     }
   } else if (existing) {
-    existing.reviewed = true;
+    existing.reviewLevel = Math.min(2, Number(existing.reviewLevel || 0) + 1);
+    existing.reviewed = existing.reviewLevel >= 2;
     existing.reviewedAt = Date.now();
     existing.lastCorrectAttemptId = attempt.id;
+    existing.nextReviewAt = existing.reviewed ? 0 : Date.now() + 2 * 24 * 60 * 60 * 1000;
   }
   updateStudyRecommendations();
   saveWorkspace();
@@ -6860,20 +7051,40 @@ function recordQuizAnswer(selectedAnswer, correct) {
 
 function refreshAfterQuizAnswer() {
   renderQuizSidebar();
+  renderQuizSessionReport();
   renderReportModule();
   renderKnowledgeModule();
 }
 
-function showQuizFeedback(correct, explanation, correctAnswer = "") {
+function getQuestionSourceSnippet(question) {
+  if (!question) return "";
+  const topic = getKnowledgeTopic(question.topic);
+  return question.sourceSnippet || (topic?.sourceSnippets || [])[0] || (topic?.examples || [])[0] || "";
+}
+
+function showQuizFeedback(correct, explanation, correctAnswer = "", meta = {}) {
   const feedback = document.querySelector("#answer-feedback");
   if (!feedback) return;
+  const question = meta.question || getCurrentQuizQuestion();
+  const sourceSnippet = meta.sourceSnippet || getQuestionSourceSnippet(question);
+  const missingPoints = Array.isArray(meta.missingPoints) ? meta.missingPoints.filter(Boolean) : [];
+  const scoreText = Number.isFinite(meta.score) ? `<small>智能评分：${meta.score} / 100</small>` : "";
 
   feedback.innerHTML = `
     <strong>${correct ? "回答正确" : "这次答错了"}</strong>
     <span>${escapeHtml(explanation || "")}</span>
     ${correctAnswer ? `<small>正确答案：${escapeHtml(correctAnswer)}</small>` : ""}
+    ${scoreText}
+    ${missingPoints.length ? `<small>缺失要点：${missingPoints.map(escapeHtml).join("、")}</small>` : ""}
+    ${sourceSnippet ? `<blockquote>来源片段：${escapeHtml(sourceSnippet)}</blockquote>` : ""}
+    <div class="quiz-feedback-actions">
+      <button class="mini-button" data-quiz-action="open-topic">查看图谱节点</button>
+      ${correct ? "" : `<button class="mini-button" data-quiz-action="variant">生成变式题</button>`}
+      <button class="mini-button" data-quiz-action="review-mode">今日复习</button>
+    </div>
   `;
   feedback.className = `answer-feedback ${correct ? "correct" : "wrong"}`;
+  bindQuizActionButtons(feedback);
 }
 
 function submitObjectiveQuizAnswer(answerButton) {
@@ -6905,16 +7116,92 @@ function submitMultiQuizAnswer() {
   refreshAfterQuizAnswer();
 }
 
-function submitShortQuizAnswer() {
+function buildShortAnswerGradePrompt(question, answer) {
+  return [
+    "请作为课程助教评分这道简答题，只返回严格 JSON，不要 Markdown。",
+    "评分要宽容但有依据，重点看学生是否表达了核心含义，不要求逐字一致。",
+    "JSON 格式：",
+    '{"score":0,"correct":false,"feedback":"一句具体反馈","matchedPoints":["命中的要点"],"missingPoints":["缺失的要点"],"reason":"错因标签"}',
+    `题目：${question.prompt}`,
+    `学生答案：${answer || "未填写"}`,
+    `参考答案：${question.sampleAnswer || getQuestionCorrectAnswer(question)}`,
+    `解析：${question.explanation || ""}`,
+    `关键词：${(question.keywords || []).join("、")}`,
+    `来源片段：${getQuestionSourceSnippet(question) || question.source || "课程资料"}`,
+  ].join("\n");
+}
+
+async function gradeShortAnswerWithAi(question, answer) {
+  if (!window.mindStudy?.ai?.askQuestion || !answer.trim()) return null;
+  await ensureAiConfigured();
+  const response = await window.mindStudy.ai.askQuestion({
+    question: buildShortAnswerGradePrompt(question, answer),
+    documents: [{
+      title: question.source || "课程资料",
+      text: [getQuestionSourceSnippet(question), question.sampleAnswer, question.explanation].filter(Boolean).join("\n\n"),
+    }],
+    options: {
+      maxChunks: 3,
+      maxContextChars: 4000,
+      maxTokens: 700,
+      temperature: 0.05,
+      persona: false,
+      multimodal: false,
+    },
+  });
+  const parsed = extractJsonFromAiText(response.answer);
+  if (!parsed) return null;
+  const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0)));
+  return {
+    score,
+    correct: Boolean(parsed.correct) || score >= 70,
+    feedback: String(parsed.feedback || "").slice(0, 240),
+    matchedPoints: Array.isArray(parsed.matchedPoints) ? parsed.matchedPoints.map(String).slice(0, 4) : [],
+    missingPoints: Array.isArray(parsed.missingPoints) ? parsed.missingPoints.map(String).slice(0, 4) : [],
+    reason: parsed.reason || "",
+  };
+}
+
+async function submitShortQuizAnswer() {
   const question = getCurrentQuizQuestion();
   if (!question) return;
   const answer = document.querySelector("#quiz-short-answer")?.value.trim() || "";
+  const submitButton = document.querySelector("[data-quiz-action='submit-short']");
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = "正在评分";
+  }
+
+  let grading = null;
+  try {
+    grading = await gradeShortAnswerWithAi(question, answer);
+  } catch {
+    grading = null;
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = "提交简答";
+    }
+  }
+
   const normalizedAnswer = answer.toLowerCase();
   const hitCount = (question.keywords || []).filter((keyword) => normalizedAnswer.includes(keyword.toLowerCase())).length;
-  const correct = hitCount >= Math.min(2, Math.max(1, question.keywords.length));
+  const fallbackCorrect = hitCount >= Math.min(2, Math.max(1, question.keywords.length));
+  const correct = grading ? grading.correct : fallbackCorrect;
+  const feedbackText = grading?.feedback || `${question.explanation} 参考答案：${question.sampleAnswer}`;
+  const score = grading?.score ?? Math.min(100, Math.round((hitCount / Math.max(1, question.keywords.length)) * 100));
 
-  recordQuizAnswer(answer || "未填写", correct);
-  showQuizFeedback(correct, `${question.explanation} 参考答案：${question.sampleAnswer}`, getQuestionCorrectAnswer(question));
+  recordQuizAnswer(answer || "未填写", correct, {
+    score,
+    feedback: feedbackText,
+    missingPoints: grading?.missingPoints || [],
+    reason: grading?.reason || "",
+  });
+  showQuizFeedback(correct, feedbackText, getQuestionCorrectAnswer(question), {
+    question,
+    score,
+    missingPoints: grading?.missingPoints || [],
+  });
   refreshAfterQuizAnswer();
 }
 
@@ -6928,6 +7215,43 @@ function submitMatchQuizAnswer() {
   recordQuizAnswer(selectedAnswer, correct);
   showQuizFeedback(correct, question.explanation, getQuestionCorrectAnswer(question));
   refreshAfterQuizAnswer();
+}
+
+function createVariantQuestionFromCurrent() {
+  const studyModule = getStudyModule();
+  const question = getCurrentQuizQuestion();
+  if (!question) return;
+  const topic = getKnowledgeTopic(question.topic);
+  const related = Array.from(getRelatedTopicIds(question.topic))
+    .map((topicId) => getKnowledgeTopic(topicId))
+    .filter((node) => node && node.id !== topic?.id)[0];
+  const variant = normalizeStudyQuestion({
+    id: createId("variant"),
+    topic: topic?.id || question.topic,
+    type: "short",
+    difficulty: question.difficulty === "基础" ? "中等" : question.difficulty,
+    prompt: related
+      ? `请结合“${topic.label}”和“${related.label}”的关系，说明这两个知识点为什么需要一起复习。`
+      : `换一种说法解释“${topic?.label || question.topic}”，并补充一个应用场景。`,
+    keywords: Array.from(new Set([...(topic?.keywords || []), topic?.label, related?.label].filter(Boolean))).slice(0, 6),
+    sampleAnswer: related
+      ? `${topic.label} 的核心是：${topic.summary}。它与 ${related.label} 的关系可以从知识图谱中的关联边和资料原文中理解。`
+      : topic?.summary || question.sampleAnswer,
+    explanation: related
+      ? `这道变式题考查概念迁移：不仅要知道 ${topic.label}，还要能说明它与 ${related.label} 的联系。`
+      : `这道变式题考查你是否能脱离原题复述核心概念。`,
+    source: topic?.source || question.source,
+    sourceSnippet: getQuestionSourceSnippet(question),
+  }, studyModule.graph.nodes);
+
+  studyModule.quiz.questions = uniqueQuestions([variant, ...studyModule.quiz.questions]);
+  studyModule.quiz.scope = variant.topic;
+  studyModule.quiz.mode = "adaptive";
+  studyModule.quiz.difficulty = "all";
+  studyModule.quiz.cursor = 0;
+  studyModule.activeQuizTopic = variant.topic;
+  saveWorkspace();
+  renderQuizModule();
 }
 
 function generateQuizForTopic(topicId, difficulty = "all") {
@@ -6969,12 +7293,28 @@ function handleQuizActionButton(quizActionButton) {
     generateQuizForTopic(currentNodeTitle);
   }
   if (action === "generate-filtered") {
+    const mode = document.querySelector("#quiz-mode-select")?.value || getStudyModule().quiz.mode || "adaptive";
     const scope = document.querySelector("#quiz-scope-select")?.value || getStudyModule().selectedNodeId;
     const difficulty = document.querySelector("#quiz-difficulty-select")?.value || "all";
+    getStudyModule().quiz.mode = mode;
     generateQuizForTopic(scope === "all" ? getStudyModule().selectedNodeId : scope, difficulty);
   }
   if (action === "next") moveQuizCursor(1);
   if (action === "reset") generateQuizForTopic(getStudyModule().quiz.scope || getStudyModule().selectedNodeId);
+  if (action === "open-topic") {
+    const question = getCurrentQuizQuestion();
+    if (question?.topic) selectKnowledgeNode(question.topic);
+    showView("map");
+  }
+  if (action === "variant") createVariantQuestionFromCurrent();
+  if (action === "review-mode") {
+    const studyModule = getStudyModule();
+    studyModule.quiz.mode = "review";
+    studyModule.quiz.scope = "all";
+    studyModule.quiz.cursor = 0;
+    saveWorkspace();
+    renderQuizModule();
+  }
   if (action === "submit-multi") submitMultiQuizAnswer();
   if (action === "submit-short") submitShortQuizAnswer();
   if (action === "submit-match") submitMatchQuizAnswer();
@@ -7178,12 +7518,12 @@ function buildStudyGenerationPrompt(documents) {
     "JSON 结构：",
     "{",
     '  "graph": {',
-    '    "nodes": [{"id":"知识点唯一中文名","label":"显示名","summary":"60字内解释","chapter":"章节","difficulty":"基础|中等|较难","source":"资料出处","examples":["例子"],"keywords":["关键词"],"mastery":40}],',
+    '    "nodes": [{"id":"知识点唯一中文名","label":"显示名","summary":"60字内解释","chapter":"章节","difficulty":"基础|中等|较难","source":"资料出处","sourceSnippets":["原文证据片段"],"examples":["例子"],"keywords":["关键词"],"mastery":40}],',
     '    "edges": [{"source":"节点id","target":"节点id","relation":"关系","weight":0.6}]',
     "  },",
     '  "quiz": {',
     '    "questions": [',
-    '      {"id":"q1","topic":"节点id","type":"choice|multi|judge|short|match","difficulty":"基础|中等|较难","prompt":"题干","options":["A","B"],"answer":0,"keywords":["关键词"],"sampleAnswer":"参考答案","explanation":"解析","source":"资料出处"},',
+    '      {"id":"q1","topic":"节点id","type":"choice|multi|judge|short|match","difficulty":"基础|中等|较难","prompt":"题干","options":["A","B"],"answer":0,"keywords":["关键词"],"sampleAnswer":"参考答案","explanation":"解析","source":"资料出处","sourceSnippet":"原文证据片段"},',
     '      {"id":"q2","topic":"节点id","type":"multi","difficulty":"中等","prompt":"题干","options":["A","B","C"],"answer":[0,2],"explanation":"解析"},',
     '      {"id":"q3","topic":"节点id","type":"match","difficulty":"中等","prompt":"题干","pairs":[["概念","解释"]],"explanation":"解析"}',
     "    ]",
@@ -7191,6 +7531,7 @@ function buildStudyGenerationPrompt(documents) {
     '  "recommendations": [{"topic":"节点id","title":"复习建议标题","detail":"具体建议"}]',
     "}",
     "质量要求：8-16 个节点，边不少于 6 条，覆盖定义、方法、指标、应用场景，题型必须包含单选、多选、判断、简答、概念匹配。",
+    "题目要求：至少 3 道题考查两个知识点之间的关系或对比；每道题都要有 source/sourceSnippet，解析要说明为什么错选项不合适。",
     `资料标题：${titles}`,
   ].join("\n");
 }
@@ -7343,6 +7684,7 @@ function createQuestionsFromGraph(graph, documents = [], engine = "local-rules")
         answer: 0,
         explanation: `“${node.label}”的核心解释来自 ${node.source}：${node.summary}`,
         source: node.source,
+        sourceSnippet: (node.sourceSnippets || [])[0] || (node.examples || [])[0] || node.summary,
       }, graph.nodes),
       normalizeStudyQuestion({
         id: `auto-judge-${node.id}`,
@@ -7353,6 +7695,7 @@ function createQuestionsFromGraph(graph, documents = [], engine = "local-rules")
         answer: Boolean(relatedNode),
         explanation: relatedNode ? `图谱中二者通过“${edge?.relation || "相关"}”相连。` : "当前节点暂未发现明确关联。",
         source: node.source,
+        sourceSnippet: (node.sourceSnippets || [])[0] || node.summary,
       }, graph.nodes),
     ];
   });
@@ -7382,6 +7725,7 @@ function createDirectQuestionsForNode(node, preferredDifficulty = "") {
       answer: 0,
       explanation: `资料中对“${node.label}”的解释是：${node.summary}`,
       source: node.source,
+      sourceSnippet: (node.sourceSnippets || [])[0] || (node.examples || [])[0] || node.summary,
     }, graphNodes),
     normalizeStudyQuestion({
       id: `direct-judge-${node.id}`,
@@ -7392,6 +7736,7 @@ function createDirectQuestionsForNode(node, preferredDifficulty = "") {
       answer: true,
       explanation: `知识图谱会把“${node.label}”与相关节点、原文出处和例子一起呈现。`,
       source: node.source,
+      sourceSnippet: (node.sourceSnippets || [])[0] || node.summary,
     }, graphNodes),
     normalizeStudyQuestion({
       id: `direct-short-${node.id}`,
@@ -7403,6 +7748,7 @@ function createDirectQuestionsForNode(node, preferredDifficulty = "") {
       sampleAnswer: node.summary,
       explanation: `简答题重点看是否提到 ${[node.label, ...(node.keywords || [])].slice(0, 3).join("、")}。`,
       source: node.source,
+      sourceSnippet: (node.sourceSnippets || [])[0] || node.summary,
     }, graphNodes),
   ];
 }
@@ -10121,8 +10467,9 @@ document.addEventListener("change", (event) => {
     renderKnowledgeModule();
   }
 
-  if (event.target.matches("#quiz-scope-select, #quiz-difficulty-select")) {
+  if (event.target.matches("#quiz-mode-select, #quiz-scope-select, #quiz-difficulty-select")) {
     const studyModule = getStudyModule();
+    studyModule.quiz.mode = document.querySelector("#quiz-mode-select")?.value || "adaptive";
     studyModule.quiz.scope = document.querySelector("#quiz-scope-select")?.value || "all";
     studyModule.quiz.difficulty = document.querySelector("#quiz-difficulty-select")?.value || "all";
     studyModule.quiz.cursor = 0;

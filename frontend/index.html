@@ -689,6 +689,13 @@
                 <span class="progress-badge" id="quiz-difficulty">难度 中等</span>
               </div>
               <div class="quiz-generator-bar">
+                <select id="quiz-mode-select" aria-label="练习模式">
+                  <option value="adaptive">自适应练习</option>
+                  <option value="diagnostic">快速诊断</option>
+                  <option value="weak">薄弱巩固</option>
+                  <option value="review">今日复习</option>
+                  <option value="exam">考前冲刺</option>
+                </select>
                 <select id="quiz-scope-select" aria-label="出题范围"></select>
                 <select id="quiz-difficulty-select" aria-label="题目难度">
                   <option value="all">全部难度</option>
@@ -711,6 +718,7 @@
               <div class="answer-feedback" id="answer-feedback">
                 选择答案后显示解析。
               </div>
+              <div class="quiz-session-report" id="quiz-session-report"></div>
             </section>
 
             <aside class="panel quiz-side">
@@ -726,6 +734,7 @@
                 <span>用户访谈</span>
                 <span>SUS 量表</span>
               </div>
+              <div class="quiz-review-queue" id="quiz-review-list"></div>
               <button class="primary-action full" data-quiz-action="next">
                 <i data-lucide="arrow-right"></i>
                 <span>下一题</span>

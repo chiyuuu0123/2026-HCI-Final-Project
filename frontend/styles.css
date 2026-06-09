@@ -3242,6 +3242,23 @@ h3 {
   opacity: 0.86;
 }
 
+.answer-feedback blockquote {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid currentColor;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.58);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.quiz-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .answer-feedback.correct {
   background: var(--teal-soft);
   color: var(--teal);
@@ -3276,6 +3293,39 @@ h3 {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.quiz-session-report {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 28px 0;
+}
+
+.quiz-session-report > div {
+  min-height: 74px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.quiz-session-report strong,
+.quiz-session-report span {
+  display: block;
+}
+
+.quiz-session-report span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.quiz-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
 }
 
 .match-row {
@@ -3318,6 +3368,42 @@ h3 {
 .todo-list .weak-topic {
   background: var(--coral-soft);
   color: var(--coral);
+}
+
+.quiz-review-queue {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.quiz-review-queue p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.quiz-review-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.quiz-review-item:hover {
+  border-color: var(--coral);
+  background: var(--coral-soft);
+}
+
+.quiz-review-item span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .quiz-side {
@@ -5200,6 +5286,10 @@ button.review-row:hover {
     flex-wrap: wrap;
   }
 
+  .quiz-session-report {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .main-area {
     grid-template-rows: auto minmax(0, 1fr);
     overflow: visible;
@@ -5262,6 +5352,11 @@ button.review-row:hover {
     flex: none;
     width: 100%;
     min-width: 0;
+  }
+
+  .quiz-session-report {
+    grid-template-columns: 1fr;
+    margin-inline: 18px;
   }
 
   .top-actions {
