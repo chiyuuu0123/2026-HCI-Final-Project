@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 contextBridge.exposeInMainWorld("mindStudy", {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
+  getFrontendEnv: () => ipcRenderer.invoke("app:get-frontend-env"),
   wakeMainWindow: () => ipcRenderer.send("companion:wake-main"),
   setCompanionMode: (mode) => ipcRenderer.invoke("companion:set-mode", mode),
   getCompanionBounds: () => ipcRenderer.invoke("companion:get-bounds"),

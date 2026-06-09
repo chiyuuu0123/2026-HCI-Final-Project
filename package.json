@@ -14,7 +14,7 @@
     "voice:test": "powershell -ExecutionPolicy Bypass -File scripts/test-longlong-voice-api.ps1",
     "start": "electron .",
     "dev": "electron .",
-    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check b_deepseek_module/ocrImageExtractor.js && node --check scripts/copy-assets.js"
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check frontend/vision.js && node --check b_deepseek_module/ocrImageExtractor.js && node --check scripts/copy-assets.js"
   },
   "keywords": [
     "electron",
@@ -28,6 +28,7 @@
     "electron": "^42.3.2"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35",
     "lucide": "^1.17.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.0.227",

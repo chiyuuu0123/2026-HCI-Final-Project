@@ -1496,11 +1496,39 @@ function configurePermissions() {
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => permission === "media");
 }
 
+function parseFrontendEnv(content) {
+  return Object.fromEntries(
+    String(content || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .map((line) => {
+        const separatorIndex = line.indexOf("=");
+        if (separatorIndex < 0) return [line, ""];
+        return [
+          line.slice(0, separatorIndex).trim(),
+          line.slice(separatorIndex + 1).trim().replace(/^["']|["']$/g, ""),
+        ];
+      })
+      .filter(([key]) => key),
+  );
+}
+
+function readFrontendEnv() {
+  try {
+    return parseFrontendEnv(fsSync.readFileSync(path.join(__dirname, "..", "frontend", ".env"), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
 ipcMain.handle("app:get-info", () => ({
   name: app.getName(),
   version: app.getVersion(),
   platform: process.platform,
 }));
+
+ipcMain.handle("app:get-frontend-env", () => readFrontendEnv());
 
 ipcMain.handle("study-timer:get", () => {
   return getStudyTimerSnapshot();

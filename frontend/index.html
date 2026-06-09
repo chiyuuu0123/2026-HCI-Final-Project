@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="./styles.css" />
     <script src="./vendor/lucide.min.js" defer></script>
     <script src="./vendor/pdf-lib.min.js" defer></script>
+    <script type="module" src="./vision.js"></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -761,6 +762,7 @@
               </div>
               <div class="camera-stage">
                 <video id="camera-preview" playsinline muted></video>
+                <canvas id="camera-landmark-overlay" aria-hidden="true"></canvas>
                 <div class="camera-placeholder" id="camera-placeholder">
                   <i data-lucide="camera"></i>
                   <span>摄像头未开启</span>
@@ -785,6 +787,10 @@
                   <span id="camera-focus-label">等待识别</span>
                 </div>
               </div>
+              <div class="vision-detail-grid">
+                <span id="camera-emotion-detail">等待面部状态识别</span>
+                <span id="camera-gesture-detail">等待手势识别</span>
+              </div>
             </section>
             <section class="panel music-panel">
               <span class="tag muted">音乐推荐</span>
@@ -802,10 +808,9 @@
               <span class="tag muted">手势识别</span>
               <h3 id="gesture-status-title">等待摄像头</h3>
               <div class="gesture-grid">
-                <span class="active">张手<br />下一页</span>
-                <span>握拳<br />暂停</span>
-                <span>点赞<br />确认</span>
-                <span>比 V<br />收藏</span>
+                <span data-gesture-id="left-thumb-click">&#24038;&#25163;&#28857;&#36190;<br />&#40736;&#26631;&#24038;&#38190;</span>
+                <span data-gesture-id="right-index-pointer">&#21491;&#25163;&#39135;&#25351;<br />&#40736;&#26631;&#31227;&#21160;</span>
+                <span data-gesture-id="left-fist-right-index-scroll">&#24038;&#25331; + &#21491;&#39135;&#25351;<br />&#28378;&#36718;&#28369;&#21160;</span>
               </div>
             </section>
           </div>

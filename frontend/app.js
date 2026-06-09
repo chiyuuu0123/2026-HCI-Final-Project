@@ -221,6 +221,22 @@ const cameraState = {
   sampleTimer: null,
   canvas: null,
   lastBrightness: 0,
+  visionReady: false,
+  visionError: "",
+  visionInFlight: false,
+  lastVisionResultAt: 0,
+  mouse: {
+    x: 0,
+    y: 0,
+    visible: false,
+    lastClickAt: 0,
+    lastScrollY: null,
+    lastScrollAt: 0,
+  },
+};
+const gestureRuntimeConfig = {
+  visionFrameIntervalMs: 180,
+  showVisionLandmarks: false,
 };
 const pdfInkState = {
   enabled: false,
@@ -2758,6 +2774,7 @@ function getCameraUi() {
     topButton: document.querySelector("#toggle-camera"),
     topText: document.querySelector("#camera-status-text"),
     video: document.querySelector("#camera-preview"),
+    landmarkOverlay: document.querySelector("#camera-landmark-overlay"),
     placeholder: document.querySelector("#camera-placeholder"),
     startButton: document.querySelector("#start-camera"),
     stopButton: document.querySelector("#stop-camera"),
@@ -2766,6 +2783,8 @@ function getCameraUi() {
     focusScore: document.querySelector("#camera-focus-score"),
     focusLabel: document.querySelector("#camera-focus-label"),
     gestureTitle: document.querySelector("#gesture-status-title"),
+    emotionDetail: document.querySelector("#camera-emotion-detail"),
+    gestureDetail: document.querySelector("#camera-gesture-detail"),
   };
 }
 
@@ -2806,6 +2825,8 @@ function setCameraStatus(status, detail = "") {
 function updateCameraMetrics(brightness) {
   const ui = getCameraUi();
   const normalized = Math.max(0, Math.min(100, Math.round((brightness / 255) * 100)));
+  if (cameraState.lastVisionResultAt && Date.now() - cameraState.lastVisionResultAt < 1200) return;
+
   let score = 74;
   let label = "光线良好";
   let title = "当前状态：专注识别中";
@@ -2834,6 +2855,326 @@ function updateCameraMetrics(brightness) {
   );
 }
 
+function getLonglongMusicForEmotion(emotionId, normalizedBrightness) {
+  if (emotionId === "tired") return "雨声 + 低速钢琴，建议先休息 3 分钟再继续。";
+  if (emotionId === "confused") return "低干扰白噪音，适合边听边让 AI 解释当前资料。";
+  if (emotionId === "relaxed") return "轻钢琴 + 自然环境音，保持当前学习节奏。";
+  if (emotionId === "away") return "暂停音乐，等你回到学习状态后继续。";
+  return getLonglongMusicForBrightness(normalizedBrightness);
+}
+
+function readEnvNumber(env, key, fallback, min, max) {
+  const value = Number(env?.[key]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function readEnvBoolean(env, key, fallback) {
+  const value = String(env?.[key] ?? "").trim().toLowerCase();
+  if (!value) return fallback;
+  if (["1", "true", "yes", "on"].includes(value)) return true;
+  if (["0", "false", "no", "off"].includes(value)) return false;
+  return fallback;
+}
+
+async function loadGestureRuntimeConfig() {
+  try {
+    const env = await window.mindStudy?.getFrontendEnv?.();
+    gestureRuntimeConfig.visionFrameIntervalMs = readEnvNumber(env, "VISION_FRAME_INTERVAL_MS", 180, 60, 2000);
+    gestureRuntimeConfig.showVisionLandmarks = readEnvBoolean(env, "SHOW_VISION_LANDMARKS", false);
+    window.MindStudyVision?.configure?.({
+      frameIntervalMs: gestureRuntimeConfig.visionFrameIntervalMs,
+    });
+  } catch (error) {
+    console.warn("Failed to load frontend gesture config.", error);
+  }
+
+  return { ...gestureRuntimeConfig };
+}
+
+function updateGestureCards(gestureId) {
+  document.querySelectorAll("[data-gesture-id]").forEach((card) => {
+    card.classList.toggle("active", card.dataset.gestureId === gestureId);
+  });
+}
+
+function setupGestureCategoryLabels() {
+  const labels = {
+    "left-thumb-click": ["\u5de6\u624b\u70b9\u8d5e", "\u9f20\u6807\u5de6\u952e"],
+    "right-index-pointer": ["\u53f3\u624b\u98df\u6307", "\u9f20\u6807\u79fb\u52a8"],
+    "left-fist-right-index-scroll": ["\u5de6\u62f3 + \u53f3\u98df\u6307", "\u6eda\u8f6e\u6ed1\u52a8"],
+  };
+
+  Object.entries(labels).forEach(([gestureId, lines]) => {
+    const card = document.querySelector(`[data-gesture-id="${gestureId}"]`);
+    if (!card) return;
+    card.replaceChildren(lines[0], document.createElement("br"), lines[1]);
+  });
+}
+
+function resizeVisionOverlay(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const width = Math.max(1, Math.round(rect.width * dpr));
+  const height = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  return { width: rect.width, height: rect.height, dpr };
+}
+
+function landmarkToCanvasPoint(landmark, width, height) {
+  return {
+    x: (1 - Number(landmark.x || 0)) * width,
+    y: Number(landmark.y || 0) * height,
+  };
+}
+
+function drawLandmarkPoint(context, landmark, width, height, color, radius = 2.8) {
+  const point = landmarkToCanvasPoint(landmark, width, height);
+  context.beginPath();
+  context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  context.fillStyle = color;
+  context.fill();
+}
+
+function drawLandmarkConnection(context, landmarks, from, to, width, height, color) {
+  const start = landmarks?.[from];
+  const end = landmarks?.[to];
+  if (!start || !end) return;
+
+  const startPoint = landmarkToCanvasPoint(start, width, height);
+  const endPoint = landmarkToCanvasPoint(end, width, height);
+  context.beginPath();
+  context.moveTo(startPoint.x, startPoint.y);
+  context.lineTo(endPoint.x, endPoint.y);
+  context.strokeStyle = color;
+  context.lineWidth = 2;
+  context.stroke();
+}
+
+function clearVisionLandmarks() {
+  const canvas = getCameraUi().landmarkOverlay;
+  const context = canvas?.getContext("2d");
+  if (!canvas || !context) return;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function ensureGestureMouseCursor() {
+  let cursor = document.querySelector("#gesture-mouse-cursor");
+  if (cursor) return cursor;
+
+  cursor = document.createElement("div");
+  cursor.id = "gesture-mouse-cursor";
+  cursor.className = "gesture-mouse-cursor";
+  cursor.setAttribute("aria-hidden", "true");
+  document.body.appendChild(cursor);
+  return cursor;
+}
+
+function setGestureMouseVisible(visible) {
+  const cursor = ensureGestureMouseCursor();
+  cameraState.mouse.visible = visible;
+  cursor.classList.toggle("active", visible);
+}
+
+function moveGestureMouseTo(x, y) {
+  const cursor = ensureGestureMouseCursor();
+  const nextX = Math.max(8, Math.min(window.innerWidth - 8, x));
+  const nextY = Math.max(8, Math.min(window.innerHeight - 8, y));
+  cameraState.mouse.x = nextX;
+  cameraState.mouse.y = nextY;
+  cursor.style.transform = `translate(${nextX}px, ${nextY}px)`;
+  setGestureMouseVisible(true);
+}
+
+function moveGestureMouseFromPoint(point) {
+  if (!point) return;
+  moveGestureMouseTo((1 - Number(point.x || 0)) * window.innerWidth, Number(point.y || 0) * window.innerHeight);
+}
+
+function clickGestureMouseTarget() {
+  const now = Date.now();
+  if (now - cameraState.mouse.lastClickAt < 650) return false;
+  cameraState.mouse.lastClickAt = now;
+
+  const x = cameraState.mouse.x || window.innerWidth / 2;
+  const y = cameraState.mouse.y || window.innerHeight / 2;
+  const target = document.elementFromPoint(x, y);
+  const clickable = target?.closest?.("button, a, input, textarea, select, [role='button'], [data-node], [data-view], [data-view-jump]");
+  if (!clickable || clickable.id === "gesture-mouse-cursor") return false;
+
+  clickable.dispatchEvent(new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+  }));
+  return true;
+}
+
+function getGestureScrollTarget() {
+  let element = document.elementFromPoint(cameraState.mouse.x || window.innerWidth / 2, cameraState.mouse.y || window.innerHeight / 2);
+  while (element && element !== document.body) {
+    const style = window.getComputedStyle(element);
+    const canScroll = /(auto|scroll)/.test(`${style.overflowY} ${style.overflow}`);
+    if (canScroll && element.scrollHeight > element.clientHeight) return element;
+    element = element.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+function scrollByRightIndex(point) {
+  if (!point) return false;
+  const currentY = Number(point.y || 0);
+  const previousY = cameraState.mouse.lastScrollY;
+  cameraState.mouse.lastScrollY = currentY;
+  if (previousY === null) return false;
+
+  const delta = currentY - previousY;
+  if (Math.abs(delta) < 0.018) return false;
+
+  const now = Date.now();
+  if (now - cameraState.mouse.lastScrollAt < 60) return false;
+  cameraState.mouse.lastScrollAt = now;
+
+  const scrollAmount = Math.max(-220, Math.min(220, delta * 1600));
+  const target = getGestureScrollTarget();
+  target.scrollBy({ top: scrollAmount, behavior: "auto" });
+  return true;
+}
+
+function drawVisionLandmarks(result) {
+  const canvas = getCameraUi().landmarkOverlay;
+  const context = canvas?.getContext("2d");
+  if (!canvas || !context) return;
+
+  if (!gestureRuntimeConfig.showVisionLandmarks || !result) {
+    clearVisionLandmarks();
+    return;
+  }
+
+  const { width, height, dpr } = resizeVisionOverlay(canvas);
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  context.clearRect(0, 0, width, height);
+
+  const handConnections = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [5, 9], [9, 10], [10, 11], [11, 12],
+    [9, 13], [13, 14], [14, 15], [15, 16],
+    [13, 17], [0, 17], [17, 18], [18, 19], [19, 20],
+  ];
+
+  (result.hands || []).forEach((hand) => {
+    const landmarks = hand.landmarks || [];
+    handConnections.forEach(([from, to]) => {
+      drawLandmarkConnection(context, landmarks, from, to, width, height, "rgba(24, 143, 132, 0.8)");
+    });
+    landmarks.forEach((landmark) => {
+      drawLandmarkPoint(context, landmark, width, height, "#20d0bf", 3.2);
+    });
+  });
+
+  (result.faceLandmarks || []).forEach((landmark) => {
+    drawLandmarkPoint(context, landmark, width, height, "rgba(255, 190, 80, 0.78)", 1.45);
+  });
+}
+
+function updateCameraVisionUi(result) {
+  if (!result) return;
+  cameraState.lastVisionResultAt = Date.now();
+
+  const ui = getCameraUi();
+  const emotion = result.emotion || {};
+  const gesture = result.gesture || {};
+  const normalizedBrightness = Math.max(0, Math.min(100, Math.round((cameraState.lastBrightness / 255) * 100)));
+  const focusScore = Math.max(0, Math.min(100, Math.round(Number(emotion.focusScore) || 0)));
+  const gestureConfidence = Math.round((Number(gesture.confidence) || 0) * 100);
+  const emotionConfidence = Math.round((Number(emotion.confidence) || 0) * 100);
+
+  if (ui.focusScore) ui.focusScore.textContent = String(focusScore || "--");
+  if (ui.focusLabel) ui.focusLabel.textContent = emotion.label || "识别中";
+  if (ui.moodTitle) ui.moodTitle.textContent = `当前状态：${emotion.label || "识别中"}`;
+  if (ui.gestureTitle) {
+    ui.gestureTitle.textContent = gesture.id && gesture.id !== "none"
+      ? `${gesture.label} · ${gesture.action || "已识别"}`
+      : "摄像头已开启，等待手势";
+  }
+  if (ui.emotionDetail) {
+    ui.emotionDetail.textContent = `${emotion.detail || "正在分析面部状态"} · 置信度 ${emotionConfidence}%`;
+  }
+  if (ui.gestureDetail) {
+    ui.gestureDetail.textContent = gesture.id && gesture.id !== "none"
+      ? `${gesture.label}：${gesture.action || "仅展示"} · 置信度 ${gestureConfidence}%`
+      : "未检测到稳定手势";
+  }
+
+  updateGestureCards(gesture.id || "none");
+  updateLonglongMood(
+    emotion.label || "摄像头识别中",
+    emotion.detail || "我会结合表情和手势给出提醒。",
+    getLonglongMusicForEmotion(emotion.id, normalizedBrightness),
+  );
+}
+
+function rememberGestureAction(message) {
+  const ui = getCameraUi();
+  if (ui.gestureDetail) ui.gestureDetail.textContent = message;
+  updateLonglongMood("手势已触发", message);
+}
+
+function handleMouseControlGesture(gesture) {
+  if (!gesture?.id || gesture.id === "none") {
+    cameraState.mouse.lastScrollY = null;
+    return;
+  }
+  if ((Number(gesture.confidence) || 0) < 0.5) return;
+
+  if (gesture.mode === "scroll") {
+    moveGestureMouseFromPoint(gesture.point);
+    if (scrollByRightIndex(gesture.point)) {
+      rememberGestureAction("\u624b\u52bf\u89e6\u53d1\uff1a\u6eda\u8f6e\u4e0a\u4e0b\u6ed1\u52a8");
+    }
+    return;
+  }
+
+  cameraState.mouse.lastScrollY = null;
+
+  if (gesture.mode === "click") {
+    if (clickGestureMouseTarget()) {
+      rememberGestureAction("\u624b\u52bf\u89e6\u53d1\uff1a\u9f20\u6807\u5de6\u952e");
+    }
+    return;
+  }
+
+  if (gesture.mode === "point") {
+    moveGestureMouseFromPoint(gesture.point);
+  }
+}
+
+async function updateVisionRecognition(video) {
+  if (!window.MindStudyVision?.analyzeFrame || cameraState.visionInFlight) return;
+
+  cameraState.visionInFlight = true;
+  try {
+    const result = await window.MindStudyVision.analyzeFrame(video, {
+      brightness: cameraState.lastBrightness,
+    });
+    if (result) {
+      cameraState.visionReady = true;
+      cameraState.visionError = "";
+      updateCameraVisionUi(result);
+      drawVisionLandmarks(result);
+      handleMouseControlGesture(result.gesture);
+    }
+  } catch (error) {
+    cameraState.visionError = error.message || "视觉识别不可用";
+    const ui = getCameraUi();
+    if (ui.emotionDetail) ui.emotionDetail.textContent = `MediaPipe 加载失败：${cameraState.visionError}`;
+  } finally {
+    cameraState.visionInFlight = false;
+  }
+}
+
 function sampleCameraFrame() {
   const ui = getCameraUi();
   const video = ui.video;
@@ -2855,6 +3196,7 @@ function sampleCameraFrame() {
   const brightness = total / (pixels.length / 4);
   cameraState.lastBrightness = brightness;
   updateCameraMetrics(brightness);
+  updateVisionRecognition(video);
 }
 
 async function startCamera() {
@@ -2883,9 +3225,24 @@ async function startCamera() {
       await ui.video.play();
     }
 
+    await loadGestureRuntimeConfig();
     setCameraStatus("active");
+    if (window.MindStudyVision?.warmup) {
+      window.MindStudyVision.warmup()
+        .then(() => {
+          cameraState.visionReady = true;
+          const currentUi = getCameraUi();
+          if (currentUi.emotionDetail) currentUi.emotionDetail.textContent = "MediaPipe 面部状态识别已就绪";
+          if (currentUi.gestureDetail) currentUi.gestureDetail.textContent = "MediaPipe 手势识别已就绪";
+        })
+        .catch((error) => {
+          cameraState.visionError = error.message || "MediaPipe 模型加载失败";
+          const currentUi = getCameraUi();
+          if (currentUi.emotionDetail) currentUi.emotionDetail.textContent = `MediaPipe 加载失败：${cameraState.visionError}`;
+        });
+    }
     window.clearInterval(cameraState.sampleTimer);
-    cameraState.sampleTimer = window.setInterval(sampleCameraFrame, 900);
+    cameraState.sampleTimer = window.setInterval(sampleCameraFrame, gestureRuntimeConfig.visionFrameIntervalMs);
     sampleCameraFrame();
   } catch (error) {
     stopCamera();
@@ -2900,6 +3257,8 @@ function stopCamera() {
   cameraState.sampleTimer = null;
   cameraState.stream?.getTracks().forEach((track) => track.stop());
   cameraState.stream = null;
+  cameraState.visionInFlight = false;
+  cameraState.lastVisionResultAt = 0;
 
   if (ui.video) {
     ui.video.pause();
@@ -2908,6 +3267,12 @@ function stopCamera() {
 
   if (ui.focusScore) ui.focusScore.textContent = "--";
   if (ui.focusLabel) ui.focusLabel.textContent = "等待识别";
+  if (ui.emotionDetail) ui.emotionDetail.textContent = "等待面部状态识别";
+  if (ui.gestureDetail) ui.gestureDetail.textContent = "等待手势识别";
+  updateGestureCards("none");
+  clearVisionLandmarks();
+  setGestureMouseVisible(false);
+  cameraState.mouse.lastScrollY = null;
   setCameraStatus("idle");
 }
 
@@ -8428,6 +8793,8 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("DOMContentLoaded", () => {
+  loadGestureRuntimeConfig();
+  setupGestureCategoryLabels();
   applyAppZoom();
   initStudyTimer();
   applyLonglongPosition();
@@ -8444,6 +8811,8 @@ window.addEventListener("DOMContentLoaded", () => {
   syncAiStatusButtons();
   syncLonglongAssistant();
   scheduleLonglongSleep();
+  showView("focus");
+  startCamera();
 
   window.mindStudy?.getAppInfo?.().then((info) => {
     document.body.dataset.platform = info.platform;
