@@ -271,6 +271,11 @@ const RAG_MAX_CHUNK_SIZE = 4000;
 const RAG_MIN_MAX_CHUNKS = 2;
 const RAG_MAX_MAX_CHUNKS = 12;
 const VOICE_COMMAND_MAX_RECORDING_MS = 14000;
+const VOICE_COMMAND_MIN_RECORDING_MS = 500;
+const VOICE_COMMAND_SILENCE_GRACE_MS = 900;
+const VOICE_COMMAND_MONITOR_INTERVAL_MS = 120;
+const VOICE_COMMAND_SPEECH_THRESHOLD = 0.018;
+const VOICE_COMMAND_DUPLICATE_WINDOW_MS = 1800;
 const VOICE_COMMAND_TRANSCRIBE_PROMPT = "这是一段中文语音控制指令，可能包含打开资料、切换页面、学习资料、生成知识图谱等操作。请只输出用户说的话。";
 const cameraState = {
   stream: null,
@@ -378,13 +383,25 @@ let longlongSpriteRestoreTimer = null;
 let longlongSleepTimer = null;
 const voiceCommandState = {
   open: false,
+  listening: false,
   recording: false,
   recognizing: false,
   mediaRecorder: null,
   stream: null,
+  audioContext: null,
+  audioSource: null,
+  analyser: null,
+  audioLevelData: null,
   chunks: [],
   stopTimer: null,
+  monitorTimer: null,
   sessionId: 0,
+  recordingStartedAt: 0,
+  lastSpeechAt: 0,
+  hasSpeech: false,
+  cancelCurrentRecording: false,
+  lastExecutedTranscript: "",
+  lastExecutedAt: 0,
 };
 const graphPanState = {
   active: false,
@@ -5252,26 +5269,32 @@ function getVoiceCommandElements() {
 
 function setVoiceCommandStatus(titleText, detailText = "", tone = "ready") {
   const elements = getVoiceCommandElements();
-  const titleValue = titleText || "等待语音指令";
+  const titleValue = titleText || "持续监听中";
 
   if (elements.title) elements.title.textContent = titleValue;
-  if (elements.transcript) elements.transcript.textContent = detailText || "按下开始后说出操作。";
-  if (elements.toggleText) elements.toggleText.textContent = voiceCommandState.recording ? "正在听" : "语音控制";
+  if (elements.transcript) elements.transcript.textContent = detailText || "只会响应可执行的控制指令。";
+  if (elements.toggleText) {
+    elements.toggleText.textContent = voiceCommandState.recognizing
+      ? "识别中"
+      : voiceCommandState.listening
+        ? "监听中"
+        : "语音控制";
+  }
   if (elements.panel) {
     elements.panel.classList.toggle("listening", tone === "listening");
     elements.panel.classList.toggle("ready", tone === "ready");
     elements.panel.classList.toggle("warning", tone === "warning");
   }
   if (elements.toggle) {
-    elements.toggle.classList.toggle("active", voiceCommandState.open);
-    elements.toggle.classList.toggle("recording", voiceCommandState.recording);
+    elements.toggle.classList.toggle("active", voiceCommandState.open || voiceCommandState.listening);
+    elements.toggle.classList.toggle("recording", voiceCommandState.listening || voiceCommandState.recording);
   }
   if (elements.recordLabel) {
-    elements.recordLabel.textContent = voiceCommandState.recording ? "停止" : voiceCommandState.recognizing ? "识别中" : "开始";
+    elements.recordLabel.textContent = voiceCommandState.listening ? "暂停" : "开始";
   }
   if (elements.record) {
-    elements.record.disabled = voiceCommandState.recognizing;
-    elements.record.classList.toggle("recording", voiceCommandState.recording);
+    elements.record.disabled = false;
+    elements.record.classList.toggle("recording", voiceCommandState.listening || voiceCommandState.recording);
   }
   window.lucide?.createIcons();
 }
@@ -5282,18 +5305,18 @@ function setVoiceCommandPanelOpen(open) {
   if (elements.panel) elements.panel.hidden = !voiceCommandState.open;
 
   if (voiceCommandState.open) {
-    setVoiceCommandStatus("等待语音指令", "按下开始后说出操作。", "ready");
+    setVoiceCommandStatus(
+      voiceCommandState.listening ? "持续监听中" : "等待语音指令",
+      voiceCommandState.listening ? "说出控制指令即可执行。" : "按下开始进入持续监听。",
+      voiceCommandState.listening ? "listening" : "ready",
+    );
   } else {
     setVoiceCommandStatus("等待语音指令", "", "ready");
   }
 }
 
 function closeVoiceCommandPanel() {
-  voiceCommandState.sessionId += 1;
-  if (voiceCommandState.recording) {
-    stopVoiceCommandRecording({ cancel: true });
-  }
-  cleanupVoiceCommandStream();
+  stopVoiceCommandListening({ keepPanel: true, cancel: true });
   voiceCommandState.open = false;
   voiceCommandState.recognizing = false;
   setVoiceCommandPanelOpen(false);
@@ -5310,16 +5333,160 @@ function getVoiceRecordingMimeType() {
   return candidates.find((mimeType) => MediaRecorder.isTypeSupported?.(mimeType)) || "";
 }
 
-function cleanupVoiceCommandStream() {
+function cleanupVoiceCommandRecorder() {
   window.clearTimeout(voiceCommandState.stopTimer);
   voiceCommandState.stopTimer = null;
-  voiceCommandState.stream?.getTracks?.().forEach((track) => track.stop());
-  voiceCommandState.stream = null;
   voiceCommandState.mediaRecorder = null;
+  voiceCommandState.recording = false;
+  voiceCommandState.recordingStartedAt = 0;
+  voiceCommandState.hasSpeech = false;
 }
 
-async function startVoiceCommandRecording() {
-  if (voiceCommandState.recording || voiceCommandState.recognizing) return;
+function cleanupVoiceCommandStream() {
+  window.clearTimeout(voiceCommandState.stopTimer);
+  window.clearInterval(voiceCommandState.monitorTimer);
+  voiceCommandState.stopTimer = null;
+  voiceCommandState.monitorTimer = null;
+  if (voiceCommandState.mediaRecorder && voiceCommandState.mediaRecorder.state !== "inactive") {
+    try {
+      voiceCommandState.mediaRecorder.stop();
+    } catch (error) {
+      console.warn("Failed to stop voice recorder", error);
+    }
+  }
+  voiceCommandState.audioSource?.disconnect?.();
+  voiceCommandState.audioContext?.close?.();
+  voiceCommandState.stream?.getTracks?.().forEach((track) => track.stop());
+  voiceCommandState.stream = null;
+  voiceCommandState.audioContext = null;
+  voiceCommandState.audioSource = null;
+  voiceCommandState.analyser = null;
+  voiceCommandState.audioLevelData = null;
+  voiceCommandState.mediaRecorder = null;
+  voiceCommandState.listening = false;
+  voiceCommandState.recording = false;
+  voiceCommandState.recognizing = false;
+  voiceCommandState.chunks = [];
+  voiceCommandState.cancelCurrentRecording = false;
+}
+
+async function setupVoiceCommandAudioAnalysis(stream) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+  if (!AudioContextClass) {
+    throw new Error("当前环境不支持持续语音监听。");
+  }
+
+  const audioContext = new AudioContextClass();
+  const audioSource = audioContext.createMediaStreamSource(stream);
+  const analyser = audioContext.createAnalyser();
+  analyser.fftSize = 1024;
+  analyser.smoothingTimeConstant = 0.25;
+  audioSource.connect(analyser);
+
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+
+  voiceCommandState.audioContext = audioContext;
+  voiceCommandState.audioSource = audioSource;
+  voiceCommandState.analyser = analyser;
+  voiceCommandState.audioLevelData = new Uint8Array(analyser.fftSize);
+}
+
+function getVoiceInputLevel() {
+  const analyser = voiceCommandState.analyser;
+  const data = voiceCommandState.audioLevelData;
+
+  if (!analyser || !data) return 0;
+
+  analyser.getByteTimeDomainData(data);
+  let sum = 0;
+
+  for (const value of data) {
+    const normalized = (value - 128) / 128;
+    sum += normalized * normalized;
+  }
+
+  return Math.sqrt(sum / data.length);
+}
+
+function startVoiceCommandSegment(sessionId) {
+  if (!voiceCommandState.listening || voiceCommandState.recording || voiceCommandState.recognizing) return;
+  if (sessionId !== voiceCommandState.sessionId || !voiceCommandState.stream) return;
+
+  try {
+    const mimeType = getVoiceRecordingMimeType();
+    const mediaRecorder = new MediaRecorder(voiceCommandState.stream, mimeType ? { mimeType } : undefined);
+    const startedAt = Date.now();
+
+    voiceCommandState.mediaRecorder = mediaRecorder;
+    voiceCommandState.chunks = [];
+    voiceCommandState.recording = true;
+    voiceCommandState.cancelCurrentRecording = false;
+    voiceCommandState.recordingStartedAt = startedAt;
+    voiceCommandState.lastSpeechAt = startedAt;
+    voiceCommandState.hasSpeech = true;
+
+    mediaRecorder.addEventListener("dataavailable", (event) => {
+      if (sessionId === voiceCommandState.sessionId && event.data?.size) {
+        voiceCommandState.chunks.push(event.data);
+      }
+    });
+
+    mediaRecorder.addEventListener("stop", () => {
+      handleVoiceCommandRecordingStopped(sessionId, mediaRecorder.mimeType || mimeType || "audio/webm");
+    }, { once: true });
+
+    mediaRecorder.start(250);
+    voiceCommandState.stopTimer = window.setTimeout(() => {
+      stopVoiceCommandRecording();
+    }, VOICE_COMMAND_MAX_RECORDING_MS);
+    setVoiceCommandStatus("正在听", "检测到语音，正在捕捉控制指令。", "listening");
+  } catch (error) {
+    stopVoiceCommandListening({ keepPanel: true, cancel: true });
+    setVoiceCommandStatus("语音监听不可用", getAiErrorMessage(error), "warning");
+  }
+}
+
+function monitorVoiceCommandInput(sessionId) {
+  if (!voiceCommandState.listening || sessionId !== voiceCommandState.sessionId) return;
+  if (voiceCommandState.recognizing) return;
+
+  const level = getVoiceInputLevel();
+  const now = Date.now();
+  const hasSpeech = level >= VOICE_COMMAND_SPEECH_THRESHOLD;
+
+  if (hasSpeech) {
+    voiceCommandState.lastSpeechAt = now;
+    voiceCommandState.hasSpeech = true;
+    if (!voiceCommandState.recording) {
+      startVoiceCommandSegment(sessionId);
+    }
+  }
+
+  if (!voiceCommandState.recording) return;
+
+  const elapsed = now - voiceCommandState.recordingStartedAt;
+  const silenceElapsed = now - voiceCommandState.lastSpeechAt;
+  const silenceReady = voiceCommandState.hasSpeech && silenceElapsed >= VOICE_COMMAND_SILENCE_GRACE_MS;
+  const longEnough = elapsed >= VOICE_COMMAND_MIN_RECORDING_MS;
+  const tooLong = elapsed >= VOICE_COMMAND_MAX_RECORDING_MS;
+
+  if (tooLong || (longEnough && silenceReady)) {
+    stopVoiceCommandRecording();
+  }
+}
+
+function startVoiceCommandMonitor(sessionId) {
+  window.clearInterval(voiceCommandState.monitorTimer);
+  voiceCommandState.monitorTimer = window.setInterval(() => {
+    monitorVoiceCommandInput(sessionId);
+  }, VOICE_COMMAND_MONITOR_INTERVAL_MS);
+}
+
+async function startVoiceCommandListening() {
+  if (voiceCommandState.listening) return;
 
   if (!window.mindStudy?.ai?.transcribeAudio) {
     throw new Error("当前环境没有语音识别接口。");
@@ -5337,30 +5504,37 @@ async function startVoiceCommandRecording() {
       autoGainControl: true,
     },
   });
-  const mimeType = getVoiceRecordingMimeType();
-  const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
   const sessionId = voiceCommandState.sessionId + 1;
 
   voiceCommandState.sessionId = sessionId;
   voiceCommandState.stream = stream;
-  voiceCommandState.mediaRecorder = mediaRecorder;
   voiceCommandState.chunks = [];
-  voiceCommandState.recording = true;
+  voiceCommandState.listening = true;
+  voiceCommandState.recording = false;
   voiceCommandState.recognizing = false;
+  voiceCommandState.lastSpeechAt = 0;
+  voiceCommandState.hasSpeech = false;
 
-  mediaRecorder.addEventListener("dataavailable", (event) => {
-    if (event.data?.size) voiceCommandState.chunks.push(event.data);
-  });
+  await setupVoiceCommandAudioAnalysis(stream);
+  setVoiceCommandPanelOpen(true);
+  startVoiceCommandMonitor(sessionId);
+  setVoiceCommandStatus("持续监听中", "说出控制指令即可执行，其他内容会被忽略。", "listening");
+}
 
-  mediaRecorder.addEventListener("stop", () => {
-    handleVoiceCommandRecordingStopped(sessionId, mediaRecorder.mimeType || mimeType || "audio/webm");
-  }, { once: true });
+async function startVoiceCommandRecording() {
+  return startVoiceCommandListening();
+}
 
-  mediaRecorder.start();
-  voiceCommandState.stopTimer = window.setTimeout(() => {
-    stopVoiceCommandRecording();
-  }, VOICE_COMMAND_MAX_RECORDING_MS);
-  setVoiceCommandStatus("正在听", "说出要执行的控制指令。", "listening");
+function stopVoiceCommandListening(options = {}) {
+  voiceCommandState.sessionId += 1;
+  if (voiceCommandState.recording) {
+    stopVoiceCommandRecording({ cancel: options.cancel !== false });
+  }
+  cleanupVoiceCommandStream();
+
+  if (options.keepPanel && voiceCommandState.open) {
+    setVoiceCommandStatus("语音监听已暂停", "按开始恢复持续监听。", "ready");
+  }
 }
 
 function stopVoiceCommandRecording(options = {}) {
@@ -5368,6 +5542,7 @@ function stopVoiceCommandRecording(options = {}) {
   window.clearTimeout(voiceCommandState.stopTimer);
   voiceCommandState.stopTimer = null;
   voiceCommandState.recording = false;
+  voiceCommandState.cancelCurrentRecording = Boolean(options.cancel);
 
   if (options.cancel) {
     voiceCommandState.chunks = [];
@@ -5376,28 +5551,34 @@ function stopVoiceCommandRecording(options = {}) {
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
   } else {
-    cleanupVoiceCommandStream();
+    cleanupVoiceCommandRecorder();
   }
 
-  setVoiceCommandStatus("正在整理语音", "录音已结束，正在准备识别。", "ready");
+  if (!options.cancel && voiceCommandState.listening) {
+    setVoiceCommandStatus("正在识别", "正在把刚才的语音转成控制指令。", "ready");
+  }
 }
 
 async function handleVoiceCommandRecordingStopped(sessionId, mimeType) {
   const chunks = voiceCommandState.chunks;
   const isCurrentSession = sessionId === voiceCommandState.sessionId;
-  cleanupVoiceCommandStream();
+  const wasCanceled = voiceCommandState.cancelCurrentRecording;
+  cleanupVoiceCommandRecorder();
   voiceCommandState.chunks = [];
+  voiceCommandState.cancelCurrentRecording = false;
 
-  if (!isCurrentSession || !chunks.length) {
+  if (!isCurrentSession || wasCanceled || !chunks.length) {
     voiceCommandState.recording = false;
     voiceCommandState.recognizing = false;
-    setVoiceCommandStatus("等待语音指令", "按下开始后说出操作。", "ready");
+    if (voiceCommandState.listening) {
+      setVoiceCommandStatus("持续监听中", "说出控制指令即可执行。", "listening");
+    }
     return;
   }
 
   voiceCommandState.recording = false;
   voiceCommandState.recognizing = true;
-  setVoiceCommandStatus("正在识别", "正在把语音转成控制指令。", "ready");
+  setVoiceCommandStatus("正在识别", "正在把刚才的语音转成控制指令。", "ready");
 
   try {
     const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
@@ -5414,21 +5595,64 @@ async function handleVoiceCommandRecordingStopped(sessionId, mimeType) {
     const transcript = normalizeVoiceCommandTranscript(result?.text);
 
     if (!transcript) {
-      throw new Error("没有识别到有效语音指令。");
+      return;
+    }
+
+    if (isDuplicateVoiceCommand(transcript)) {
+      return;
     }
 
     const commandResult = await executeVoiceCommand(transcript);
-    setVoiceCommandStatus("已执行", `${transcript}\n${commandResult}`, "ready");
+    rememberExecutedVoiceCommand(transcript);
+
+    if (voiceCommandState.open) {
+      setVoiceCommandStatus("已执行", `${transcript}\n${commandResult}`, "listening");
+    }
   } catch (error) {
-    setVoiceCommandStatus("语音控制失败", getAiErrorMessage(error), "warning");
+    if (isIgnorableVoiceCommandError(error)) {
+      if (voiceCommandState.listening) {
+        setVoiceCommandStatus("持续监听中", "说出控制指令即可执行，其他内容会被忽略。", "listening");
+      }
+      return;
+    }
+
+    if (voiceCommandState.open) {
+      setVoiceCommandStatus("语音控制失败", getAiErrorMessage(error), "warning");
+    }
   } finally {
     voiceCommandState.recognizing = false;
-    setVoiceCommandStatus(
-      document.querySelector("#voice-command-title")?.textContent || "等待语音指令",
-      document.querySelector("#voice-command-transcript")?.textContent || "",
-      document.querySelector("#voice-command-panel")?.classList.contains("warning") ? "warning" : "ready",
-    );
+    if (voiceCommandState.listening && voiceCommandState.open) {
+      setVoiceCommandStatus(
+        document.querySelector("#voice-command-title")?.textContent || "持续监听中",
+        document.querySelector("#voice-command-transcript")?.textContent || "说出控制指令即可执行。",
+        document.querySelector("#voice-command-panel")?.classList.contains("warning") ? "warning" : "listening",
+      );
+    }
   }
+}
+
+function createIgnorableVoiceCommandError(message) {
+  const error = new Error(message);
+  error.code = "VOICE_COMMAND_IGNORED";
+  return error;
+}
+
+function isIgnorableVoiceCommandError(error) {
+  return error?.code === "VOICE_COMMAND_IGNORED";
+}
+
+function isDuplicateVoiceCommand(transcript) {
+  const normalizedText = normalizeVoiceCommandText(transcript);
+  return Boolean(
+    normalizedText &&
+      normalizedText === voiceCommandState.lastExecutedTranscript &&
+      Date.now() - voiceCommandState.lastExecutedAt < VOICE_COMMAND_DUPLICATE_WINDOW_MS,
+  );
+}
+
+function rememberExecutedVoiceCommand(transcript) {
+  voiceCommandState.lastExecutedTranscript = normalizeVoiceCommandText(transcript);
+  voiceCommandState.lastExecutedAt = Date.now();
 }
 
 function normalizeVoiceCommandTranscript(value) {
@@ -5581,7 +5805,7 @@ function executeVoicePdfPageCommand(normalizedText) {
 
 async function executeVoiceCommand(transcript) {
   const normalizedText = normalizeVoiceCommandText(transcript);
-  if (!normalizedText) throw new Error("没有识别到有效语音指令。");
+  if (!normalizedText) throw createIgnorableVoiceCommandError("没有识别到有效语音指令。");
 
   if (/(关闭语音|退出语音|停止语音控制)/.test(normalizedText)) {
     closeVoiceCommandPanel();
@@ -5642,7 +5866,7 @@ async function executeVoiceCommand(transcript) {
     return `已切换到${viewTitles[view] || "目标模块"}。`;
   }
 
-  throw new Error("暂时没有匹配到可执行的语音控制指令。");
+  throw createIgnorableVoiceCommandError("暂时没有匹配到可执行的语音控制指令。");
 }
 
 function setParseStatus(text, tone = "ready") {
@@ -9765,7 +9989,15 @@ document.addEventListener("click", (event) => {
   const actionButton = event.target.closest("button");
 
   if (voiceControlToggleButton) {
-    setVoiceCommandPanelOpen(!voiceCommandState.open);
+    if (voiceCommandState.open || voiceCommandState.listening) {
+      closeVoiceCommandPanel();
+    } else {
+      startVoiceCommandRecording().catch((error) => {
+        cleanupVoiceCommandStream();
+        setVoiceCommandPanelOpen(true);
+        setVoiceCommandStatus("语音控制不可用", getAiErrorMessage(error), "warning");
+      });
+    }
     return;
   }
 
@@ -9775,12 +10007,10 @@ document.addEventListener("click", (event) => {
   }
 
   if (voiceCommandRecordButton) {
-    if (voiceCommandState.recording) {
-      stopVoiceCommandRecording();
+    if (voiceCommandState.listening || voiceCommandState.recording) {
+      stopVoiceCommandListening({ keepPanel: true, cancel: true });
     } else {
       startVoiceCommandRecording().catch((error) => {
-        voiceCommandState.recording = false;
-        voiceCommandState.recognizing = false;
         cleanupVoiceCommandStream();
         setVoiceCommandStatus("语音控制不可用", getAiErrorMessage(error), "warning");
       });
