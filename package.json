@@ -12,9 +12,13 @@
     "voice:server": "powershell -ExecutionPolicy Bypass -File scripts/start-longlong-voice-server.ps1",
     "voice:client": "powershell -ExecutionPolicy Bypass -File scripts/configure-longlong-voice-client.ps1",
     "voice:test": "powershell -ExecutionPolicy Bypass -File scripts/test-longlong-voice-api.ps1",
+    "neo4j:start": "powershell -ExecutionPolicy Bypass -File scripts/start-neo4j.ps1",
+    "neo4j:check": "powershell -ExecutionPolicy Bypass -File scripts/check-neo4j.ps1",
+    "neo4j:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-neo4j.ps1",
     "start": "electron .",
-    "dev": "electron .",
-    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check frontend/vision.js && node --check b_qwen_module/ocrImageExtractor.js && node --check b_qwen_module/qwenClient.js && node --check scripts/copy-assets.js"
+    "start:app": "electron .",
+    "dev": "npm run start:app",
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check frontend/vision.js && node --check b_qwen_module/ocrImageExtractor.js && node --check b_qwen_module/qwenClient.js && node --check b_qwen_module/knowledgeGraphService.js && node --check scripts/copy-assets.js && node --check scripts/check-neo4j.js"
   },
   "keywords": [
     "electron",
@@ -30,6 +34,7 @@
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35",
     "lucide": "^1.17.0",
+    "neo4j-driver": "^6.1.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.0.227",
     "tesseract.js": "^7.0.0"

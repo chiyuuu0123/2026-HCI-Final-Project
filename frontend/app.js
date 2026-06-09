@@ -411,6 +411,16 @@ const graphPanState = {
   startViewportX: 0,
   startViewportY: 0,
 };
+const graphNodeDragState = {
+  active: false,
+  pointerId: null,
+  nodeId: "",
+  moved: false,
+  startX: 0,
+  startY: 0,
+  startNodeX: 0,
+  startNodeY: 0,
+};
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -5953,16 +5963,18 @@ function createStudyNode(topic, index = 0, overrides = {}) {
     x: 140 + (index % 5) * 180,
     y: 110 + Math.floor(index / 5) * 150,
   };
+  const label = overrides.label || topic.label || topic.id;
 
   return {
     id: topic.id,
-    label: topic.id,
-    summary: nodeContent[topic.id] || topic.source || "该知识点来自当前课程资料，可继续生成解释、例题和复习题。",
+    label,
+    summary: overrides.summary || nodeContent[topic.id] || topic.source || "该知识点来自当前课程资料，可继续生成解释、例题和复习题。",
     chapter: topic.chapter || "课程资料",
     difficulty: topic.difficulty || "中等",
-    source: topic.source || "课程资料",
+    source: overrides.source || topic.source || "课程资料",
     examples: overrides.examples || [`${topic.id} 可以结合当前资料中的定义、场景和评价方法复习。`],
     keywords: overrides.keywords || [topic.id, ...(topic.related || [])].slice(0, 5),
+    sourceSnippets: Array.isArray(overrides.sourceSnippets) ? overrides.sourceSnippets : [],
     related: topic.related || [],
     mastery: clampPercent(overrides.mastery ?? topic.baseMastery ?? 58),
     status: overrides.status || ((topic.baseMastery || 58) < 60 ? "weak" : "learning"),
@@ -6062,6 +6074,7 @@ function sanitizeStudyGraph(graph = {}) {
         mastery: node.mastery,
         examples: Array.isArray(node.examples) ? node.examples : node.example ? [node.example] : undefined,
         keywords: Array.isArray(node.keywords) ? node.keywords : undefined,
+        sourceSnippets: Array.isArray(node.sourceSnippets) ? node.sourceSnippets : undefined,
       });
     });
   const nodeIds = new Set(nodes.map((node) => node.id));
@@ -6198,8 +6211,13 @@ function renderGraphFilters() {
   const chapterSelect = document.querySelector("#graph-chapter-filter");
   const difficultySelect = document.querySelector("#graph-difficulty-filter");
   const masterySelect = document.querySelector("#graph-mastery-filter");
+  const pathSourceSelect = document.querySelector("#graph-path-source");
+  const pathTargetSelect = document.querySelector("#graph-path-target");
   const chapters = Array.from(new Set(studyModule.graph.nodes.map((node) => node.chapter))).filter(Boolean);
   const difficulties = Array.from(new Set(studyModule.graph.nodes.map((node) => node.difficulty))).filter(Boolean);
+  const pathOptions = studyModule.graph.nodes
+    .map((node) => `<option value="${escapeHtml(node.id)}">${escapeHtml(node.label)}</option>`)
+    .join("");
 
   if (chapterSelect) {
     chapterSelect.innerHTML = `<option value="all">全部章节</option>${chapters.map((chapter) => `<option value="${escapeHtml(chapter)}">${escapeHtml(chapter)}</option>`).join("")}`;
@@ -6210,6 +6228,222 @@ function renderGraphFilters() {
     difficultySelect.value = studyModule.graphFilters.difficulty || "all";
   }
   if (masterySelect) masterySelect.value = studyModule.graphFilters.mastery || "all";
+  if (pathSourceSelect) {
+    const currentValue = pathSourceSelect.value || studyModule.selectedNodeId || studyModule.graph.nodes[0]?.id || "";
+    pathSourceSelect.innerHTML = pathOptions;
+    pathSourceSelect.value = studyModule.graph.nodes.some((node) => node.id === currentValue) ? currentValue : studyModule.graph.nodes[0]?.id || "";
+  }
+  if (pathTargetSelect) {
+    const relatedTarget = studyModule.graph.edges.find((edge) => edge.source === studyModule.selectedNodeId || edge.target === studyModule.selectedNodeId);
+    const currentValue = pathTargetSelect.value || (relatedTarget ? relatedTarget.source === studyModule.selectedNodeId ? relatedTarget.target : relatedTarget.source : "");
+    pathTargetSelect.innerHTML = pathOptions;
+    pathTargetSelect.value = studyModule.graph.nodes.some((node) => node.id === currentValue) ? currentValue : studyModule.graph.nodes[1]?.id || studyModule.graph.nodes[0]?.id || "";
+  }
+}
+
+function setNeo4jStatus(status = {}) {
+  const statusNode = document.querySelector("#neo4j-status");
+  if (!statusNode) return;
+  statusNode.classList.toggle("ready", Boolean(status.connected));
+  statusNode.classList.toggle("warning", !status.connected);
+  statusNode.textContent = status.connected
+    ? `Neo4j 已连接 · ${status.version || status.uri || "本地数据库"}`
+    : `Neo4j 未连接 · ${status.error || "请运行 npm run neo4j:start"}`;
+}
+
+async function refreshNeo4jStatus() {
+  if (!window.mindStudy?.graph?.getStatus) {
+    setNeo4jStatus({ connected: false, error: "当前环境没有图数据库接口" });
+    return null;
+  }
+  const status = await window.mindStudy.graph.getStatus();
+  setNeo4jStatus(status);
+  return status;
+}
+
+function getGraphCoursePayload(course = getActiveCourse()) {
+  return {
+    id: course.id,
+    name: course.name,
+    description: course.description,
+  };
+}
+
+function mergeGraphFragment(fragment = {}) {
+  const studyModule = getStudyModule();
+  const nodeMap = new Map(studyModule.graph.nodes.map((node) => [node.id, node]));
+  (fragment.nodes || []).forEach((node) => {
+    nodeMap.set(node.id, { ...(nodeMap.get(node.id) || {}), ...node });
+  });
+  const edgeMap = new Map(studyModule.graph.edges.map((edge) => [`${edge.source}->${edge.target}:${edge.relation}`, edge]));
+  (fragment.edges || []).forEach((edge) => {
+    edgeMap.set(`${edge.source}->${edge.target}:${edge.relation}`, edge);
+  });
+  studyModule.graph = sanitizeStudyGraph({
+    nodes: Array.from(nodeMap.values()),
+    edges: Array.from(edgeMap.values()),
+    meta: {
+      ...studyModule.graph.meta,
+      generatedBy: "neo4j",
+      generatedAt: Date.now(),
+    },
+  });
+}
+
+function focusGraphNode(nodeId) {
+  const studyModule = getStudyModule();
+  const node = studyModule.graph.nodes.find((item) => item.id === nodeId);
+  if (!node) return;
+  const viewport = sanitizeGraphViewport(studyModule.graphViewport);
+  viewport.x = 500 - node.x * viewport.scale;
+  viewport.y = 330 - node.y * viewport.scale;
+  studyModule.graphViewport = viewport;
+  studyModule.selectedNodeId = node.id;
+}
+
+async function loadCourseGraphFromNeo4j() {
+  const course = getActiveCourse();
+  const studyModule = getStudyModule(course);
+  try {
+    const graph = await window.mindStudy?.graph?.getCourseGraph?.({ courseId: course.id });
+    if (!graph?.nodes?.length) throw new Error("Neo4j 中暂时没有当前课程图谱。");
+    studyModule.graph = ensureGraphQuality(sanitizeStudyGraph(graph), [], "neo4j");
+    studyModule.selectedNodeId = studyModule.graph.nodes[0]?.id || studyModule.selectedNodeId;
+    studyModule.generation = {
+      state: "done",
+      engine: "Neo4j",
+      message: `已从 Neo4j 加载 ${studyModule.graph.nodes.length} 个知识点、${studyModule.graph.edges.length} 条关系。`,
+      updatedAt: Date.now(),
+    };
+    saveWorkspace();
+    renderStudyModuleViews();
+  } catch (error) {
+    studyModule.generation = {
+      state: "error",
+      engine: "Neo4j",
+      message: getAiErrorMessage(error),
+      updatedAt: Date.now(),
+    };
+    saveWorkspace();
+    renderKnowledgeModule();
+  }
+}
+
+async function searchGraphNode() {
+  const query = document.querySelector("#graph-search-input")?.value?.trim();
+  if (!query) return;
+  const course = getActiveCourse();
+  const studyModule = getStudyModule(course);
+  let matches = [];
+  try {
+    matches = await window.mindStudy?.graph?.searchNodes?.({ courseId: course.id, query, limit: 8 }) || [];
+  } catch {
+    matches = [];
+  }
+  if (!matches.length) {
+    matches = studyModule.graph.nodes.filter((node) =>
+      [node.label, node.summary, ...(node.keywords || [])].join(" ").toLowerCase().includes(query.toLowerCase()),
+    );
+  }
+  if (!matches.length) {
+    studyModule.generation = { state: "error", engine: "Neo4j", message: `没有找到“${query}”相关节点。`, updatedAt: Date.now() };
+    renderGenerationStatus();
+    return;
+  }
+  mergeGraphFragment({ nodes: matches, edges: [] });
+  focusGraphNode(matches[0].id);
+  saveWorkspace();
+  renderKnowledgeModule();
+}
+
+async function expandSelectedGraphNode() {
+  const course = getActiveCourse();
+  const studyModule = getStudyModule(course);
+  const nodeId = studyModule.selectedNodeId;
+  if (!nodeId) return;
+  try {
+    const fragment = await window.mindStudy?.graph?.getNodeNeighborhood?.({ courseId: course.id, nodeId, limit: 24 });
+    if (!fragment?.nodes?.length) throw new Error("Neo4j 没有返回邻居节点。");
+    mergeGraphFragment(fragment);
+    studyModule.generation = {
+      state: "done",
+      engine: "Neo4j",
+      message: `已展开“${getKnowledgeTopic(nodeId)?.label || nodeId}”的一度邻居。`,
+      updatedAt: Date.now(),
+    };
+    saveWorkspace();
+    renderKnowledgeModule();
+  } catch (error) {
+    studyModule.generation = { state: "error", engine: "Neo4j", message: getAiErrorMessage(error), updatedAt: Date.now() };
+    saveWorkspace();
+    renderKnowledgeModule();
+  }
+}
+
+async function findGraphPath() {
+  const course = getActiveCourse();
+  const studyModule = getStudyModule(course);
+  const sourceId = document.querySelector("#graph-path-source")?.value;
+  const targetId = document.querySelector("#graph-path-target")?.value;
+  if (!sourceId || !targetId || sourceId === targetId) return;
+  try {
+    const pathFragment = await window.mindStudy?.graph?.findPath?.({ courseId: course.id, sourceId, targetId });
+    if (!pathFragment?.nodes?.length) throw new Error("没有找到两个知识点之间的路径。");
+    mergeGraphFragment(pathFragment);
+    studyModule.pathNodeIds = pathFragment.nodes.map((node) => node.id);
+    studyModule.pathEdgeIds = pathFragment.edges.map((edge) => edge.id);
+    studyModule.pathEdgeKeys = pathFragment.edges.map((edge) => `${edge.source}->${edge.target}:${edge.relation}`);
+    focusGraphNode(sourceId);
+    studyModule.generation = {
+      state: "done",
+      engine: "Neo4j",
+      message: `已高亮 ${pathFragment.nodes.length} 个节点的最短路径。`,
+      updatedAt: Date.now(),
+    };
+    saveWorkspace();
+    renderKnowledgeModule();
+  } catch (error) {
+    studyModule.generation = { state: "error", engine: "Neo4j", message: getAiErrorMessage(error), updatedAt: Date.now() };
+    saveWorkspace();
+    renderKnowledgeModule();
+  }
+}
+
+function buildMermaidGraph(graph = getStudyModule().graph) {
+  const safeId = (value) => `N${String(value || "").replace(/[^\u4e00-\u9fa5A-Za-z0-9_]/g, "_")}`;
+  const lines = ["graph TD"];
+  graph.nodes.forEach((node) => {
+    lines.push(`  ${safeId(node.id)}["${String(node.label || node.id).replace(/"/g, "'")}"]`);
+  });
+  graph.edges.forEach((edge) => {
+    lines.push(`  ${safeId(edge.source)} -->|"${String(edge.relation || "相关").replace(/"/g, "'")}"| ${safeId(edge.target)}`);
+  });
+  return lines.join("\n");
+}
+
+function openMermaidExportDialog() {
+  closeModal();
+  const mermaidText = buildMermaidGraph();
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-backdrop" data-modal="mermaid-export">
+      <section class="course-modal" role="dialog" aria-modal="true" aria-labelledby="mermaid-export-title">
+        <div class="modal-heading">
+          <div>
+            <span class="tag muted">Mermaid</span>
+            <h2 id="mermaid-export-title">知识图谱 Mermaid 文本</h2>
+          </div>
+          <button class="icon-button light" data-modal-action="close" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <textarea class="mermaid-export-textarea" readonly>${escapeHtml(mermaidText)}</textarea>
+        <div class="modal-actions">
+          <button type="button" class="ghost-action compact" data-modal-action="close">关闭</button>
+        </div>
+      </section>
+    </div>
+  `);
+  window.lucide?.createIcons();
 }
 
 function renderGenerationStatus() {
@@ -6234,6 +6468,9 @@ function renderKnowledgeModule() {
   const visibleNodes = getVisibleGraphNodes();
   const visibleIds = new Set(visibleNodes.map((node) => node.id));
   const mapMode = studyModule.mapMode || "mastery";
+  const pathNodeIds = new Set(studyModule.pathNodeIds || []);
+  const pathEdgeIds = new Set(studyModule.pathEdgeIds || []);
+  const pathEdgeKeys = new Set(studyModule.pathEdgeKeys || []);
 
   renderGenerationStatus();
   renderGraphFilters();
@@ -6258,8 +6495,9 @@ function renderKnowledgeModule() {
         const source = studyModule.graph.nodes.find((node) => node.id === edge.source);
         const target = studyModule.graph.nodes.find((node) => node.id === edge.target);
         if (!source || !target) return "";
+        const highlighted = pathEdgeIds.has(edge.id) || pathEdgeKeys.has(`${edge.source}->${edge.target}:${edge.relation}`);
         return `
-          <g class="graph-edge">
+          <g class="graph-edge ${highlighted ? "highlight" : ""}">
             <line x1="${source.x}" y1="${source.y}" x2="${target.x}" y2="${target.y}"></line>
             <text x="${(source.x + target.x) / 2}" y="${(source.y + target.y) / 2}">${escapeHtml(edge.relation)}</text>
           </g>
@@ -6275,7 +6513,7 @@ function renderKnowledgeModule() {
         const tag = mapMode === "chapter" ? node.chapter : mapMode === "difficulty" ? node.difficulty : `${stats.mastery}%`;
         const stateClass = stats.mastery < 60 ? "weak" : stats.mastery >= 80 ? "mastered" : "learning";
         return `
-          <button class="node graph-node ${stateClass} ${node.id === selectedTopic?.id ? "selected" : ""}"
+          <button class="node graph-node ${stateClass} ${node.id === selectedTopic?.id ? "selected" : ""} ${pathNodeIds.has(node.id) ? "path-highlight" : ""}"
             data-node="${escapeHtml(node.id)}"
             style="left: ${node.x}px; top: ${node.y}px"
             title="${escapeHtml(node.label)} · 掌握度 ${stats.mastery}%">
@@ -6310,6 +6548,7 @@ function renderKnowledgeModule() {
       .slice(0, 6);
     nodeRelated.innerHTML = [
       ...(selectedTopic.examples || []).slice(0, 2).map((example) => `<p class="node-example">${escapeHtml(example)}</p>`),
+      ...(selectedTopic.sourceSnippets || []).slice(0, 2).map((snippet) => `<p class="node-source-snippet">${escapeHtml(snippet)}</p>`),
       ...related.map((relatedTopic) => `<button class="mini-button" data-map-related="${escapeHtml(relatedTopic)}">${escapeHtml(relatedTopic)}</button>`),
     ].join("");
   }
@@ -6336,7 +6575,8 @@ function showKnowledgeSource() {
   const topic = getKnowledgeTopic(getStudyModule().selectedNodeId);
   const nodeDesc = document.querySelector("#node-desc");
   if (nodeDesc && topic) {
-    nodeDesc.textContent = `${topic.summary} 资料来源：${topic.source || "课程资料"}。例子：${(topic.examples || [])[0] || "建议结合原文片段和测验题继续复习。"}`;
+    const snippet = (topic.sourceSnippets || [])[0];
+    nodeDesc.textContent = `${topic.summary} 资料来源：${topic.source || "课程资料"}。${snippet ? `原文片段：${snippet}` : `例子：${(topic.examples || [])[0] || "建议结合原文片段和测验题继续复习。"}`}`;
   }
 }
 
@@ -7195,6 +7435,30 @@ async function generateStudyModuleFromUploads() {
       text: String(documentMeta.text || "").slice(0, GRAPH_TEXT_LIMIT),
     }));
 
+    if (!graph && window.mindStudy?.graph?.generateFromDocuments) {
+      studyModule.generation = { state: "ai", engine: "Qwen + Neo4j", message: "正在抽取知识点、写入 Neo4j 并生成可交互图谱。", updatedAt: Date.now() };
+      saveWorkspace();
+      renderStudyModuleViews();
+      try {
+        const response = await window.mindStudy.graph.generateFromDocuments({
+          course: getGraphCoursePayload(course),
+          documents,
+          options: {
+            maxTokens: 3000,
+            temperature: 0.12,
+          },
+        });
+        if (response?.graph?.nodes?.length) {
+          graph = sanitizeStudyGraph(response.graph);
+          questions = (response.quiz?.questions || []).map((question) => normalizeStudyQuestion(question, graph.nodes)).filter(Boolean);
+          studyModule.recommendations = Array.isArray(response.recommendations) ? response.recommendations : [];
+          engine = "qwen+neo4j";
+        }
+      } catch (error) {
+        studyModule.generation.message = `Qwen + Neo4j 不可用，继续尝试原有生成链路：${getAiErrorMessage(error)}`;
+      }
+    }
+
     if (!graph && window.mindStudy?.ai?.askQuestion) {
       studyModule.generation = { state: "ai", engine: "Qwen", message: "", updatedAt: Date.now() };
       saveWorkspace();
@@ -7235,6 +7499,21 @@ async function generateStudyModuleFromUploads() {
     }
 
     graph = ensureGraphQuality(graph, documents, engine);
+    if (engine === "local-rules" && window.mindStudy?.graph?.saveCourseGraph) {
+      try {
+        const saved = await window.mindStudy.graph.saveCourseGraph({
+          course: getGraphCoursePayload(course),
+          documents,
+          graph,
+        });
+        if (saved?.graph?.nodes?.length) {
+          graph = ensureGraphQuality(sanitizeStudyGraph(saved.graph), documents, "local-rules+neo4j");
+          engine = "local-rules+neo4j";
+        }
+      } catch (error) {
+        studyModule.generation.message = `本地图谱已生成，但写入 Neo4j 失败：${getAiErrorMessage(error)}`;
+      }
+    }
     if (!questions.length) questions = createQuestionsFromGraph(graph, documents, engine);
     studyModule.graph = graph;
     studyModule.quiz = sanitizeStudyQuiz({
@@ -7300,7 +7579,7 @@ function resetGraphView() {
 function beginGraphPan(event) {
   const stage = event.target.closest?.("#knowledge-map-stage");
   const node = event.target.closest?.(".graph-node, button, select");
-  if (!stage || node) return;
+  if (!stage || node || graphNodeDragState.active) return;
 
   const viewport = sanitizeGraphViewport(getStudyModule().graphViewport);
   graphPanState.active = true;
@@ -7340,6 +7619,46 @@ function handleGraphWheel(event) {
   if (event.ctrlKey || event.metaKey) return;
   event.preventDefault();
   zoomGraph(event.deltaY > 0 ? -0.08 : 0.08);
+}
+
+function beginGraphNodeDrag(event) {
+  const button = event.target.closest?.(".graph-node");
+  if (!button) return;
+  const topic = getKnowledgeTopic(button.dataset.node);
+  if (!topic) return;
+  graphNodeDragState.active = true;
+  graphNodeDragState.pointerId = event.pointerId ?? "mouse";
+  graphNodeDragState.nodeId = topic.id;
+  graphNodeDragState.moved = false;
+  graphNodeDragState.startX = event.clientX;
+  graphNodeDragState.startY = event.clientY;
+  graphNodeDragState.startNodeX = topic.x;
+  graphNodeDragState.startNodeY = topic.y;
+  button.setPointerCapture?.(event.pointerId);
+}
+
+function updateGraphNodeDrag(event) {
+  const pointerId = event.pointerId ?? "mouse";
+  if (!graphNodeDragState.active || pointerId !== graphNodeDragState.pointerId) return;
+  const studyModule = getStudyModule();
+  const node = studyModule.graph.nodes.find((item) => item.id === graphNodeDragState.nodeId);
+  if (!node) return;
+  const viewport = sanitizeGraphViewport(studyModule.graphViewport);
+  const dx = (event.clientX - graphNodeDragState.startX) / viewport.scale;
+  const dy = (event.clientY - graphNodeDragState.startY) / viewport.scale;
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) graphNodeDragState.moved = true;
+  node.x = Math.min(960, Math.max(40, Math.round(graphNodeDragState.startNodeX + dx)));
+  node.y = Math.min(640, Math.max(40, Math.round(graphNodeDragState.startNodeY + dy)));
+  renderKnowledgeModule();
+}
+
+function finishGraphNodeDrag(event) {
+  const pointerId = event.pointerId ?? "mouse";
+  if (!graphNodeDragState.active || pointerId !== graphNodeDragState.pointerId) return;
+  graphNodeDragState.active = false;
+  graphNodeDragState.pointerId = null;
+  graphNodeDragState.nodeId = "";
+  saveWorkspace();
 }
 
 function getPlannerStatusMeta(status) {
@@ -9872,6 +10191,10 @@ document.addEventListener("pointerdown", beginLonglongDrag);
 document.addEventListener("pointermove", updateLonglongDrag);
 document.addEventListener("pointerup", finishLonglongDrag);
 document.addEventListener("pointercancel", finishLonglongDrag);
+document.addEventListener("pointerdown", beginGraphNodeDrag);
+document.addEventListener("pointermove", updateGraphNodeDrag);
+document.addEventListener("pointerup", finishGraphNodeDrag);
+document.addEventListener("pointercancel", finishGraphNodeDrag);
 document.addEventListener("pointerdown", beginGraphPan);
 document.addEventListener("pointermove", updateGraphPan);
 document.addEventListener("pointerup", finishGraphPan);
@@ -9892,6 +10215,11 @@ document.addEventListener("pointercancel", finishPdfImagePlacementDrag);
 document.addEventListener("keydown", (event) => {
   const target = event.target;
   const isTyping = target?.matches?.("input, textarea, select, [contenteditable='true']");
+  if (target?.matches?.("#graph-search-input") && event.key === "Enter") {
+    event.preventDefault();
+    searchGraphNode();
+    return;
+  }
   if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "x") {
     toggleVisionLandmarks();
     return;
@@ -9984,6 +10312,7 @@ document.addEventListener("click", (event) => {
   const quizActionButton = event.target.closest("[data-quiz-action]");
   const reportReviewButton = event.target.closest("[data-report-review-topic]");
   const studyActionButton = event.target.closest("[data-study-action]");
+  const graphActionButton = event.target.closest("[data-graph-action]");
   const graphZoomButton = event.target.closest("[data-graph-zoom]");
   const mistakeReviewButton = event.target.closest("[data-mistake-review]");
   const actionButton = event.target.closest("button");
@@ -10058,6 +10387,17 @@ document.addEventListener("click", (event) => {
 
   if (graphZoomButton) {
     zoomGraph(Number(graphZoomButton.dataset.graphZoom) || 0);
+    return;
+  }
+
+  if (graphActionButton) {
+    const action = graphActionButton.dataset.graphAction;
+    if (action === "check-status") refreshNeo4jStatus();
+    if (action === "load-neo4j") loadCourseGraphFromNeo4j();
+    if (action === "search-node") searchGraphNode();
+    if (action === "expand-node") expandSelectedGraphNode();
+    if (action === "find-path") findGraphPath();
+    if (action === "export-mermaid") openMermaidExportDialog();
     return;
   }
 
@@ -10280,6 +10620,7 @@ window.addEventListener("DOMContentLoaded", () => {
   window.lucide?.createIcons();
   syncAiStatusButtons();
   syncLonglongAssistant();
+  refreshNeo4jStatus();
   scheduleLonglongSleep();
   showView("focus");
   startCamera();

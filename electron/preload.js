@@ -67,4 +67,15 @@ contextBridge.exposeInMainWorld("mindStudy", {
   rag: {
     askLibrary: (request) => ipcRenderer.invoke("b:rag:ask-library", request),
   },
+  graph: {
+    getStatus: () => ipcRenderer.invoke("graph:get-status"),
+    saveConfig: (config) => ipcRenderer.invoke("graph:save-config", config),
+    generateFromDocuments: (request) => ipcRenderer.invoke("graph:generate-from-documents", request),
+    saveCourseGraph: (request) => ipcRenderer.invoke("graph:save-course-graph", request),
+    getCourseGraph: (request) => ipcRenderer.invoke("graph:get-course-graph", request),
+    getNodeNeighborhood: (request) => ipcRenderer.invoke("graph:get-node-neighborhood", request),
+    searchNodes: (request) => ipcRenderer.invoke("graph:search-nodes", request),
+    findPath: (request) => ipcRenderer.invoke("graph:find-path", request),
+    clearCourseGraph: (request) => ipcRenderer.invoke("graph:clear-course-graph", request),
+  },
 });

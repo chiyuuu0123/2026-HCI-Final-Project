@@ -12,6 +12,10 @@ const {
   DEFAULT_ASR_MODEL,
   QwenClient,
   createStudyAiService,
+  createKnowledgeGraphService,
+  DEFAULT_NEO4J_URI,
+  DEFAULT_NEO4J_USERNAME,
+  DEFAULT_NEO4J_PASSWORD,
   extractPdfTextFromBase64,
   recognizeImageTextFromBase64,
   terminateOcrWorkers,
@@ -140,6 +144,50 @@ function writeQwenLocalConfig(config) {
   const configPath = getQwenConfigPath();
   fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
   fsSync.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+}
+
+function getProjectLocalDir() {
+  return path.join(__dirname, "..", ".local");
+}
+
+function getNeo4jLocalConfigPath() {
+  return path.join(getProjectLocalDir(), "neo4j.env");
+}
+
+function parseDotEnvFile(filePath) {
+  try {
+    return fsSync
+      .readFileSync(filePath, "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .reduce((env, line) => {
+        const separator = line.indexOf("=");
+        if (separator <= 0) return env;
+        env[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+        return env;
+      }, {});
+  } catch {
+    return {};
+  }
+}
+
+function writeNeo4jLocalConfig(config = {}) {
+  const configPath = getNeo4jLocalConfigPath();
+  fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
+  const current = parseDotEnvFile(configPath);
+  const next = {
+    NEO4J_URI: config.uri || current.NEO4J_URI || DEFAULT_NEO4J_URI,
+    NEO4J_BROWSER_URL: config.browserUrl || current.NEO4J_BROWSER_URL || "http://localhost:7474",
+    NEO4J_USERNAME: config.username || current.NEO4J_USERNAME || DEFAULT_NEO4J_USERNAME,
+    NEO4J_PASSWORD: config.password || current.NEO4J_PASSWORD || DEFAULT_NEO4J_PASSWORD,
+  };
+  fsSync.writeFileSync(
+    configPath,
+    Object.entries(next).map(([key, value]) => `${key}=${value}`).join("\n"),
+    "utf8",
+  );
+  return next;
 }
 
 function getLonglongVoiceConfigPath() {
@@ -942,6 +990,50 @@ function createCurrentQwenClient() {
     multimodalModel: config.multimodalModel,
     asrModel: config.asrModel,
   });
+}
+
+let currentKnowledgeGraphService = null;
+let currentKnowledgeGraphConfigKey = "";
+
+function getNeo4jRuntimeConfig() {
+  const localConfig = parseDotEnvFile(getNeo4jLocalConfigPath());
+  return {
+    uri: process.env.NEO4J_URI || localConfig.NEO4J_URI || DEFAULT_NEO4J_URI,
+    browserUrl: process.env.NEO4J_BROWSER_URL || localConfig.NEO4J_BROWSER_URL || "http://localhost:7474",
+    username: process.env.NEO4J_USERNAME || localConfig.NEO4J_USERNAME || DEFAULT_NEO4J_USERNAME,
+    password: process.env.NEO4J_PASSWORD || localConfig.NEO4J_PASSWORD || DEFAULT_NEO4J_PASSWORD,
+    source: process.env.NEO4J_URI || process.env.NEO4J_PASSWORD ? "environment" : localConfig.NEO4J_PASSWORD ? "local" : "default",
+  };
+}
+
+function createCurrentKnowledgeGraphService() {
+  const neo4jConfig = getNeo4jRuntimeConfig();
+  const qwenConfig = getQwenRuntimeConfig();
+  const configKey = JSON.stringify({
+    neo4jUri: neo4jConfig.uri,
+    neo4jUsername: neo4jConfig.username,
+    neo4jPassword: neo4jConfig.password,
+    qwenBaseUrl: qwenConfig.baseUrl,
+    qwenModel: qwenConfig.model,
+    qwenApiKey: Boolean(qwenConfig.apiKey),
+  });
+
+  if (!currentKnowledgeGraphService || currentKnowledgeGraphConfigKey !== configKey) {
+    currentKnowledgeGraphService?.close?.().catch(() => {});
+    currentKnowledgeGraphService = createKnowledgeGraphService({
+      neo4jConfig,
+      qwenClientOptions: {
+        apiKey: qwenConfig.apiKey,
+        baseUrl: qwenConfig.baseUrl,
+        model: qwenConfig.model,
+        multimodalModel: qwenConfig.multimodalModel,
+        asrModel: qwenConfig.asrModel,
+      },
+    });
+    currentKnowledgeGraphConfigKey = configKey;
+  }
+
+  return currentKnowledgeGraphService;
 }
 
 function delay(ms) {
@@ -2001,6 +2093,67 @@ ipcMain.handle("b:rag:ask-library", async (event, request) => {
   };
 });
 
+ipcMain.handle("graph:get-status", async () => {
+  const config = getNeo4jRuntimeConfig();
+  try {
+    const status = await createCurrentKnowledgeGraphService().getStatus();
+    return {
+      ...status,
+      source: config.source,
+    };
+  } catch (error) {
+    return {
+      connected: false,
+      uri: config.uri,
+      browserUrl: config.browserUrl,
+      username: config.username,
+      source: config.source,
+      error: error.message || String(error),
+    };
+  }
+});
+
+ipcMain.handle("graph:save-config", async (event, config = {}) => {
+  writeNeo4jLocalConfig({
+    uri: String(config.uri || "").trim(),
+    browserUrl: String(config.browserUrl || "").trim(),
+    username: String(config.username || "").trim(),
+    password: String(config.password || "").trim(),
+  });
+  currentKnowledgeGraphService?.close?.().catch(() => {});
+  currentKnowledgeGraphService = null;
+  currentKnowledgeGraphConfigKey = "";
+  return createCurrentKnowledgeGraphService().getStatus();
+});
+
+ipcMain.handle("graph:generate-from-documents", async (event, request = {}) => {
+  return createCurrentKnowledgeGraphService().generateFromDocuments(request);
+});
+
+ipcMain.handle("graph:save-course-graph", async (event, request = {}) => {
+  return createCurrentKnowledgeGraphService().saveCourseGraph(request);
+});
+
+ipcMain.handle("graph:get-course-graph", async (event, request = {}) => {
+  return createCurrentKnowledgeGraphService().getCourseGraph(request);
+});
+
+ipcMain.handle("graph:get-node-neighborhood", async (event, request = {}) => {
+  return createCurrentKnowledgeGraphService().getNodeNeighborhood(request);
+});
+
+ipcMain.handle("graph:search-nodes", async (event, request = {}) => {
+  return createCurrentKnowledgeGraphService().searchNodes(request);
+});
+
+ipcMain.handle("graph:find-path", async (event, request = {}) => {
+  return createCurrentKnowledgeGraphService().findPath(request);
+});
+
+ipcMain.handle("graph:clear-course-graph", async (event, request = {}) => {
+  return createCurrentKnowledgeGraphService().clearCourseGraph(request);
+});
+
 ipcMain.on("companion:wake-main", () => {
   wakeMainWindow();
 });
@@ -2046,6 +2199,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  currentKnowledgeGraphService?.close?.().catch(() => {});
   if (studyTimerInterval) {
     clearInterval(studyTimerInterval);
     studyTimerInterval = null;

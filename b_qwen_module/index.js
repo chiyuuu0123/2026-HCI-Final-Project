@@ -8,4 +8,5 @@ module.exports = {
   ...require("./ragIndex"),
   ...require("./textChunker"),
   ...require("./qaService"),
+  ...require("./knowledgeGraphService"),
 };

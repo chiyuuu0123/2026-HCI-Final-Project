@@ -710,6 +710,8 @@ h3 {
 }
 
 .graph-actions,
+.graph-neo4j-bar,
+.graph-query-row,
 .graph-toolbar,
 .quiz-generator-bar {
   display: flex;
@@ -758,6 +760,36 @@ h3 {
   margin: 0 20px 12px;
 }
 
+.graph-neo4j-bar,
+.graph-query-row {
+  margin: 0 20px 12px;
+}
+
+.graph-neo4j-bar {
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.graph-query-row input,
+.graph-query-row select {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+}
+
+.graph-query-row input {
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
 .graph-toolbar select,
 .quiz-generator-bar select {
   min-height: 38px;
@@ -802,6 +834,11 @@ h3 {
 .graph-edge line {
   stroke: rgba(24, 143, 132, 0.34);
   stroke-width: 2;
+}
+
+.graph-edge.highlight line {
+  stroke: var(--coral);
+  stroke-width: 4;
 }
 
 .graph-edge text {
@@ -910,6 +947,34 @@ h3 {
 .node.selected {
   border-color: var(--teal);
   box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.16), 0 10px 26px rgba(23, 48, 43, 0.16);
+}
+
+.node.path-highlight {
+  border-color: var(--coral);
+  box-shadow: 0 0 0 3px rgba(223, 105, 93, 0.18), 0 10px 26px rgba(23, 48, 43, 0.16);
+}
+
+.node-example,
+.node-source-snippet {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f7f9f6;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.node-source-snippet {
+  border-left: 3px solid var(--teal);
+}
+
+.mermaid-export-textarea {
+  width: min(760px, 78vw);
+  min-height: 360px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
 
 .node-a {

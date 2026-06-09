@@ -589,6 +589,40 @@
                 </div>
               </div>
 
+              <div class="graph-neo4j-bar">
+                <span class="rag-status" id="neo4j-status">Neo4j 状态检查中</span>
+                <button class="mini-button" data-graph-action="check-status">
+                  <i data-lucide="database"></i>
+                  <span>检查连接</span>
+                </button>
+                <button class="mini-button" data-graph-action="load-neo4j">
+                  <i data-lucide="download-cloud"></i>
+                  <span>从 Neo4j 加载</span>
+                </button>
+                <button class="mini-button" data-graph-action="export-mermaid">
+                  <i data-lucide="file-code-2"></i>
+                  <span>导出 Mermaid</span>
+                </button>
+              </div>
+
+              <div class="graph-query-row">
+                <input id="graph-search-input" type="search" placeholder="搜索知识点 / 关键词" />
+                <button class="ghost-action compact" data-graph-action="search-node">
+                  <i data-lucide="search"></i>
+                  <span>搜索定位</span>
+                </button>
+                <button class="ghost-action compact" data-graph-action="expand-node">
+                  <i data-lucide="network"></i>
+                  <span>展开邻居</span>
+                </button>
+                <select id="graph-path-source" aria-label="路径起点"></select>
+                <select id="graph-path-target" aria-label="路径终点"></select>
+                <button class="ghost-action compact" data-graph-action="find-path">
+                  <i data-lucide="route"></i>
+                  <span>查找路径</span>
+                </button>
+              </div>
+
               <div class="graph-toolbar">
                 <div class="segmented" id="knowledge-view-mode" aria-label="知识图谱视图">
                   <button class="active" data-map-mode="mastery">掌握状态</button>
