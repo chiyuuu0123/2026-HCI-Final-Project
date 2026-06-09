@@ -21,6 +21,7 @@ const LONGLONG_CHAT_AFFECTION = 2;
 const LONGLONG_FALLBACK_COIN_SECONDS = 10 * 60;
 const LONGLONG_THINKING_LINE = "这个问题让龙龙想一下";
 const LONGLONG_ANSWER_LINE = "嘿嘿，龙龙一语道破天机啦！";
+const LONGLONG_SLEEP_LINE = "龙龙要无忧地安眠了";
 const LONGLONG_QUOTE_AUDIO = new Map([
   ["龙龙吞咽了太多意义，但其实生命只需要呼吸。", "./assets/longlong-voice/quote-01.wav"],
   ["你欠龙龙的眼泪太多，龙龙数不清。", "./assets/longlong-voice/quote-02.wav"],
@@ -61,6 +62,9 @@ const LONGLONG_TIP_AUDIO = new Map([
   ["如果开始分心，就把下一步缩小到两分钟。", "./assets/longlong-voice/tip-09.wav"],
   ["遇到英文段落，先看术语，再看句子关系。", "./assets/longlong-voice/tip-10.wav"],
 ]);
+const LONGLONG_SLEEP_AUDIO = new Map([
+  [LONGLONG_SLEEP_LINE, "./assets/longlong-voice/sleep-01.wav"],
+]);
 const LONGLONG_MAIN_POKES = [...LONGLONG_POKE_AUDIO.keys()];
 const LONGLONG_MAIN_TIPS = [...LONGLONG_TIP_AUDIO.keys()];
 const LONGLONG_MAIN_QUOTES = [...LONGLONG_QUOTE_AUDIO.keys()];
@@ -71,6 +75,7 @@ const LONGLONG_FIXED_AUDIO = new Map([
   ...LONGLONG_TIP_AUDIO,
   ...LONGLONG_QUOTE_AUDIO,
   ...LONGLONG_GIFT_AUDIO,
+  ...LONGLONG_SLEEP_AUDIO,
 ]);
 let longlongFixedAudio = null;
 
@@ -562,6 +567,39 @@ function initLonglongActionHover() {
   });
 }
 
+function positionLonglongPopover(popover) {
+  const elements = getLonglongElements();
+  if (!popover || popover.hidden) return;
+
+  popover.style.maxHeight = `${Math.max(220, window.innerHeight - 32)}px`;
+  popover.style.left = "";
+  popover.style.top = "";
+
+  const anchorRect = elements.avatar?.getBoundingClientRect() || elements.root?.getBoundingClientRect();
+  if (!anchorRect) return;
+
+  const margin = 16;
+  const rect = popover.getBoundingClientRect();
+  const width = Math.min(rect.width || 320, window.innerWidth - margin * 2);
+  const height = Math.min(rect.height || 360, window.innerHeight - margin * 2);
+  const preferredLeft = anchorRect.left + anchorRect.width / 2 - width / 2;
+  const preferredTop = anchorRect.top - height - 12;
+  const fallbackTop = anchorRect.bottom + 12;
+  const top = preferredTop >= margin ? preferredTop : Math.min(fallbackTop, window.innerHeight - height - margin);
+  const left = Math.min(window.innerWidth - width - margin, Math.max(margin, preferredLeft));
+
+  popover.style.width = `${width}px`;
+  popover.style.maxHeight = `${height}px`;
+  popover.style.left = `${left}px`;
+  popover.style.top = `${Math.max(margin, top)}px`;
+}
+
+function positionOpenLonglongPopovers() {
+  const elements = getLonglongElements();
+  positionLonglongPopover(elements.giftPopover);
+  positionLonglongPopover(elements.chatPopover);
+}
+
 function setLonglongGiftPopover(open) {
   longlongState.giftOpen = Boolean(open);
   const elements = getLonglongElements();
@@ -571,6 +609,7 @@ function setLonglongGiftPopover(open) {
     setLonglongChatPopover(false);
     setLonglongExpanded(true);
     renderLonglongBondState();
+    window.requestAnimationFrame(() => positionLonglongPopover(elements.giftPopover));
   }
 }
 
@@ -583,6 +622,7 @@ function setLonglongChatPopover(open) {
     setLonglongGiftPopover(false);
     setLonglongExpanded(true);
     window.setTimeout(() => elements.chatInput?.focus(), 60);
+    window.requestAnimationFrame(() => positionLonglongPopover(elements.chatPopover));
   }
 }
 
@@ -748,6 +788,9 @@ function renderLonglongBondState() {
   }
   renderLonglongGiftShop(elements);
   renderLonglongInventory(elements);
+  if (longlongState.giftOpen) {
+    window.requestAnimationFrame(() => positionLonglongPopover(elements.giftPopover));
+  }
 }
 
 function showLonglongBondNotice(text) {
@@ -961,11 +1004,22 @@ function setLonglongSpriteState(state = "default") {
   if (elements.root) elements.root.dataset.spriteState = nextState;
 }
 
+function enterLonglongSleep() {
+  window.clearTimeout(longlongSleepTimer);
+  window.clearTimeout(longlongSpriteRestoreTimer);
+  setLonglongGiftPopover(false);
+  setLonglongChatPopover(false);
+  longlongState.expanded = false;
+  getLonglongElements().root?.classList.remove("expanded");
+  setLonglongSpriteState("sleep");
+  setLonglongBubbleText(LONGLONG_SLEEP_LINE, { temporary: false });
+  playLonglongFixedLine(LONGLONG_SLEEP_LINE);
+}
+
 function scheduleLonglongSleep() {
   window.clearTimeout(longlongSleepTimer);
   longlongSleepTimer = window.setTimeout(() => {
-    window.clearTimeout(longlongSpriteRestoreTimer);
-    setLonglongSpriteState("sleep");
+    enterLonglongSleep();
   }, LONGLONG_SLEEP_DELAY_MS);
 }
 
@@ -1346,12 +1400,7 @@ function handleLonglongAction(action) {
   }
 
   if (action === "sleep") {
-    setLonglongGiftPopover(false);
-    setLonglongChatPopover(false);
-    window.clearTimeout(longlongSleepTimer);
-    window.clearTimeout(longlongSpriteRestoreTimer);
-    setLonglongSpriteState("sleep");
-    setLonglongBubbleText("龙龙先睡一小会儿。", { temporary: false });
+    enterLonglongSleep();
   }
 }
 
@@ -3391,6 +3440,7 @@ function getCameraUi() {
     topText: document.querySelector("#camera-status-text"),
     video: document.querySelector("#camera-preview"),
     landmarkOverlay: document.querySelector("#camera-landmark-overlay"),
+    landmarkToggle: document.querySelector("#toggle-camera-landmarks"),
     placeholder: document.querySelector("#camera-placeholder"),
     startButton: document.querySelector("#start-camera"),
     stopButton: document.querySelector("#stop-camera"),
@@ -3505,7 +3555,25 @@ async function loadGestureRuntimeConfig() {
     console.warn("Failed to load frontend gesture config.", error);
   }
 
+  syncVisionLandmarkToggle();
   return { ...gestureRuntimeConfig };
+}
+
+function syncVisionLandmarkToggle() {
+  const toggle = getCameraUi().landmarkToggle;
+  if (!toggle) return;
+  toggle.setAttribute("aria-pressed", gestureRuntimeConfig.showVisionLandmarks ? "true" : "false");
+  toggle.title = gestureRuntimeConfig.showVisionLandmarks ? "关闭识别点阵" : "开启识别点阵";
+}
+
+function setVisionLandmarksVisible(visible) {
+  gestureRuntimeConfig.showVisionLandmarks = Boolean(visible);
+  if (!gestureRuntimeConfig.showVisionLandmarks) clearVisionLandmarks();
+  syncVisionLandmarkToggle();
+}
+
+function toggleVisionLandmarks() {
+  setVisionLandmarksVisible(!gestureRuntimeConfig.showVisionLandmarks);
 }
 
 function updateGestureCards(gestureId) {
@@ -9110,6 +9178,13 @@ document.addEventListener("pointercancel", finishPdfInkStroke);
 document.addEventListener("pointercancel", finishPdfImagePlacementDrag);
 
 document.addEventListener("keydown", (event) => {
+  const target = event.target;
+  const isTyping = target?.matches?.("input, textarea, select, [contenteditable='true']");
+  if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "x") {
+    toggleVisionLandmarks();
+    return;
+  }
+
   if ((event.ctrlKey || event.metaKey) && event.key === "0") {
     event.preventDefault();
     setAppZoom(1, {
@@ -9414,6 +9489,7 @@ document.addEventListener("click", (event) => {
   if (actionButton.dataset.courseAction === "create") createCourse();
   if (actionButton.dataset.courseAction === "rename") renameCourse();
   if (actionButton.id === "toggle-camera") toggleCamera();
+  if (actionButton.id === "toggle-camera-landmarks") toggleVisionLandmarks();
   if (actionButton.id === "start-camera") startCamera();
   if (actionButton.id === "stop-camera") stopCamera();
   if (actionButton.id === "simulate-upload" || actionButton.dataset.libraryImport === "true") handleCourseImport();
@@ -9474,6 +9550,7 @@ document.addEventListener("fullscreenchange", () => {
 });
 window.addEventListener("resize", () => {
   applyLonglongPosition();
+  positionOpenLonglongPopovers();
   rerenderCurrentPdfAfterReaderResize(220);
 });
 window.addEventListener("beforeunload", stopCamera);

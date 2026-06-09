@@ -46,6 +46,34 @@
             <span>睡觉</span>
           </button>
         </div>
+        <div class="pet-gift-popover" id="pet-gift-popover" hidden>
+          <div class="pet-popover-head">
+            <div>
+              <span>龙龙好感度</span>
+              <strong id="pet-gift-coins">0 龙币</strong>
+            </div>
+            <button type="button" data-pet-action="close-gift" title="收起礼物">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="pet-bond-meter">
+            <div>
+              <strong id="pet-bond-level">初识</strong>
+              <span id="pet-bond-detail">龙龙刚刚探头</span>
+            </div>
+            <small id="pet-bond-points">0 好感</small>
+          </div>
+          <div class="pet-bond-progress">
+            <span id="pet-bond-progress-bar"></span>
+          </div>
+          <p class="pet-bond-note" id="pet-bond-note">10 分钟学习可兑换 1 龙币。</p>
+          <div class="pet-gift-meta">
+            <span>龙龙商城</span>
+            <small id="pet-gift-rule">送礼增加好感</small>
+          </div>
+          <div class="pet-gift-shop" id="pet-gift-shop"></div>
+          <div class="pet-inventory" id="pet-inventory"></div>
+        </div>
       </section>
 
       <section class="pet-chat" aria-label="和龙龙对话">
@@ -104,6 +132,20 @@
       const LONGLONG_CLONE_PROVIDER = "nailong-clone";
       const LONGLONG_THINKING_LINE = "这个问题让龙龙想一下";
       const LONGLONG_ANSWER_LINE = "嘿嘿，龙龙一语道破天机啦！";
+      const LONGLONG_SLEEP_LINE = "龙龙要无忧地安眠了";
+      const PET_FALLBACK_COIN_SECONDS = 10 * 60;
+      const petGiftElements = {
+        popover: document.querySelector("#pet-gift-popover"),
+        coins: document.querySelector("#pet-gift-coins"),
+        level: document.querySelector("#pet-bond-level"),
+        detail: document.querySelector("#pet-bond-detail"),
+        points: document.querySelector("#pet-bond-points"),
+        progress: document.querySelector("#pet-bond-progress-bar"),
+        note: document.querySelector("#pet-bond-note"),
+        rule: document.querySelector("#pet-gift-rule"),
+        shop: document.querySelector("#pet-gift-shop"),
+        inventory: document.querySelector("#pet-inventory"),
+      };
       const longlongVoicePack = {
         profile: {
           name: "龙龙清亮陪伴音",
@@ -152,6 +194,9 @@
         thinking: [
           LONGLONG_THINKING_LINE,
         ],
+        sleep: [
+          LONGLONG_SLEEP_LINE,
+        ],
       };
       const hardcodedLonglongAudio = new Map([
         ["龙龙上线啦，今天也一起稳稳推进。", "./assets/longlong-voice/boot-01.wav"],
@@ -192,6 +237,7 @@
         ["小七玩偶到龙龙怀里啦。每只龙龙都一定会找到自己的小七哦！", "./assets/longlong-voice/gift-06.wav"],
         ["奶油云朵软软的，龙龙今天也被你好好接住了。", "./assets/longlong-voice/gift-07.wav"],
         ["学习书签收到，龙龙会把你努力的这一页好好夹住。", "./assets/longlong-voice/gift-08.wav"],
+        [LONGLONG_SLEEP_LINE, "./assets/longlong-voice/sleep-01.wav"],
         [LONGLONG_THINKING_LINE, "./assets/longlong-voice/ai-thinking.wav"],
         [LONGLONG_ANSWER_LINE, "./assets/longlong-voice/ai-answer.wav"],
       ]);
@@ -221,16 +267,36 @@
       const PET_DRAG_DIRECTION_SWITCH_DISTANCE = 18;
       const PET_DRAG_DIRECTION_SWITCH_MS = 180;
       const PET_DRAG_DIRECTION_RATIO = 1.2;
+      let petBondState = {
+        affection: 0,
+        coins: 0,
+        gifted: {},
+        level: {
+          name: "初识",
+          detail: "龙龙刚刚探头",
+          progress: 0,
+          nextName: "熟悉",
+          nextThreshold: 20,
+        },
+        coinRule: {
+          secondsPerCoin: PET_FALLBACK_COIN_SECONDS,
+          dailyCoinCap: 18,
+        },
+        giftCatalog: [],
+      };
       let latestSnapshot = null;
       let restoreTipTimer = null;
       let restoreSpriteTimer = null;
       let nativeMoveSpriteTimer = null;
       let petActionsHideTimer = null;
       let petSleepTimer = null;
+      let petGiftNoticeTimer = null;
       let petDragState = null;
       let petDragAnimationFrame = 0;
       let pendingPetDragBounds = null;
       let ignoreNativeDragMotionUntil = 0;
+      let suppressPetBodyClickUntil = 0;
+      let petGiftOpen = false;
       let currentPetSpriteState = "default";
       let companionMode = "pet";
       let chatHistory = [];
@@ -335,9 +401,130 @@
         return [hours, minutes, restSeconds].map((value) => String(value).padStart(2, "0")).join(":");
       }
 
+      function formatStudyDurationText(totalSeconds) {
+        const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes || 1} 分钟`;
+        const hours = Math.floor(minutes / 60);
+        const restMinutes = minutes % 60;
+        return restMinutes ? `${hours} 小时 ${restMinutes} 分钟` : `${hours} 小时`;
+      }
+
       function applyStudyTimerSnapshot(snapshot = {}) {
         const formatted = snapshot.formatted || formatStudyDuration(snapshot.seconds);
         studyTime.textContent = formatted;
+      }
+
+      function normalizePetBondSnapshot(snapshot = {}) {
+        const level = snapshot.level && typeof snapshot.level === "object" ? snapshot.level : {};
+        const coinRule = snapshot.coinRule && typeof snapshot.coinRule === "object" ? snapshot.coinRule : {};
+        return {
+          affection: Math.max(0, Math.floor(Number(snapshot.affection) || 0)),
+          coins: Math.max(0, Math.floor(Number(snapshot.coins) || 0)),
+          gifted: snapshot.gifted && typeof snapshot.gifted === "object" ? snapshot.gifted : {},
+          level: {
+            name: level.name || "初识",
+            detail: level.detail || "龙龙刚刚探头",
+            progress: Math.min(100, Math.max(0, Math.floor(Number(level.progress) || 0))),
+            nextName: level.nextName || "",
+            nextThreshold: Math.max(0, Math.floor(Number(level.nextThreshold) || 0)),
+            isMax: Boolean(level.isMax),
+          },
+          coinRule: {
+            secondsPerCoin: Math.max(60, Math.floor(Number(coinRule.secondsPerCoin) || PET_FALLBACK_COIN_SECONDS)),
+            dailyCoinCap: Math.max(1, Math.floor(Number(coinRule.dailyCoinCap) || 18)),
+          },
+          giftCatalog: Array.isArray(snapshot.giftCatalog) ? snapshot.giftCatalog : [],
+        };
+      }
+
+      function setPetBondState(snapshot = {}) {
+        petBondState = normalizePetBondSnapshot(snapshot);
+        renderPetBondState();
+      }
+
+      function getSafeLucideIcon(icon) {
+        const value = String(icon || "gift").trim();
+        return /^[a-z0-9-]+$/i.test(value) ? value : "gift";
+      }
+
+      function renderPetGiftShop() {
+        const shop = petGiftElements.shop;
+        if (!shop) return;
+        const gifts = petBondState.giftCatalog || [];
+        shop.innerHTML = gifts.length
+          ? gifts.map((gift) => {
+              const price = Math.max(0, Math.floor(Number(gift.price) || 0));
+              const affection = Math.max(0, Math.floor(Number(gift.affection) || 0));
+              const canBuy = petBondState.coins >= price;
+              return `
+                <article class="pet-gift-row">
+                  <span class="pet-gift-icon"><i data-lucide="${getSafeLucideIcon(gift.icon)}"></i></span>
+                  <div class="pet-gift-copy">
+                    <strong>${escapeHtml(gift.name || "神秘礼物")}</strong>
+                    <span>${price} 龙币 · +${affection} 好感</span>
+                  </div>
+                  <button type="button" data-pet-gift="${escapeHtml(gift.id)}" ${canBuy ? "" : "disabled"}>赠送</button>
+                </article>
+              `;
+            }).join("")
+          : `<p class="pet-bond-note">龙龙商城准备中。</p>`;
+        renderPetIcons();
+      }
+
+      function renderPetInventory() {
+        if (!petGiftElements.inventory) return;
+        const owned = (petBondState.giftCatalog || [])
+          .map((gift) => ({
+            name: gift.name,
+            count: Math.max(0, Math.floor(Number(petBondState.gifted?.[gift.id]) || 0)),
+          }))
+          .filter((gift) => gift.count > 0);
+        petGiftElements.inventory.textContent = owned.length
+          ? `已送：${owned.map((gift) => `${gift.name} x${gift.count}`).join("、")}`
+          : "还没有送礼。";
+      }
+
+      function renderPetBondState() {
+        const level = petBondState.level || {};
+        const secondsPerCoin = petBondState.coinRule?.secondsPerCoin || PET_FALLBACK_COIN_SECONDS;
+        if (petGiftElements.coins) petGiftElements.coins.textContent = `${petBondState.coins} 龙币`;
+        if (petGiftElements.level) petGiftElements.level.textContent = level.name || "初识";
+        if (petGiftElements.detail) petGiftElements.detail.textContent = level.detail || "龙龙刚刚探头";
+        if (petGiftElements.points) petGiftElements.points.textContent = `${petBondState.affection} 好感`;
+        if (petGiftElements.progress) petGiftElements.progress.style.width = `${level.progress || 0}%`;
+        if (petGiftElements.rule) petGiftElements.rule.textContent = `${formatStudyDurationText(secondsPerCoin)} / 1 龙币`;
+        if (petGiftElements.note && !petGiftNoticeTimer) {
+          petGiftElements.note.textContent = level.isMax
+            ? "龙龙已经找到自己的小七啦。"
+            : `距 ${level.nextName || "下一阶段"} 还需要 ${Math.max(0, (level.nextThreshold || 0) - petBondState.affection)} 好感。`;
+        }
+        renderPetGiftShop();
+        renderPetInventory();
+      }
+
+      function showPetBondNotice(text) {
+        if (!text) return;
+        setTip(text, { temporary: true, motion: "speaking" });
+        if (!petGiftElements.note) return;
+        window.clearTimeout(petGiftNoticeTimer);
+        petGiftElements.note.textContent = text;
+        petGiftNoticeTimer = window.setTimeout(() => {
+          petGiftNoticeTimer = null;
+          renderPetBondState();
+        }, 3600);
+      }
+
+      async function initPetBond() {
+        try {
+          const snapshot = await window.mindStudy?.getLonglongBond?.();
+          if (snapshot) setPetBondState(snapshot);
+        } catch {
+          renderPetBondState();
+        }
+        window.mindStudy?.onLonglongBondUpdate?.((snapshot) => {
+          setPetBondState(snapshot);
+        });
       }
 
       function showPetMotion(className = "speaking") {
@@ -363,9 +550,18 @@
         window.clearTimeout(petSleepTimer);
         if (companionMode !== "pet") return;
         petSleepTimer = window.setTimeout(() => {
-          window.clearTimeout(restoreSpriteTimer);
-          setPetSpriteState("sleep");
+          enterPetSleep();
         }, PET_SLEEP_DELAY_MS);
+      }
+
+      function enterPetSleep() {
+        window.clearTimeout(petSleepTimer);
+        window.clearTimeout(restoreSpriteTimer);
+        window.clearTimeout(nativeMoveSpriteTimer);
+        setPetGiftPopover(false);
+        setPetSpriteState("sleep");
+        setTip(LONGLONG_SLEEP_LINE, { temporary: false, motion: "thinking" });
+        speakLonglong(LONGLONG_SLEEP_LINE, { maxLength: 80 });
       }
 
       function resetPetActivity() {
@@ -500,6 +696,7 @@
           lastSpriteChangeAt: 0,
           directionAnchorX: point.x,
           directionAnchorY: point.y,
+          moved: false,
         };
         event.preventDefault();
         try {
@@ -517,6 +714,9 @@
         const dragDeltaY = point.y - petDragState.startY;
         petDragState.lastX = point.x;
         petDragState.lastY = point.y;
+        if (Math.hypot(dragDeltaX, dragDeltaY) > 5) {
+          petDragState.moved = true;
+        }
 
         event.preventDefault();
         schedulePetDragMove({
@@ -536,12 +736,20 @@
           petDragState.handle?.releasePointerCapture?.(event.pointerId);
         } catch {}
         ignoreNativeDragMotionUntil = Date.now() + 500;
+        const tappedPetBody = !petDragState.moved && petDragState.handle?.classList?.contains("pet-body");
+        if (petDragState.moved || tappedPetBody) {
+          suppressPetBodyClickUntil = Date.now() + 360;
+        }
         petDragState = null;
         pet.classList.remove("dragging");
-        nativeMoveSpriteTimer = window.setTimeout(() => {
-          setPetSpriteState("default");
-          schedulePetSleep();
-        }, 320);
+        if (tappedPetBody) {
+          handlePetAction("poke");
+        } else {
+          nativeMoveSpriteTimer = window.setTimeout(() => {
+            setPetSpriteState("default");
+            schedulePetSleep();
+          }, 320);
+        }
       }
 
       function setTip(text, { temporary = false, motion = "speaking" } = {}) {
@@ -581,6 +789,18 @@
           target.addEventListener("pointerenter", () => setPetActionsVisible(true));
           target.addEventListener("pointerleave", () => schedulePetActionsHide());
         });
+      }
+
+      function setPetGiftPopover(open) {
+        petGiftOpen = Boolean(open);
+        pet.classList.toggle("gift-open", petGiftOpen);
+        if (petGiftElements.popover) {
+          petGiftElements.popover.hidden = !petGiftOpen;
+        }
+        if (petGiftOpen) {
+          renderPetBondState();
+          setPetActionsVisible(false);
+        }
       }
 
       function pickRandom(items) {
@@ -688,6 +908,33 @@
         }
       }
 
+      async function sendPetGift(giftId) {
+        if (!window.mindStudy?.buyLonglongGift) return;
+
+        try {
+          const result = await window.mindStudy.buyLonglongGift(giftId);
+          if (result?.snapshot) setPetBondState(result.snapshot);
+
+          if (!result?.ok) {
+            if (result?.reason === "insufficient-coins") {
+              showPetBondNotice(`龙币还差 ${result.missingCoins}，龙龙先帮你存进愿望单。`);
+            } else {
+              showPetBondNotice("这个礼物龙龙暂时收不到。");
+            }
+            return;
+          }
+
+          playPetSprite("touch", 1500);
+          setTip(result.gift.line, { temporary: true, motion: "poked" });
+          speakLonglong(result.gift.line, { maxLength: 120 });
+          if (petGiftElements.note) {
+            petGiftElements.note.textContent = `${result.gift.name} 已送出，好感 +${result.gainedAffection}。`;
+          }
+        } catch (error) {
+          showPetBondNotice("送礼失败了，龙龙把爪爪先收回来。");
+        }
+      }
+
       function applyMode(mode) {
         companionMode = mode === "chat" ? "chat" : "pet";
         pet.classList.toggle("chat-mode", companionMode === "chat");
@@ -783,18 +1030,21 @@
       function handlePetAction(action) {
         if (action === "chat") {
           resetPetActivity();
+          setPetGiftPopover(false);
           setMode("chat");
           return;
         }
 
         if (action === "pet") {
           resetPetActivity();
+          setPetGiftPopover(false);
           setMode("pet");
           return;
         }
 
         if (action === "wake") {
           resetPetActivity();
+          setPetGiftPopover(false);
           window.mindStudy?.wakeMainWindow?.();
           return;
         }
@@ -831,18 +1081,18 @@
 
         if (action === "gift") {
           resetPetActivity();
-          window.mindStudy?.wakeMainWindow?.();
-          setTip("送礼在主窗口龙龙下面，龙龙等你来。", { temporary: true, motion: "speaking" });
+          setPetGiftPopover(!petGiftOpen);
+          if (petGiftOpen) setTip("龙龙看看今天会收到什么。", { temporary: false, motion: "speaking" });
+          return;
+        }
+
+        if (action === "close-gift") {
+          setPetGiftPopover(false);
           return;
         }
 
         if (action === "sleep") {
-          window.clearTimeout(petSleepTimer);
-          window.clearTimeout(restoreSpriteTimer);
-          window.clearTimeout(nativeMoveSpriteTimer);
-          stopLonglongVoice();
-          setPetSpriteState("sleep");
-          setTip("龙龙先睡一小会儿。", { temporary: false, motion: "thinking" });
+          enterPetSleep();
           return;
         }
       }
@@ -861,6 +1111,7 @@
       window.mindStudy?.onStudyTimerUpdate?.(applyStudyTimerSnapshot);
       syncVoiceControls();
       initPetActionHover();
+      initPetBond();
       if (document.readyState === "loading") {
         window.addEventListener("DOMContentLoaded", renderPetIcons, { once: true });
       } else {
@@ -873,6 +1124,11 @@
         window.mindStudy?.wakeMainWindow?.();
       });
 
+      petBody?.addEventListener("click", () => {
+        if (Date.now() < suppressPetBodyClickUntil) return;
+        handlePetAction("poke");
+      });
+
       voiceToggle.addEventListener("change", () => {
         resetPetActivity();
         toggleVoice(voiceToggle.checked);
@@ -883,6 +1139,19 @@
         if (!actionButton) return;
         hidePetActions();
         handlePetAction(actionButton.dataset.petAction);
+      });
+
+      petGiftElements.popover?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const giftButton = event.target.closest("[data-pet-gift]");
+        const actionButton = event.target.closest("[data-pet-action]");
+        if (giftButton) {
+          sendPetGift(giftButton.dataset.petGift);
+          return;
+        }
+        if (actionButton) {
+          handlePetAction(actionButton.dataset.petAction);
+        }
       });
 
       document.querySelectorAll("[data-pet-drag]").forEach((handle) => {
