@@ -218,6 +218,8 @@ const GRAPH_QUALITY_MIN_EDGES = 5;
 const GRAPH_TEXT_LIMIT = 28000;
 const GRAPH_NODE_LIMIT = 18;
 const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
+const GRAPH_GENERATION_TIMEOUT_MS = 120000;
+const GRAPH_SECONDARY_AI_TIMEOUT_MS = 90000;
 const GRAPH_GENERATION_STEPS = {
   idle: { title: "等待生成", detail: "导入资料后可用 Qwen / 本地规则生成课程图谱和题目。", progress: 0 },
   extracting: { title: "正在整理资料", detail: "提取 PDF / Markdown 文本，准备生成课程知识结构。", progress: 18 },
@@ -227,6 +229,7 @@ const GRAPH_GENERATION_STEPS = {
   fallback: { title: "已使用本地兜底", detail: "外部生成不可用，已根据资料标题、关键词和内置题库生成稳定演示内容。", progress: 100 },
   error: { title: "生成遇到问题", detail: "请检查资料文本或稍后重试，当前会保留已有学习数据。", progress: 100 },
 };
+let graphGenerationRunId = 0;
 
 const defaultGraphPositions = {
   人机交互: { x: 460, y: 300 },
@@ -1515,14 +1518,30 @@ function createDefaultRagKnowledge() {
   };
 }
 
-function createDefaultStudyModule() {
-  const graph = createFallbackStudyGraph([]);
+function createEmptyStudyGraph(course = {}) {
+  return {
+    nodes: [],
+    edges: [],
+    meta: {
+      generatedBy: "empty",
+      generatedAt: Date.now(),
+      qualityScore: 0,
+      fallbackUsed: false,
+      empty: true,
+      sourceDocuments: (course.documents || []).map((documentMeta) => documentMeta.title || documentMeta.name).filter(Boolean),
+    },
+  };
+}
+
+function createDefaultStudyModule(options = {}) {
+  const useSeedGraph = options.seedGraph !== false;
+  const graph = useSeedGraph ? createFallbackStudyGraph([]) : createEmptyStudyGraph(options.course);
   const questions = createFallbackQuizQuestions(graph.nodes);
 
   return {
     version: STUDY_MODULE_VERSION,
-    selectedNodeId: "评估方法",
-    activeQuizTopic: "评估方法",
+    selectedNodeId: graph.nodes[0]?.id || "",
+    activeQuizTopic: graph.nodes[0]?.id || "all",
     quizCursor: 0,
     mapMode: "mastery",
     graphFilters: {
@@ -1533,13 +1552,13 @@ function createDefaultStudyModule() {
     graphViewport: { ...GRAPH_DEFAULT_VIEWPORT },
     generation: {
       state: "idle",
-      engine: "seed",
-      message: "",
+      engine: useSeedGraph ? "seed" : "empty",
+      message: useSeedGraph ? "" : "当前课程还没有知识图谱，请导入资料后点击生成，或从 Neo4j 加载。",
       updatedAt: 0,
     },
     graph,
     quiz: {
-      scope: "评估方法",
+      scope: graph.nodes[0]?.id || "all",
       mode: "adaptive",
       difficulty: "all",
       questions,
@@ -1864,10 +1883,10 @@ function sanitizeStudyModule(studyModule = {}) {
     quiz: sanitizeStudyQuiz(studyModule.quiz, graph),
     attempts,
     mistakes,
-    generation: {
+    generation: sanitizeGenerationState({
       ...defaults.generation,
       ...(studyModule.generation || {}),
-    },
+    }),
     progress: {
       ...defaults.progress,
       ...(studyModule.progress || {}),
@@ -6024,6 +6043,7 @@ function createFallbackStudyGraph(documents = []) {
 }
 
 function createFallbackQuizQuestions(nodes = createFallbackStudyGraph([]).nodes) {
+  if (!nodes.length) return [];
   const topicSet = new Set(nodes.map((node) => node.id));
   const converted = quizBank
     .filter((question) => topicSet.has(question.topic))
@@ -6056,6 +6076,20 @@ function sanitizeGraphViewport(viewport = {}) {
 }
 
 function sanitizeStudyGraph(graph = {}) {
+  if (graph?.meta?.empty || graph?.empty || graph?.meta?.generatedBy === "empty") {
+    return {
+      nodes: [],
+      edges: [],
+      meta: {
+        generatedBy: "empty",
+        generatedAt: Number(graph.meta?.generatedAt || graph.generatedAt) || Date.now(),
+        qualityScore: 0,
+        fallbackUsed: false,
+        empty: true,
+        sourceDocuments: Array.isArray(graph.meta?.sourceDocuments) ? graph.meta.sourceDocuments : [],
+      },
+    };
+  }
   const fallback = createFallbackStudyGraph([]);
   const rawNodes = Array.isArray(graph.nodes) && graph.nodes.length ? graph.nodes : fallback.nodes;
   const nodes = rawNodes
@@ -6140,6 +6174,17 @@ function normalizeStudyQuestion(question, nodes = getStudyModule().graph.nodes) 
 }
 
 function sanitizeStudyQuiz(quiz = {}, graph = createFallbackStudyGraph([])) {
+  if (graph.meta?.empty) {
+    return {
+      scope: "all",
+      mode: ["adaptive", "diagnostic", "weak", "review", "exam"].includes(quiz?.mode) ? quiz.mode : "adaptive",
+      difficulty: quiz?.difficulty || "all",
+      questions: [],
+      cursor: 0,
+      generatedAt: Number(quiz?.generatedAt) || Date.now(),
+      source: "empty",
+    };
+  }
   const fallbackQuestions = createFallbackQuizQuestions(graph.nodes);
   const questions = (Array.isArray(quiz?.questions) && quiz.questions.length ? quiz.questions : fallbackQuestions)
     .map((question) => normalizeStudyQuestion(question, graph.nodes))
@@ -6156,9 +6201,57 @@ function sanitizeStudyQuiz(quiz = {}, graph = createFallbackStudyGraph([])) {
   };
 }
 
+function isDefaultSeedGraphForCourse(course, studyModule = {}) {
+  const courseName = String(course?.name || "");
+  if (!courseName || courseName.includes("用户交互")) return false;
+  const graph = studyModule.graph || {};
+  const nodeIds = new Set((graph.nodes || []).map((node) => node.id));
+  const hasHciSeedNodes = ["人机交互", "可用性", "评估方法"].every((id) => nodeIds.has(id));
+  return hasHciSeedNodes
+    && (graph.meta?.generatedBy === "local-fallback" || graph.meta?.generatedBy === "seed")
+    && (studyModule.quiz?.source === "seed" || !studyModule.quiz?.source)
+    && !studyModule.attempts?.length
+    && !studyModule.mistakes?.length;
+}
+
+function resetCourseSeedGraphIfNeeded(course) {
+  if (!isDefaultSeedGraphForCourse(course, course.studyModule)) return false;
+  course.studyModule.graph = createEmptyStudyGraph(course);
+  course.studyModule.quiz = sanitizeStudyQuiz({ mode: course.studyModule.quiz?.mode }, course.studyModule.graph);
+  course.studyModule.selectedNodeId = "";
+  course.studyModule.activeQuizTopic = "all";
+  course.studyModule.graphViewport = { ...GRAPH_DEFAULT_VIEWPORT };
+  course.studyModule.generation = {
+    state: "idle",
+    engine: "empty",
+    message: `当前课程“${course.name}”还没有知识图谱，请导入资料后点击生成，或从 Neo4j 加载。`,
+    updatedAt: Date.now(),
+  };
+  return true;
+}
+
+function sanitizeGenerationState(generation = {}) {
+  const normalized = {
+    state: generation.state || "idle",
+    engine: generation.engine || "",
+    message: generation.message || "",
+    updatedAt: Number(generation.updatedAt) || 0,
+  };
+  const busy = ["extracting", "ai", "validating"].includes(normalized.state);
+  const stale = busy && normalized.updatedAt && Date.now() - normalized.updatedAt > 5 * 60 * 1000;
+  if (!stale) return normalized;
+  return {
+    ...normalized,
+    state: "error",
+    message: "上次知识图谱生成没有正常结束，已自动停止。请检查 Qwen / Neo4j 状态后重新生成。",
+    updatedAt: Date.now(),
+  };
+}
+
 function getStudyModule(course = getActiveCourse()) {
   const currentStudyModule = course.studyModule && typeof course.studyModule === "object" ? course.studyModule : {};
   course.studyModule = Object.assign(currentStudyModule, sanitizeStudyModule(currentStudyModule));
+  resetCourseSeedGraphIfNeeded(course);
   return course.studyModule;
 }
 
@@ -6465,6 +6558,7 @@ function renderGenerationStatus() {
 }
 
 function renderKnowledgeModule() {
+  const course = getActiveCourse();
   const studyModule = getStudyModule();
   const selectedTopic = getKnowledgeTopic(studyModule.selectedNodeId);
   const selectedStats = getTopicStats(selectedTopic?.id);
@@ -6477,6 +6571,16 @@ function renderKnowledgeModule() {
 
   renderGenerationStatus();
   renderGraphFilters();
+  const graphTitle = document.querySelector("#knowledge-graph-title");
+  if (graphTitle) graphTitle.textContent = `${course.name || "当前课程"}知识图谱`;
+  const generationBusy = ["extracting", "ai", "validating"].includes(studyModule.generation?.state);
+  document.querySelectorAll("[data-study-action='generate']").forEach((button) => {
+    button.disabled = generationBusy;
+    button.querySelector("span").textContent = generationBusy ? "生成中" : "生成知识图谱";
+  });
+  document.querySelectorAll("[data-study-action='cancel-generation']").forEach((button) => {
+    button.disabled = !generationBusy;
+  });
   document.querySelectorAll("[data-map-mode]").forEach((button) => {
     button.classList.toggle("active", button.dataset.mapMode === mapMode);
   });
@@ -6543,6 +6647,8 @@ function renderKnowledgeModule() {
       <span>${selectedStats.total ? `已答 ${selectedStats.total} 题` : "待练习"}</span>
       <span>来源：${escapeHtml(selectedTopic.source || "课程资料")}</span>
     `;
+  } else if (nodeMeta) {
+    nodeMeta.innerHTML = `<span>当前课程暂无图谱</span><span>请导入资料后生成</span>`;
   }
   if (nodeRelated && selectedTopic) {
     const related = studyModule.graph.edges
@@ -6554,10 +6660,12 @@ function renderKnowledgeModule() {
       ...(selectedTopic.sourceSnippets || []).slice(0, 2).map((snippet) => `<p class="node-source-snippet">${escapeHtml(snippet)}</p>`),
       ...related.map((relatedTopic) => `<button class="mini-button" data-map-related="${escapeHtml(relatedTopic)}">${escapeHtml(relatedTopic)}</button>`),
     ].join("");
+  } else if (nodeRelated) {
+    nodeRelated.innerHTML = `<p class="node-example">当前课程还没有可展示的知识点。请先导入数据库课程资料，再点击生成知识图谱；如果 Neo4j 已有数据，可以点击“从 Neo4j 加载”。</p>`;
   }
   if (mastery) {
-    mastery.style.width = `${selectedStats.mastery}%`;
-    mastery.style.background = selectedStats.mastery < 60 ? "var(--coral)" : selectedStats.mastery >= 80 ? "var(--teal)" : "var(--yellow)";
+    mastery.style.width = selectedTopic ? `${selectedStats.mastery}%` : "0%";
+    mastery.style.background = selectedTopic && selectedStats.mastery < 60 ? "var(--coral)" : selectedTopic && selectedStats.mastery >= 80 ? "var(--teal)" : "var(--yellow)";
   }
   document.querySelectorAll("[data-quiz-action='generate-current']").forEach((button) => {
     button.dataset.quizTopic = selectedTopic?.id || "";
@@ -7254,6 +7362,24 @@ function createVariantQuestionFromCurrent() {
   renderQuizModule();
 }
 
+function withTimeout(promise, timeoutMs, label) {
+  let timer = null;
+  const guarded = Promise.resolve(promise);
+  guarded.catch(() => {});
+  return Promise.race([
+    guarded,
+    new Promise((resolve, reject) => {
+      timer = window.setTimeout(() => reject(new Error(`${label} 超时，请检查网络、模型额度或稍后重试。`)), timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timer) window.clearTimeout(timer);
+  });
+}
+
+function isCurrentGraphGeneration(runId, courseId) {
+  return graphGenerationRunId === runId && getActiveCourse()?.id === courseId;
+}
+
 function generateQuizForTopic(topicId, difficulty = "all") {
   const studyModule = getStudyModule();
   const topic = getKnowledgeTopic(topicId);
@@ -7756,25 +7882,31 @@ function createDirectQuestionsForNode(node, preferredDifficulty = "") {
 async function generateStudyModuleFromUploads() {
   const course = getActiveCourse();
   const studyModule = getStudyModule(course);
+  if (["extracting", "ai", "validating"].includes(studyModule.generation?.state)) return;
+  const runId = ++graphGenerationRunId;
+  const courseId = course.id;
   let documents = [];
   let graph = null;
   let questions = [];
   let engine = "local-rules";
 
   try {
+    resetCourseSeedGraphIfNeeded(course);
     studyModule.generation = { state: "extracting", engine: "", message: "", updatedAt: Date.now() };
     saveWorkspace();
     renderStudyModuleViews();
 
-    documents = await buildStudyAiDocumentsForCourse({
+    documents = await withTimeout(buildStudyAiDocumentsForCourse({
       requireCompletePdfOcr: true,
       textLimit: GRAPH_TEXT_LIMIT,
       onStatus: (message) => {
+        if (!isCurrentGraphGeneration(runId, courseId)) return;
         studyModule.generation = { state: "extracting", engine: "", message, updatedAt: Date.now() };
         saveWorkspace();
         renderStudyModuleViews();
       },
-    });
+    }), 60000, "资料文本提取");
+    if (!isCurrentGraphGeneration(runId, courseId)) return;
     if (!documents.length) throw new Error("没有可用于生成的资料文本。");
     documents = documents.map((documentMeta) => ({
       ...documentMeta,
@@ -7786,14 +7918,15 @@ async function generateStudyModuleFromUploads() {
       saveWorkspace();
       renderStudyModuleViews();
       try {
-        const response = await window.mindStudy.graph.generateFromDocuments({
+        const response = await withTimeout(window.mindStudy.graph.generateFromDocuments({
           course: getGraphCoursePayload(course),
           documents,
           options: {
-            maxTokens: 3000,
+            maxTokens: 2200,
             temperature: 0.12,
           },
-        });
+        }), GRAPH_GENERATION_TIMEOUT_MS, "Qwen + Neo4j 知识图谱生成");
+        if (!isCurrentGraphGeneration(runId, courseId)) return;
         if (response?.graph?.nodes?.length) {
           graph = sanitizeStudyGraph(response.graph);
           questions = (response.quiz?.questions || []).map((question) => normalizeStudyQuestion(question, graph.nodes)).filter(Boolean);
@@ -7811,18 +7944,19 @@ async function generateStudyModuleFromUploads() {
       renderStudyModuleViews();
       try {
         await ensureAiConfigured();
-        const response = await window.mindStudy.ai.askQuestion({
+        const response = await withTimeout(window.mindStudy.ai.askQuestion({
           question: buildStudyGenerationPrompt(documents),
           documents,
           options: {
             maxChunks: 10,
             maxContextChars: GRAPH_TEXT_LIMIT,
-            maxTokens: 2600,
+            maxTokens: 2000,
             temperature: 0.15,
             persona: false,
             multimodal: true,
           },
-        });
+        }), GRAPH_SECONDARY_AI_TIMEOUT_MS, "Qwen 备用图谱生成");
+        if (!isCurrentGraphGeneration(runId, courseId)) return;
         const parsed = extractJsonFromAiText(response.answer);
         if (parsed) {
           graph = adaptExternalGraphPayload(parsed, documents, "qwen");
@@ -7838,6 +7972,7 @@ async function generateStudyModuleFromUploads() {
     studyModule.generation = { state: "validating", engine, message: "", updatedAt: Date.now() };
     saveWorkspace();
     renderStudyModuleViews();
+    if (!isCurrentGraphGeneration(runId, courseId)) return;
 
     if (!graph) {
       graph = createRuleBasedGraphFromDocuments(documents);
@@ -7847,11 +7982,12 @@ async function generateStudyModuleFromUploads() {
     graph = ensureGraphQuality(graph, documents, engine);
     if (engine === "local-rules" && window.mindStudy?.graph?.saveCourseGraph) {
       try {
-        const saved = await window.mindStudy.graph.saveCourseGraph({
+        const saved = await withTimeout(window.mindStudy.graph.saveCourseGraph({
           course: getGraphCoursePayload(course),
           documents,
           graph,
-        });
+        }), 30000, "本地图谱写入 Neo4j");
+        if (!isCurrentGraphGeneration(runId, courseId)) return;
         if (saved?.graph?.nodes?.length) {
           graph = ensureGraphQuality(sanitizeStudyGraph(saved.graph), documents, "local-rules+neo4j");
           engine = "local-rules+neo4j";
@@ -7884,6 +8020,7 @@ async function generateStudyModuleFromUploads() {
     renderStudyModuleViews();
     showView("map");
   } catch (error) {
+    if (!isCurrentGraphGeneration(runId, courseId)) return;
     studyModule.generation = {
       state: "error",
       engine,
@@ -7896,6 +8033,7 @@ async function generateStudyModuleFromUploads() {
 }
 
 async function cancelStudyGeneration() {
+  graphGenerationRunId += 1;
   const studyModule = getStudyModule();
   studyModule.generation = {
     state: "idle",
@@ -10271,7 +10409,7 @@ function submitCourseForm(event) {
     description,
     documents: [],
     activeDocumentId: "",
-    studyModule: createDefaultStudyModule(),
+    studyModule: createDefaultStudyModule({ seedGraph: name.includes("用户交互"), course: { name, description, documents: [] } }),
     ragKnowledge: createDefaultRagKnowledge(),
     createdAt: Date.now(),
   };
@@ -10363,8 +10501,10 @@ function removeDocument(documentId) {
 
 function switchCourse(courseId) {
   rememberCurrentNotes();
+  graphGenerationRunId += 1;
   workspace.activeCourseId = courseId;
   const course = getActiveCourse();
+  getStudyModule(course);
   course.activeDocumentId = course.activeDocumentId || course.documents[0]?.id || "";
   documentState.current = null;
   saveWorkspace();
