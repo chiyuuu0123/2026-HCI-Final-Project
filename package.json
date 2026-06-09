@@ -14,11 +14,7 @@
     "voice:test": "powershell -ExecutionPolicy Bypass -File scripts/test-longlong-voice-api.ps1",
     "start": "electron .",
     "dev": "electron .",
-<<<<<<< HEAD
-    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check frontend/vision.js && node --check b_deepseek_module/ocrImageExtractor.js && node --check scripts/copy-assets.js"
-=======
-    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check b_qwen_module/ocrImageExtractor.js && node --check b_qwen_module/qwenClient.js && node --check scripts/copy-assets.js"
->>>>>>> aa566c41e344cffa68430ae2033eb8828295de9e
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check frontend/vision.js && node --check b_qwen_module/ocrImageExtractor.js && node --check b_qwen_module/qwenClient.js && node --check scripts/copy-assets.js"
   },
   "keywords": [
     "electron",
