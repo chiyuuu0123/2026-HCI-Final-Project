@@ -36,11 +36,10 @@ input {
   inset: 0;
   opacity: 1;
   pointer-events: auto;
-  cursor: default;
   transition:
     opacity 180ms ease,
     transform 180ms ease;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .desktop-pet.chat-mode .pet-stage {
@@ -51,23 +50,23 @@ input {
 
 .pet-body {
   position: absolute;
-  right: 44px;
+  right: 52px;
   bottom: 56px;
   z-index: 1;
   display: grid;
-  place-items: end center;
-  width: 148px;
-  height: 152px;
+  place-items: center;
+  width: 132px;
+  height: 132px;
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: default;
-  -webkit-app-region: drag;
+  cursor: grab;
+  -webkit-app-region: no-drag;
 }
 
 .pet-body:active,
 .desktop-pet.dragging .pet-body {
-  cursor: default;
+  cursor: grabbing;
 }
 
 .pet-body::after {
@@ -99,7 +98,7 @@ input {
   filter: drop-shadow(0 14px 16px rgba(24, 34, 30, 0.24));
   animation: longlong-idle 3.4s ease-in-out infinite;
   will-change: transform;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .desktop-pet.asset-motion .pet-body img,
@@ -204,16 +203,16 @@ input {
 
 .pet-actions {
   position: absolute;
-  right: 0;
-  bottom: 12px;
-  left: 0;
+  right: 50%;
+  bottom: 0;
   z-index: 3;
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
   gap: 7px;
+  justify-content: center;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(12px) scale(0.96);
+  transform: translate(50%, 12px) scale(0.96);
   transition:
     opacity 180ms ease,
     transform 180ms ease;
@@ -231,11 +230,10 @@ input {
   -webkit-app-region: no-drag;
 }
 
-.desktop-pet:hover .pet-actions,
-.desktop-pet:focus-within .pet-actions {
+.desktop-pet.actions-visible .pet-actions {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0) scale(1);
+  transform: translate(50%, 0) scale(1);
 }
 
 .pet-actions button,
@@ -264,7 +262,24 @@ input {
 }
 
 .pet-actions button {
-  min-width: 42px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  min-width: 52px;
+  min-height: 38px;
+  padding: 5px 4px;
+  font-weight: 900;
+}
+
+.pet-actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+.pet-actions span {
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .pet-actions button:hover,
@@ -277,12 +292,6 @@ input {
     inset 0 -1px 0 rgba(255, 255, 255, 0.84);
   color: #08796f;
   transform: translateY(-2px);
-}
-
-.desktop-pet.voice-enabled #pet-voice-action {
-  border-color: rgba(24, 143, 132, 0.34);
-  background: rgba(236, 255, 251, 0.94);
-  color: #08796f;
 }
 
 .desktop-pet.voice-speaking .pet-bubble {
@@ -333,7 +342,7 @@ input {
   padding: 14px 14px 12px;
   border-bottom: 1px solid rgba(37, 65, 58, 0.1);
   cursor: grab;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .pet-chat-head:active,

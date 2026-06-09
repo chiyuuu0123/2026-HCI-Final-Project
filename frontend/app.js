@@ -17,11 +17,60 @@ const LONGLONG_ANIMATION_SPRITES = {
 const LONGLONG_SLEEP_DELAY_MS = 20000;
 const LONGLONG_RAG_TEXT_LIMIT = 1600;
 const LONGLONG_REMINDER_LIMIT = 3;
+const LONGLONG_CHAT_AFFECTION = 2;
+const LONGLONG_FALLBACK_COIN_SECONDS = 10 * 60;
 const LONGLONG_THINKING_LINE = "这个问题让龙龙想一下";
 const LONGLONG_ANSWER_LINE = "嘿嘿，龙龙一语道破天机啦！";
+const LONGLONG_QUOTE_AUDIO = new Map([
+  ["龙龙吞咽了太多意义，但其实生命只需要呼吸。", "./assets/longlong-voice/quote-01.wav"],
+  ["你欠龙龙的眼泪太多，龙龙数不清。", "./assets/longlong-voice/quote-02.wav"],
+  ["如果忧郁是一种天赋，那我龙龙将天赋异禀。", "./assets/longlong-voice/quote-03.wav"],
+  ["龙龙不胖，龙龙只有两吨；", "./assets/longlong-voice/quote-04.wav"],
+  ["今夜星光闪闪，我爱你的心满满！", "./assets/longlong-voice/quote-05.wav"],
+  ["每只龙龙都一定会找到自己的小七哦！", "./assets/longlong-voice/quote-06.wav"],
+]);
+const LONGLONG_GIFT_AUDIO = new Map([
+  ["谢谢你的呼吸抱枕。龙龙吞咽了太多意义，但其实生命只需要呼吸。", "./assets/longlong-voice/gift-01.wav"],
+  ["这颗眼泪玻璃珠好亮。你欠龙龙的眼泪太多，龙龙数不清。", "./assets/longlong-voice/gift-02.wav"],
+  ["蓝色小斗篷收到。如果忧郁是一种天赋，那我龙龙将天赋异禀。", "./assets/longlong-voice/gift-03.wav"],
+  ["体重秤就放远一点。龙龙不胖，龙龙只有两吨。", "./assets/longlong-voice/gift-04.wav"],
+  ["星星夜灯亮啦。今夜星光闪闪，我爱你的心满满！", "./assets/longlong-voice/gift-05.wav"],
+  ["小七玩偶到龙龙怀里啦。每只龙龙都一定会找到自己的小七哦！", "./assets/longlong-voice/gift-06.wav"],
+  ["奶油云朵软软的，龙龙今天也被你好好接住了。", "./assets/longlong-voice/gift-07.wav"],
+  ["学习书签收到，龙龙会把你努力的这一页好好夹住。", "./assets/longlong-voice/gift-08.wav"],
+]);
+const LONGLONG_POKE_AUDIO = new Map([
+  ["摸摸收到，龙龙继续陪你。", "./assets/longlong-voice/poke-01.wav"],
+  ["嘿嘿，龙龙精神满满。", "./assets/longlong-voice/poke-02.wav"],
+  ["先别跑偏，我们把这一小步做完。", "./assets/longlong-voice/poke-03.wav"],
+  ["收到召唤，龙龙把注意力捡回来啦。", "./assets/longlong-voice/poke-04.wav"],
+  ["摸摸可以，但这页也要读完喔。", "./assets/longlong-voice/poke-05.wav"],
+  ["龙龙在岗，放心大胆问。", "./assets/longlong-voice/poke-06.wav"],
+  ["嘿嘿，奖励已收到，继续冲。", "./assets/longlong-voice/poke-07.wav"],
+  ["龙龙拍拍你，别急，慢慢来。", "./assets/longlong-voice/poke-08.wav"],
+]);
+const LONGLONG_TIP_AUDIO = new Map([
+  ["先做最重要的一小步，完成后再休息。", "./assets/longlong-voice/tip-01.wav"],
+  ["眼睛有点累的话，龙龙建议你看远处十秒。", "./assets/longlong-voice/tip-02.wav"],
+  ["如果资料太多，就先抓标题和关键词。", "./assets/longlong-voice/tip-03.wav"],
+  ["先把问题写清楚，答案就会靠近一点。", "./assets/longlong-voice/tip-04.wav"],
+  ["读不动的时候，先圈出三个关键词。", "./assets/longlong-voice/tip-05.wav"],
+  ["复习别贪多，今天先把一个知识点讲明白。", "./assets/longlong-voice/tip-06.wav"],
+  ["卡住不是失败，是龙龙提醒你该换个角度。", "./assets/longlong-voice/tip-07.wav"],
+  ["做完这一段就喝口水，龙龙给你记着。", "./assets/longlong-voice/tip-08.wav"],
+  ["如果开始分心，就把下一步缩小到两分钟。", "./assets/longlong-voice/tip-09.wav"],
+  ["遇到英文段落，先看术语，再看句子关系。", "./assets/longlong-voice/tip-10.wav"],
+]);
+const LONGLONG_MAIN_POKES = [...LONGLONG_POKE_AUDIO.keys()];
+const LONGLONG_MAIN_TIPS = [...LONGLONG_TIP_AUDIO.keys()];
+const LONGLONG_MAIN_QUOTES = [...LONGLONG_QUOTE_AUDIO.keys()];
 const LONGLONG_FIXED_AUDIO = new Map([
   [LONGLONG_THINKING_LINE, "./assets/longlong-voice/ai-thinking.wav"],
   [LONGLONG_ANSWER_LINE, "./assets/longlong-voice/ai-answer.wav"],
+  ...LONGLONG_POKE_AUDIO,
+  ...LONGLONG_TIP_AUDIO,
+  ...LONGLONG_QUOTE_AUDIO,
+  ...LONGLONG_GIFT_AUDIO,
 ]);
 let longlongFixedAudio = null;
 
@@ -165,7 +214,7 @@ const GRAPH_TEXT_LIMIT = 28000;
 const GRAPH_NODE_LIMIT = 18;
 const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
 const GRAPH_GENERATION_STEPS = {
-  idle: { title: "等待生成", detail: "导入资料后可用 DeepSeek / 本地规则生成课程图谱和题目。", progress: 0 },
+  idle: { title: "等待生成", detail: "导入资料后可用 Qwen / 本地规则生成课程图谱和题目。", progress: 0 },
   extracting: { title: "正在整理资料", detail: "提取 PDF / Markdown 文本，准备生成课程知识结构。", progress: 18 },
   ai: { title: LONGLONG_THINKING_LINE, detail: "龙龙正在生成结构化知识图谱和题目 JSON。", progress: 56 },
   validating: { title: "正在校验结果", detail: "检查节点、边、题目、出处和薄弱知识点。", progress: 76 },
@@ -209,7 +258,7 @@ const PDF_OCR_MAX_CANVAS_SIDE = 2200;
 const PDF_OCR_AUTO_MAX_PAGES = 8;
 const AI_CONTEXT_TEXT_LIMIT = 12000;
 const AI_READING_TEXT_LIMIT = 8000;
-const RAG_KNOWLEDGE_TEXT_LIMIT = 60000;
+const RAG_KNOWLEDGE_TEXT_LIMIT = 240000;
 const RAG_DEFAULT_CHUNK_SIZE = 1400;
 const RAG_DEFAULT_MAX_CHUNKS = 6;
 const RAG_MIN_CHUNK_SIZE = 500;
@@ -274,14 +323,38 @@ let studyTimerSnapshot = {
   label: "今日学习 00:00:00",
   dailySeconds: {},
 };
+let longlongBondState = {
+  affection: 0,
+  coins: 0,
+  gifted: {},
+  level: {
+    name: "初识",
+    detail: "龙龙刚刚探头",
+    progress: 0,
+    nextName: "熟悉",
+    nextThreshold: 20,
+  },
+  coinRule: {
+    secondsPerCoin: LONGLONG_FALLBACK_COIN_SECONDS,
+    dailyCoinCap: 18,
+  },
+  giftCatalog: [],
+};
 const longlongState = {
   expanded: false,
+  giftOpen: false,
+  chatOpen: false,
   mood: "等待摄像头",
   moodDetail: "我会结合状态识别和音乐建议提醒你。",
   focusScore: "--",
   music: "白噪音 + 轻钢琴，适合继续专注阅读。",
   ragAnswer: "RAG 向量接口已预留，后续接入资料库向量检索后会在这里回答。",
 };
+let longlongBondNoticeTimer = null;
+let longlongCoinSyncKey = "";
+let longlongBubbleTimer = null;
+let longlongActionsHideTimer = null;
+let longlongMainChatHistory = [];
 const longlongDragState = {
   active: false,
   moved: false,
@@ -419,18 +492,127 @@ function handleAppZoomWheel(event) {
 function getLonglongElements() {
   return {
     root: document.querySelector("#longlong-assistant"),
+    avatar: document.querySelector(".longlong-avatar"),
     avatarImage: document.querySelector(".longlong-avatar img"),
     panel: document.querySelector("#longlong-panel"),
+    actions: document.querySelector(".longlong-actions"),
     bubble: document.querySelector("#longlong-bubble"),
-    mood: document.querySelector("#longlong-mood"),
-    moodDetail: document.querySelector("#longlong-mood-detail"),
-    studyTime: document.querySelector("#longlong-study-time"),
     studyTimePill: document.querySelector("#longlong-time-pill"),
-    music: document.querySelector("#longlong-music"),
-    reminders: document.querySelector("#longlong-reminders"),
-    question: document.querySelector("#longlong-question"),
-    ragOutput: document.querySelector("#longlong-rag-output"),
+    coins: document.querySelector("#longlong-coins"),
+    chatPopover: document.querySelector("#longlong-chat-popover"),
+    chatList: document.querySelector("#longlong-chat-list"),
+    chatInput: document.querySelector("#longlong-chat-input"),
+    giftPopover: document.querySelector("#longlong-gift-popover"),
+    bondLevel: document.querySelector("#longlong-bond-level"),
+    bondDetail: document.querySelector("#longlong-bond-detail"),
+    bondPoints: document.querySelector("#longlong-bond-points"),
+    bondProgress: document.querySelector("#longlong-bond-progress-bar"),
+    bondNote: document.querySelector("#longlong-bond-note"),
+    giftRule: document.querySelector("#longlong-gift-rule"),
+    giftShop: document.querySelector("#longlong-gift-shop"),
+    inventory: document.querySelector("#longlong-inventory"),
   };
+}
+
+function pickLonglongItem(items = []) {
+  return items[Math.floor(Math.random() * items.length)] || "";
+}
+
+function setLonglongBubbleText(text, { temporary = true } = {}) {
+  const elements = getLonglongElements();
+  if (!elements.bubble || !text) return;
+  window.clearTimeout(longlongBubbleTimer);
+  elements.bubble.textContent = text;
+  if (temporary) {
+    longlongBubbleTimer = window.setTimeout(() => {
+      longlongBubbleTimer = null;
+      syncLonglongAssistant();
+    }, 4200);
+  }
+}
+
+function setLonglongActionsVisible(visible) {
+  window.clearTimeout(longlongActionsHideTimer);
+  const elements = getLonglongElements();
+  elements.root?.classList.toggle("actions-visible", Boolean(visible));
+}
+
+function scheduleLonglongActionsHide(delay = 120) {
+  window.clearTimeout(longlongActionsHideTimer);
+  longlongActionsHideTimer = window.setTimeout(() => {
+    setLonglongActionsVisible(false);
+  }, delay);
+}
+
+function hideLonglongActions() {
+  setLonglongActionsVisible(false);
+  const activeElement = document.activeElement;
+  if (activeElement?.closest?.(".longlong-actions")) {
+    activeElement.blur();
+  }
+}
+
+function initLonglongActionHover() {
+  const elements = getLonglongElements();
+  const targets = [elements.avatar, elements.actions].filter(Boolean);
+
+  targets.forEach((target) => {
+    target.addEventListener("pointerenter", () => setLonglongActionsVisible(true));
+    target.addEventListener("pointerleave", () => scheduleLonglongActionsHide());
+  });
+}
+
+function setLonglongGiftPopover(open) {
+  longlongState.giftOpen = Boolean(open);
+  const elements = getLonglongElements();
+  elements.root?.classList.toggle("gift-open", longlongState.giftOpen);
+  if (elements.giftPopover) elements.giftPopover.hidden = !longlongState.giftOpen;
+  if (longlongState.giftOpen) {
+    setLonglongChatPopover(false);
+    setLonglongExpanded(true);
+    renderLonglongBondState();
+  }
+}
+
+function setLonglongChatPopover(open) {
+  longlongState.chatOpen = Boolean(open);
+  const elements = getLonglongElements();
+  elements.root?.classList.toggle("chat-open", longlongState.chatOpen);
+  if (elements.chatPopover) elements.chatPopover.hidden = !longlongState.chatOpen;
+  if (longlongState.chatOpen) {
+    setLonglongGiftPopover(false);
+    setLonglongExpanded(true);
+    window.setTimeout(() => elements.chatInput?.focus(), 60);
+  }
+}
+
+function addLonglongChatMessage(role, content, options = {}) {
+  const elements = getLonglongElements();
+  if (!elements.chatList) return null;
+  const message = document.createElement("article");
+  message.className = `longlong-chat-message ${role}`;
+  message.innerHTML = `
+    ${role === "assistant" ? '<img src="./assets/longlong-guide.gif" alt="" draggable="false" />' : ""}
+    <div>
+      ${renderAiMarkdown(String(content || ""))}
+      ${options.meta ? `<small>${escapeHtml(options.meta)}</small>` : ""}
+    </div>
+  `;
+  elements.chatList.append(message);
+  elements.chatList.scrollTop = elements.chatList.scrollHeight;
+  return message;
+}
+
+function updateLonglongChatMessage(message, content, options = {}) {
+  const elements = getLonglongElements();
+  if (!message) return;
+  const body = message.querySelector("div");
+  if (!body) return;
+  body.innerHTML = `
+    ${renderAiMarkdown(String(content || ""))}
+    ${options.meta ? `<small>${escapeHtml(options.meta)}</small>` : ""}
+  `;
+  if (elements.chatList) elements.chatList.scrollTop = elements.chatList.scrollHeight;
 }
 
 function formatStudyDuration(totalSeconds) {
@@ -476,9 +658,195 @@ function renderStudyTimerSnapshot() {
   if (dashboardStudyNote) dashboardStudyNote.textContent = `已累计 ${formatStudyDurationText(studyTimerSnapshot.seconds)}`;
 }
 
+function normalizeLonglongBondSnapshot(snapshot = {}) {
+  const level = snapshot.level && typeof snapshot.level === "object" ? snapshot.level : {};
+  const coinRule = snapshot.coinRule && typeof snapshot.coinRule === "object" ? snapshot.coinRule : {};
+  return {
+    affection: Math.max(0, Math.floor(Number(snapshot.affection) || 0)),
+    coins: Math.max(0, Math.floor(Number(snapshot.coins) || 0)),
+    gifted: snapshot.gifted && typeof snapshot.gifted === "object" ? snapshot.gifted : {},
+    level: {
+      name: level.name || "初识",
+      detail: level.detail || "龙龙刚刚探头",
+      progress: Math.min(100, Math.max(0, Math.floor(Number(level.progress) || 0))),
+      nextName: level.nextName || "",
+      nextThreshold: Math.max(0, Math.floor(Number(level.nextThreshold) || 0)),
+      isMax: Boolean(level.isMax),
+    },
+    coinRule: {
+      secondsPerCoin: Math.max(60, Math.floor(Number(coinRule.secondsPerCoin) || LONGLONG_FALLBACK_COIN_SECONDS)),
+      dailyCoinCap: Math.max(1, Math.floor(Number(coinRule.dailyCoinCap) || 18)),
+    },
+    giftCatalog: Array.isArray(snapshot.giftCatalog) ? snapshot.giftCatalog : [],
+  };
+}
+
+function setLonglongBondState(snapshot = {}) {
+  longlongBondState = normalizeLonglongBondSnapshot(snapshot);
+  renderLonglongBondState();
+}
+
+function getSafeLucideIcon(icon) {
+  const value = String(icon || "gift").trim();
+  return /^[a-z0-9-]+$/i.test(value) ? value : "gift";
+}
+
+function renderLonglongGiftShop(elements = getLonglongElements()) {
+  if (!elements.giftShop) return;
+  const gifts = longlongBondState.giftCatalog || [];
+  elements.giftShop.innerHTML = gifts.length
+    ? gifts
+        .map((gift) => {
+          const price = Math.max(0, Math.floor(Number(gift.price) || 0));
+          const affection = Math.max(0, Math.floor(Number(gift.affection) || 0));
+          const canBuy = longlongBondState.coins >= price;
+          return `
+            <article class="longlong-gift-row">
+              <span class="longlong-gift-icon"><i data-lucide="${getSafeLucideIcon(gift.icon)}"></i></span>
+              <div class="longlong-gift-copy">
+                <strong>${escapeHtml(gift.name || "神秘礼物")}</strong>
+                <span>${price} 龙币 · +${affection} 好感</span>
+              </div>
+              <button type="button" data-longlong-gift="${escapeHtml(gift.id)}" ${canBuy ? "" : "disabled"}>赠送</button>
+            </article>
+          `;
+        })
+        .join("")
+    : `<p class="longlong-bond-note">龙龙商城准备中。</p>`;
+  window.lucide?.createIcons();
+}
+
+function renderLonglongInventory(elements = getLonglongElements()) {
+  if (!elements.inventory) return;
+  const gifts = longlongBondState.giftCatalog || [];
+  const owned = gifts
+    .map((gift) => ({
+      name: gift.name,
+      count: Math.max(0, Math.floor(Number(longlongBondState.gifted?.[gift.id]) || 0)),
+    }))
+    .filter((gift) => gift.count > 0);
+  elements.inventory.textContent = owned.length
+    ? `已送：${owned.map((gift) => `${gift.name} x${gift.count}`).join("、")}`
+    : "还没有送礼。";
+}
+
+function renderLonglongBondState() {
+  const elements = getLonglongElements();
+  const level = longlongBondState.level || {};
+  const secondsPerCoin = longlongBondState.coinRule?.secondsPerCoin || LONGLONG_FALLBACK_COIN_SECONDS;
+
+  if (elements.coins) elements.coins.textContent = `${longlongBondState.coins} 龙币`;
+  if (elements.bondLevel) elements.bondLevel.textContent = level.name || "初识";
+  if (elements.bondDetail) elements.bondDetail.textContent = level.detail || "龙龙刚刚探头";
+  if (elements.bondPoints) elements.bondPoints.textContent = `${longlongBondState.affection} 好感`;
+  if (elements.bondProgress) elements.bondProgress.style.width = `${level.progress || 0}%`;
+  if (elements.giftRule) elements.giftRule.textContent = `${formatStudyDurationText(secondsPerCoin)} / 1 龙币`;
+  if (elements.bondNote && !longlongBondNoticeTimer) {
+    elements.bondNote.textContent = level.isMax
+      ? "龙龙已经找到自己的小七啦。"
+      : `距 ${level.nextName || "下一阶段"} 还需要 ${Math.max(0, (level.nextThreshold || 0) - longlongBondState.affection)} 好感。`;
+  }
+  renderLonglongGiftShop(elements);
+  renderLonglongInventory(elements);
+}
+
+function showLonglongBondNotice(text) {
+  const elements = getLonglongElements();
+  if (!text) return;
+  setLonglongBubbleText(text);
+  if (!elements.bondNote) return;
+  window.clearTimeout(longlongBondNoticeTimer);
+  elements.bondNote.textContent = text;
+  longlongBondNoticeTimer = window.setTimeout(() => {
+    longlongBondNoticeTimer = null;
+    renderLonglongBondState();
+  }, 3600);
+}
+
+async function syncLonglongStudyCoins() {
+  if (!window.mindStudy?.claimLonglongStudyCoins) return;
+  const secondsPerCoin = longlongBondState.coinRule?.secondsPerCoin || LONGLONG_FALLBACK_COIN_SECONDS;
+  const dateKey = studyTimerSnapshot.date || getTodayDateKey();
+  const earnedBlock = Math.floor(Math.max(0, studyTimerSnapshot.seconds || 0) / secondsPerCoin);
+  const syncKey = `${dateKey}:${earnedBlock}`;
+  if (syncKey === longlongCoinSyncKey) return;
+  longlongCoinSyncKey = syncKey;
+
+  try {
+    const snapshot = await window.mindStudy.claimLonglongStudyCoins({
+      seconds: studyTimerSnapshot.seconds,
+      date: dateKey,
+    });
+    setLonglongBondState(snapshot);
+    if (snapshot?.claimedCoins > 0) {
+      showLonglongBondNotice(`学习奖励 +${snapshot.claimedCoins} 龙币，龙龙记账成功。`);
+    }
+  } catch (error) {
+    // 好感度奖励失败不影响学习计时继续运行。
+  }
+}
+
+async function initLonglongBond() {
+  try {
+    const snapshot = await window.mindStudy?.getLonglongBond?.();
+    if (snapshot) setLonglongBondState(snapshot);
+  } catch (error) {
+    renderLonglongBondState();
+  }
+
+  window.mindStudy?.onLonglongBondUpdate?.((snapshot) => {
+    setLonglongBondState(snapshot);
+  });
+  syncLonglongStudyCoins();
+}
+
+async function addLonglongChatAffection(amount = LONGLONG_CHAT_AFFECTION) {
+  if (!window.mindStudy?.addLonglongAffection) return;
+  try {
+    const snapshot = await window.mindStudy.addLonglongAffection({
+      amount,
+      reason: "chat",
+    });
+    setLonglongBondState(snapshot);
+    showLonglongBondNotice(`聊天好感 +${amount}，龙龙偷偷开心了一下。`);
+  } catch (error) {
+    // 聊天加好感失败不影响问答结果。
+  }
+}
+
+async function sendLonglongGift(giftId) {
+  if (!window.mindStudy?.buyLonglongGift) return;
+
+  try {
+    const result = await window.mindStudy.buyLonglongGift(giftId);
+    if (result?.snapshot) setLonglongBondState(result.snapshot);
+
+    if (!result?.ok) {
+      if (result?.reason === "insufficient-coins") {
+        showLonglongBondNotice(`龙币还差 ${result.missingCoins}，龙龙先帮你存进愿望单。`);
+      } else {
+        showLonglongBondNotice("这个礼物龙龙暂时收不到。");
+      }
+      return;
+    }
+
+    playLonglongSprite("touch", 1500);
+    updateLonglongMood(`好感度 +${result.gainedAffection}`, result.gift.line);
+    playLonglongFixedLine(result.gift.line);
+    setLonglongBubbleText(result.gift.line);
+    const elements = getLonglongElements();
+    if (elements.bondNote) {
+      elements.bondNote.textContent = `${result.gift.name} 已送出，好感 +${result.gainedAffection}。`;
+    }
+  } catch (error) {
+    showLonglongBondNotice("送礼失败了，龙龙把爪爪先收回来。");
+  }
+}
+
 function applyStudyTimerSnapshot(snapshot) {
   studyTimerSnapshot = normalizeStudyTimerSnapshot(snapshot);
   renderStudyTimerSnapshot();
+  syncLonglongStudyCoins();
   renderPlannerCalendar();
 }
 
@@ -568,6 +936,10 @@ function applyLonglongPosition() {
 function setLonglongExpanded(expanded) {
   longlongState.expanded = Boolean(expanded);
   getLonglongElements().root?.classList.toggle("expanded", longlongState.expanded);
+  if (!longlongState.expanded) {
+    setLonglongGiftPopover(false);
+    setLonglongChatPopover(false);
+  }
   window.requestAnimationFrame(applyLonglongPosition);
 }
 
@@ -705,8 +1077,7 @@ function handleLonglongKeyboardToggle(event) {
   if (!event.target.closest?.(".longlong-avatar")) return;
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
-  playLonglongSprite("touch", 1400);
-  toggleLonglongPanel();
+  handleLonglongAction("poke");
 }
 
 function getTodayDateKey() {
@@ -753,6 +1124,14 @@ function getLonglongReminderText(reminders = getLonglongReminders()) {
   if (!reminders.length) return "今天没有紧急事项，适合整理笔记。";
   const first = reminders[0];
   return `${first.type === "event" ? "记得" : "先推进"}：${first.title}`;
+}
+
+function getLonglongDefaultBubbleText() {
+  const levelName = longlongBondState.level?.name || "初识";
+  if (longlongBondState.affection > 0 || longlongBondState.coins > 0) {
+    return `${levelName} · ${longlongBondState.affection} 好感 · ${longlongBondState.coins} 龙币`;
+  }
+  return "今天也一起学一会儿吧。";
 }
 
 function updateLonglongMood(mood, detail, music = "") {
@@ -849,6 +1228,7 @@ async function submitLonglongRagQuestion(event) {
         };
     longlongState.ragAnswer = formatLonglongRagResponse(response);
     playLonglongAnswerLine();
+    addLonglongChatAffection();
   } catch (error) {
     longlongState.ragAnswer = `RAG 接口调用失败：${getAiErrorMessage(error)}`;
   }
@@ -857,19 +1237,121 @@ async function submitLonglongRagQuestion(event) {
   syncLonglongAssistant();
 }
 
-function handleLonglongAction(action) {
-  resetLonglongActivity();
-
-  if (action === "planner") {
-    showView("planner");
-    setLonglongExpanded(true);
+async function submitLonglongChat(event) {
+  event.preventDefault();
+  const elements = getLonglongElements();
+  const text = elements.chatInput?.value.trim();
+  if (!text) {
+    elements.chatInput?.focus();
     return;
   }
 
-  if (action === "focus") {
-    showView("focus");
-    setLonglongExpanded(true);
-    if (!cameraState.stream) startCamera();
+  elements.chatInput.value = "";
+  addLonglongChatMessage("user", text);
+  longlongMainChatHistory.push({ role: "user", content: text });
+  const thinking = addLonglongChatMessage("assistant", LONGLONG_THINKING_LINE);
+  setLonglongBubbleText(LONGLONG_THINKING_LINE);
+  playLonglongThinkingLine();
+
+  try {
+    const response = await window.mindStudy?.askLonglongCompanion?.({
+      message: text,
+      includeScreen: false,
+      history: longlongMainChatHistory.slice(0, -1),
+      options: {
+        maxTokens: 900,
+        temperature: 0.32,
+      },
+    });
+    const rawAnswer = response?.answer || "龙龙没有收到有效回答。";
+    const answer = withLonglongAnswerLine(rawAnswer);
+    updateLonglongChatMessage(thinking, answer);
+    setLonglongBubbleText(LONGLONG_ANSWER_LINE);
+    playLonglongAnswerLine();
+    addLonglongChatAffection();
+    longlongMainChatHistory.push({ role: "assistant", content: rawAnswer });
+    longlongMainChatHistory = longlongMainChatHistory.slice(-10);
+  } catch (error) {
+    const errorText = `龙龙这次没连上：${getAiErrorMessage(error)}`;
+    updateLonglongChatMessage(thinking, errorText);
+    setLonglongBubbleText("龙龙这次没连上，等一下再试。");
+  }
+}
+
+function handleLonglongAction(action) {
+  resetLonglongActivity();
+
+  if (action === "poke") {
+    setLonglongGiftPopover(false);
+    setLonglongChatPopover(false);
+    playLonglongSprite("touch", 1400);
+    const text = pickLonglongItem(LONGLONG_MAIN_POKES);
+    setLonglongBubbleText(text);
+    playLonglongFixedLine(text);
+    const affectionPromise = window.mindStudy?.addLonglongAffection?.({ amount: 1, reason: "poke" });
+    affectionPromise?.then(setLonglongBondState).catch(() => {});
+    return;
+  }
+
+  if (action === "tip") {
+    setLonglongGiftPopover(false);
+    setLonglongChatPopover(false);
+    const text = pickLonglongItem(LONGLONG_MAIN_TIPS);
+    setLonglongBubbleText(text);
+    playLonglongFixedLine(text);
+    return;
+  }
+
+  if (action === "quote") {
+    setLonglongGiftPopover(false);
+    setLonglongChatPopover(false);
+    const text = pickLonglongItem(LONGLONG_MAIN_QUOTES);
+    setLonglongBubbleText(text);
+    playLonglongFixedLine(text);
+    return;
+  }
+
+  if (action === "chat") {
+    setLonglongGiftPopover(false);
+    setLonglongChatPopover(!longlongState.chatOpen);
+    if (longlongState.chatOpen) setLonglongBubbleText("龙龙在听。", { temporary: false });
+    return;
+  }
+
+  if (action === "gift") {
+    setLonglongChatPopover(false);
+    const nextOpen = !longlongState.giftOpen;
+    setLonglongGiftPopover(nextOpen);
+    if (nextOpen) {
+      setLonglongBubbleText("龙龙看看今天会收到什么。", { temporary: false });
+    } else {
+      setLonglongExpanded(false);
+      syncLonglongAssistant();
+    }
+    return;
+  }
+
+  if (action === "close-gift") {
+    setLonglongGiftPopover(false);
+    setLonglongExpanded(false);
+    syncLonglongAssistant();
+    return;
+  }
+
+  if (action === "close-chat") {
+    setLonglongChatPopover(false);
+    setLonglongExpanded(false);
+    syncLonglongAssistant();
+    return;
+  }
+
+  if (action === "sleep") {
+    setLonglongGiftPopover(false);
+    setLonglongChatPopover(false);
+    window.clearTimeout(longlongSleepTimer);
+    window.clearTimeout(longlongSpriteRestoreTimer);
+    setLonglongSpriteState("sleep");
+    setLonglongBubbleText("龙龙先睡一小会儿。", { temporary: false });
   }
 }
 
@@ -877,17 +1359,22 @@ function syncLonglongAssistant() {
   const elements = getLonglongElements();
   if (!elements.root) return;
 
-  const reminders = getLonglongReminders();
-  const reminderText = getLonglongReminderText(reminders);
+  const reminderText = getLonglongDefaultBubbleText();
 
   elements.root.classList.toggle("expanded", longlongState.expanded);
-  if (elements.bubble) elements.bubble.textContent = reminderText;
+  elements.root.classList.toggle("gift-open", longlongState.giftOpen);
+  elements.root.classList.toggle("chat-open", longlongState.chatOpen);
+  if (elements.giftPopover) elements.giftPopover.hidden = !longlongState.giftOpen;
+  if (elements.chatPopover) elements.chatPopover.hidden = !longlongState.chatOpen;
+  if (elements.bubble && !longlongBubbleTimer) elements.bubble.textContent = reminderText;
   if (elements.mood) elements.mood.textContent = longlongState.mood;
   if (elements.moodDetail) elements.moodDetail.textContent = longlongState.moodDetail;
   renderStudyTimerSnapshot();
+  renderLonglongBondState();
   if (elements.music) elements.music.textContent = longlongState.music;
   setAiMarkdownContent(elements.ragOutput, longlongState.ragAnswer);
   if (elements.reminders) {
+    const reminders = getLonglongReminders();
     elements.reminders.innerHTML = reminders.length
       ? reminders
           .map((item) => `
@@ -1219,7 +1706,10 @@ function sanitizeRagKnowledge(ragKnowledge = {}) {
         learnedAt: Number(documentMeta.learnedAt) || Date.now(),
         sourceType: documentMeta.sourceType || "course",
         ocrPageCount: Math.max(0, Number(documentMeta.ocrPageCount) || 0),
+        ocrAttemptedPageCount: Math.max(0, Number(documentMeta.ocrAttemptedPageCount) || 0),
         ocrSkippedPageCount: Math.max(0, Number(documentMeta.ocrSkippedPageCount) || 0),
+        pdfLearningComplete: Boolean(documentMeta.pdfLearningComplete),
+        pdfLearningTextLimitReached: Boolean(documentMeta.pdfLearningTextLimitReached),
         pageRange: documentMeta.pageRange || null,
       };
     })
@@ -1483,7 +1973,9 @@ function getPdfOcrCandidatePageNumbers(extracted, options = {}) {
   const uniqueCandidates = Array.from(new Set(candidates))
     .filter((pageNumber) => pageNumber >= 1 && pageNumber <= pageCount)
     .filter((pageNumber) => options.ocrMode === "always" || !textPageNumbers.has(pageNumber));
-  const maxPages = Math.max(0, Number(options.ocrMaxPages) || PDF_OCR_AUTO_MAX_PAGES);
+  const maxPages = options.ocrAllPages || options.ocrMaxPages === "all"
+    ? uniqueCandidates.length
+    : Math.max(0, Number(options.ocrMaxPages) || PDF_OCR_AUTO_MAX_PAGES);
 
   return {
     pageNumbers: uniqueCandidates.slice(0, maxPages),
@@ -1575,12 +2067,14 @@ function mergePdfTextAndOcrExtraction(extracted, ocrPages, metadata = {}) {
 
   const pages = Array.from(pagesByNumber.values())
     .sort((left, right) => Number(left.pageNumber) - Number(right.pageNumber));
-  const text = normalizeExtractedPdfText(
+  const textLimit = Math.max(PDF_TEXT_LIMIT, Number(metadata.totalTextLimit) || PDF_TEXT_LIMIT);
+  const mergedText = normalizeExtractedPdfText(
     pages
       .filter((page) => page.text)
       .map((page) => `第 ${page.pageNumber} 页\n${page.text}`)
       .join("\n\n"),
-  ).slice(0, PDF_TEXT_LIMIT);
+  );
+  const text = mergedText.slice(0, textLimit);
   const ocrPageCount = pages.filter((page) => page.source === "ocr" && page.text).length;
 
   return {
@@ -1589,22 +2083,40 @@ function mergePdfTextAndOcrExtraction(extracted, ocrPages, metadata = {}) {
     text,
     extractedPageCount: pages.filter((page) => page.text).length,
     ocrPageCount,
+    ocrAttemptedPageCount: Math.max(0, Number(metadata.attemptedPageCount) || ocrPageCount),
     ocrSkippedPageCount: metadata.skippedPageCount || 0,
     ocrErrors: metadata.ocrErrors || [],
+    textLimitReached: mergedText.length > textLimit,
     extractionMethods: ocrPageCount ? ["text-layer", "ocr"] : ["text-layer"],
   };
 }
 
 async function appendOcrTextFromPdfPages(bytes, extracted, options = {}) {
-  if (options.enableOcr === false || !window.mindStudy?.ai?.recognizeImageText) {
+  if (options.enableOcr === false) {
     return extracted;
   }
 
   const { pageNumbers, skippedPageCount } = getPdfOcrCandidatePageNumbers(extracted, options);
+  const recognizeImageText = window.mindStudy?.ai?.recognizeImageText;
   if (!pageNumbers.length) {
     return {
       ...extracted,
+      ocrAttemptedPageCount: 0,
       ocrSkippedPageCount: skippedPageCount,
+    };
+  }
+
+  if (!recognizeImageText) {
+    return {
+      ...extracted,
+      ocrAttemptedPageCount: 0,
+      ocrSkippedPageCount: skippedPageCount + pageNumbers.length,
+      ocrErrors: [
+        {
+          pageNumber: pageNumbers[0],
+          message: "OCR 接口尚未可用。",
+        },
+      ],
     };
   }
 
@@ -1648,8 +2160,10 @@ async function appendOcrTextFromPdfPages(bytes, extracted, options = {}) {
   }
 
   return mergePdfTextAndOcrExtraction(extracted, ocrPages, {
+    attemptedPageCount: pageNumbers.length,
     skippedPageCount,
     ocrErrors,
+    totalTextLimit: options.totalTextLimit,
   });
 }
 
@@ -1662,7 +2176,7 @@ async function extractPdfTextFromBytes(bytes, options = {}) {
         base64: uint8ArrayToBase64(bytes),
         options: {
           pageTextLimit: PDF_PAGE_TEXT_LIMIT,
-          totalTextLimit: PDF_TEXT_LIMIT,
+          totalTextLimit: options.totalTextLimit || PDF_TEXT_LIMIT,
         },
       });
     } catch (error) {
@@ -1696,6 +2210,7 @@ async function extractPdfTextFromBytes(bytes, options = {}) {
     }
   }
 
+  const totalTextLimit = Math.max(PDF_TEXT_LIMIT, Number(options.totalTextLimit) || PDF_TEXT_LIMIT);
   const fullText = normalizeExtractedPdfText(
     pages
       .filter((page) => page.text)
@@ -1706,7 +2221,8 @@ async function extractPdfTextFromBytes(bytes, options = {}) {
   return await appendOcrTextFromPdfPages(bytes, {
     pageCount,
     pages,
-    text: fullText.slice(0, PDF_TEXT_LIMIT),
+    text: fullText.slice(0, totalTextLimit),
+    textLimitReached: fullText.length > totalTextLimit,
     extractedAt: Date.now(),
   }, options);
 }
@@ -1763,8 +2279,8 @@ function getAiBridge() {
 function getAiErrorMessage(error) {
   const message = error?.message || String(error || "AI 调用失败");
 
-  if (message.includes("DEEPSEEK_API_KEY") || message.includes("API key")) {
-    return "请先设置 DeepSeek API Key。";
+  if (message.includes("DASHSCOPE_API_KEY") || message.includes("QWEN_API_KEY") || message.includes("API key")) {
+    return "请先设置 Qwen API Key。";
   }
 
   return message;
@@ -1799,14 +2315,14 @@ async function getAiStatus() {
 function getAiStatusText(status) {
   if (status?.configured) {
     const sourceText = status.source === "environment" ? "环境变量" : "软件内保存";
-    return `DeepSeek 已配置（${sourceText}，${status.model || "默认模型"}）`;
+    return `Qwen 已配置（${sourceText}，${status.model || "默认模型"}）`;
   }
 
   if (status?.error) {
     return status.error;
   }
 
-  return "DeepSeek API Key 尚未设置。";
+  return "Qwen API Key 尚未设置。";
 }
 
 async function syncAiStatusButtons() {
@@ -1825,7 +2341,7 @@ async function ensureAiConfigured() {
 
   if (!status.configured) {
     openAiSettingsDialog(status);
-    throw new Error("请先设置 DeepSeek API Key。");
+    throw new Error("请先设置 Qwen API Key。");
   }
 
   return status;
@@ -1884,15 +2400,26 @@ function getRuntimeDocumentAiText(doc) {
   return String(doc.meta.aiSource || "").slice(0, AI_CONTEXT_TEXT_LIMIT);
 }
 
-async function buildAiDocumentFromMeta(meta) {
+async function buildAiDocumentFromMeta(meta, options = {}) {
   if (!meta) return null;
 
+  const textLimit = Math.max(1000, Number(options.textLimit) || AI_CONTEXT_TEXT_LIMIT);
   const runtimeDoc = documentState.current?.meta?.id === meta.id ? documentState.current : null;
   if (runtimeDoc) {
+    if (runtimeDoc.kind === "pdf" && options.requireCompletePdfOcr) {
+      return {
+        id: meta.id,
+        title: meta.name,
+        text: normalizeExtractedPdfText(await getRagDocumentText(meta, options)).slice(0, textLimit),
+        mimeType: meta.mimeType,
+        extension: meta.extension,
+      };
+    }
+
     return {
       id: meta.id,
       title: meta.name,
-      text: getRuntimeDocumentAiText(runtimeDoc),
+      text: getRuntimeDocumentAiText(runtimeDoc).slice(0, textLimit),
       mimeType: meta.mimeType,
       extension: meta.extension,
     };
@@ -1905,18 +2432,20 @@ async function buildAiDocumentFromMeta(meta) {
     return {
       id: meta.id,
       title: meta.name,
-      text: stripMarkdown(base64ToText(file.base64 || "")).slice(0, AI_CONTEXT_TEXT_LIMIT),
+      text: stripMarkdown(base64ToText(file.base64 || "")).slice(0, textLimit),
       mimeType: file.mimeType,
       extension,
     };
   }
 
   if (extension === "PDF") {
-    const extracted = await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""));
+    const extractedText = options.requireCompletePdfOcr
+      ? await getRagDocumentText(meta, options)
+      : (await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""))).text;
     return {
       id: meta.id,
       title: meta.name,
-      text: extracted.text.slice(0, AI_CONTEXT_TEXT_LIMIT),
+      text: normalizeExtractedPdfText(extractedText).slice(0, textLimit),
       mimeType: file.mimeType,
       extension,
     };
@@ -2172,6 +2701,75 @@ function setRagStatus(text, tone = "ready") {
   status.className = `rag-status ${tone}`;
 }
 
+function isPdfMeta(meta) {
+  return String(meta?.extension || "").toUpperCase() === "PDF";
+}
+
+function canUseCachedPdfText(meta, options = {}) {
+  if (!isPdfMeta(meta) || !meta.extractedText || meta.pdfTextStale) return false;
+  if (!options.requireCompletePdfOcr) return true;
+  return Boolean(meta.pdfLearningComplete) && !meta.ocrSkippedPageCount;
+}
+
+function buildLearningPdfExtractionOptions(meta, callbacks = {}) {
+  return {
+    ocrMissingPages: true,
+    ocrAllPages: true,
+    totalTextLimit: callbacks.totalTextLimit || RAG_KNOWLEDGE_TEXT_LIMIT,
+    onOcrStart: ({ total, skippedPageCount }) => {
+      callbacks.onStatus?.(
+        total
+          ? `正在识别 ${meta.name} 的 ${total} 页扫描内容...`
+          : `正在整理 ${meta.name} 的文字...`,
+        { total, skippedPageCount },
+      );
+    },
+    onOcrProgress: ({ index, total, pageNumber }) => {
+      callbacks.onStatus?.(`正在识别 ${meta.name}：${index}/${total} 页（第 ${pageNumber} 页）`, {
+        index,
+        total,
+        pageNumber,
+      });
+    },
+  };
+}
+
+function compactExtractedPagesForStorage(pages = [], totalLimit = PDF_TEXT_LIMIT) {
+  const storedPages = [];
+  let storedLength = 0;
+
+  for (const page of pages || []) {
+    if (!page?.text) continue;
+    const text = String(page.text || "").slice(0, PDF_PAGE_TEXT_LIMIT);
+    if (storedLength + text.length > totalLimit && storedPages.length > 0) break;
+    storedPages.push({
+      pageNumber: page.pageNumber,
+      text,
+      source: page.source || "text-layer",
+      confidence: page.confidence,
+    });
+    storedLength += text.length;
+  }
+
+  return storedPages;
+}
+
+function rememberPdfTextExtraction(meta, extracted, options = {}) {
+  meta.extractedText = extracted.text;
+  meta.extractedPages = compactExtractedPagesForStorage(extracted.pages || [], Math.min(RAG_KNOWLEDGE_TEXT_LIMIT, options.totalStoredPageTextLimit || RAG_KNOWLEDGE_TEXT_LIMIT));
+  meta.extractedPageCount = extracted.extractedPageCount || meta.extractedPages.filter((page) => page.text).length;
+  meta.ocrPageCount = extracted.ocrPageCount || 0;
+  meta.ocrAttemptedPageCount = extracted.ocrAttemptedPageCount || 0;
+  meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
+  meta.ocrErrors = extracted.ocrErrors || [];
+  meta.pdfLearningTextLimitReached = Boolean(extracted.textLimitReached);
+  meta.pdfLearningComplete = Boolean(options.requireCompletePdfOcr)
+    ? !extracted.ocrSkippedPageCount && !(extracted.ocrErrors || []).length
+    : Boolean(meta.pdfLearningComplete && !extracted.ocrSkippedPageCount);
+  meta.extractedAt = extracted.extractedAt || Date.now();
+  meta.pdfTextStale = false;
+}
+
 function formatRagDate(value) {
   if (!value) return "尚未学习";
   return new Date(value).toLocaleString("zh-CN", {
@@ -2216,12 +2814,16 @@ function renderRagAssistant() {
     list.innerHTML = knowledge.documents.length
       ? knowledge.documents
           .map((documentMeta) => {
-            const ocrLabel = documentMeta.ocrPageCount ? ` · OCR ${documentMeta.ocrPageCount} 页` : "";
+            const ocrPageTotal = Math.max(Number(documentMeta.ocrAttemptedPageCount) || 0, Number(documentMeta.ocrPageCount) || 0);
+            const ocrLabel = ocrPageTotal ? ` · OCR ${ocrPageTotal} 页` : "";
+            const completeLabel = documentMeta.pdfLearningComplete
+              ? documentMeta.pdfLearningTextLimitReached ? " · 已全页识别（已压缩）" : " · 已全页识别"
+              : "";
             return `
               <article class="rag-learned-card">
                 <div>
                   <strong>${escapeHtml(documentMeta.title)}</strong>
-                  <span>${escapeHtml(documentMeta.extension || "TXT")} · ${documentMeta.chunkCount} 段知识 · ${documentMeta.textLength} 字${ocrLabel}</span>
+                  <span>${escapeHtml(documentMeta.extension || "TXT")} · ${documentMeta.chunkCount} 段知识 · ${documentMeta.textLength} 字${ocrLabel}${completeLabel}</span>
                 </div>
                 <small>${escapeHtml(formatRagDate(documentMeta.learnedAt))}</small>
               </article>
@@ -2286,7 +2888,7 @@ function addRagMessage(message) {
   renderRagMessages();
 }
 
-async function getRagDocumentText(meta) {
+async function getRagDocumentText(meta, options = {}) {
   const activeDoc = documentState.current?.meta?.id === meta.id ? documentState.current : null;
 
   if (activeDoc?.kind === "md") {
@@ -2294,18 +2896,15 @@ async function getRagDocumentText(meta) {
   }
 
   if (activeDoc?.kind === "pdf") {
-    if (activeDoc.meta.extractedText && !activeDoc.meta.pdfTextStale) {
+    if (canUseCachedPdfText(activeDoc.meta, options)) {
       return activeDoc.meta.extractedText;
     }
 
-    const extracted = await extractPdfTextFromBytes(activeDoc.bytes);
+    const extracted = await extractPdfTextFromBytes(activeDoc.bytes, {
+      ...options.extractionOptions,
+    });
     activeDoc.pdfText = extracted;
-    activeDoc.meta.extractedText = extracted.text;
-    activeDoc.meta.extractedPages = extracted.pages || [];
-    activeDoc.meta.ocrPageCount = extracted.ocrPageCount || 0;
-    activeDoc.meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
-    activeDoc.meta.extractedAt = extracted.extractedAt;
-    activeDoc.meta.pdfTextStale = false;
+    rememberPdfTextExtraction(activeDoc.meta, extracted, options);
     saveWorkspace();
     return extracted.text;
   }
@@ -2318,13 +2917,14 @@ async function getRagDocumentText(meta) {
   }
 
   if (extension === "PDF") {
-    const extracted = await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""));
-    meta.extractedText = extracted.text;
-    meta.extractedPages = extracted.pages || [];
-    meta.ocrPageCount = extracted.ocrPageCount || 0;
-    meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
-    meta.extractedAt = extracted.extractedAt;
-    meta.pdfTextStale = false;
+    if (canUseCachedPdfText(meta, options)) {
+      return meta.extractedText;
+    }
+
+    const extracted = await extractPdfTextFromBytes(base64ToUint8Array(file.base64 || ""), {
+      ...options.extractionOptions,
+    });
+    rememberPdfTextExtraction(meta, extracted, options);
     saveWorkspace();
     return extracted.text;
   }
@@ -2332,9 +2932,9 @@ async function getRagDocumentText(meta) {
   return "";
 }
 
-async function buildRagKnowledgeDocument(meta) {
+async function buildRagKnowledgeDocument(meta, options = {}) {
   const settings = getRagSettingsFromInputs();
-  const text = normalizeExtractedPdfText(await getRagDocumentText(meta)).slice(0, RAG_KNOWLEDGE_TEXT_LIMIT);
+  const text = normalizeExtractedPdfText(await getRagDocumentText(meta, options)).slice(0, RAG_KNOWLEDGE_TEXT_LIMIT);
 
   if (!text) {
     throw new Error(`${meta.name} 没有可学习的文本。`);
@@ -2352,7 +2952,10 @@ async function buildRagKnowledgeDocument(meta) {
     learnedAt: Date.now(),
     sourceType: "course",
     ocrPageCount: Math.max(0, Number(meta.ocrPageCount) || 0),
+    ocrAttemptedPageCount: Math.max(0, Number(meta.ocrAttemptedPageCount) || 0),
     ocrSkippedPageCount: Math.max(0, Number(meta.ocrSkippedPageCount) || 0),
+    pdfLearningComplete: Boolean(meta.pdfLearningComplete),
+    pdfLearningTextLimitReached: Boolean(meta.pdfLearningTextLimitReached),
   };
 }
 
@@ -2381,8 +2984,17 @@ async function learnRagKnowledge(scope) {
   setRagStatus(scope === "course" ? "正在学习本课程..." : "正在学习当前文件...", "working");
 
   try {
-    for (const meta of metas) {
-      const learnedDocument = await buildRagKnowledgeDocument(meta);
+    for (const [index, meta] of metas.entries()) {
+      setRagStatus(scope === "course" ? `正在学习 ${index + 1}/${metas.length}：${meta.name}` : `正在学习 ${meta.name}`, "working");
+      const learningOptions = isPdfMeta(meta)
+        ? {
+            requireCompletePdfOcr: true,
+            extractionOptions: buildLearningPdfExtractionOptions(meta, {
+              onStatus: (message) => setRagStatus(message, "working"),
+            }),
+          }
+        : {};
+      const learnedDocument = await buildRagKnowledgeDocument(meta, learningOptions);
       upsertRagKnowledgeDocument(learnedDocument);
     }
 
@@ -2403,7 +3015,8 @@ async function learnActivePdfRange() {
     const subPdf = await createPdfRangeBytes(source.bytes, range.startPage, range.endPage);
     const extracted = await extractPdfTextFromBytes(subPdf.bytes, {
       ocrMissingPages: true,
-      ocrMaxPages: subPdf.pageCount,
+      ocrAllPages: true,
+      totalTextLimit: RAG_KNOWLEDGE_TEXT_LIMIT,
       onOcrStart: ({ total }) => {
         setRagStatus(`正在识别 ${total} 页扫描内容...`, "working");
       },
@@ -2430,7 +3043,10 @@ async function learnActivePdfRange() {
       learnedAt: Date.now(),
       sourceType: "pdf-range",
       ocrPageCount: extracted.ocrPageCount || 0,
+      ocrAttemptedPageCount: extracted.ocrAttemptedPageCount || 0,
       ocrSkippedPageCount: extracted.ocrSkippedPageCount || 0,
+      pdfLearningComplete: !extracted.ocrSkippedPageCount && !(extracted.ocrErrors || []).length,
+      pdfLearningTextLimitReached: Boolean(extracted.textLimitReached),
       pageRange: {
         startPage: subPdf.startPage,
         endPage: subPdf.endPage,
@@ -3318,6 +3934,7 @@ function updatePdfBytes(doc, bytes, pageCount, options = {}) {
     doc.meta.extractedText = "";
     doc.meta.extractedPages = [];
     doc.meta.extractedPageCount = 0;
+    doc.meta.pdfLearningComplete = false;
     doc.meta.aiSourcesByPage = {};
     doc.meta.aiOutputsByPage = {};
     doc.meta.aiSource = "";
@@ -3362,7 +3979,9 @@ async function applyPdfTextExtraction(doc, shouldRender = true) {
     doc.meta.extractedPages = storedPages;
     doc.meta.extractedPageCount = textPages.length;
     doc.meta.ocrPageCount = extracted.ocrPageCount || 0;
+    doc.meta.ocrAttemptedPageCount = extracted.ocrAttemptedPageCount || 0;
     doc.meta.ocrSkippedPageCount = extracted.ocrSkippedPageCount || 0;
+    doc.meta.pdfLearningComplete = false;
     doc.meta.extractedAt = extracted.extractedAt;
     doc.meta.pdfExtractError = "";
     doc.meta.pdfTextStale = false;
@@ -5499,13 +6118,24 @@ function extractJsonFromAiText(text) {
   }
 }
 
-async function buildStudyAiDocumentsForCourse() {
+async function buildStudyAiDocumentsForCourse(options = {}) {
   const course = getActiveCourse();
   const documents = [];
 
-  for (const meta of course.documents || []) {
+  for (const [index, meta] of (course.documents || []).entries()) {
     try {
-      const aiDocument = await buildAiDocumentFromMeta(meta);
+      options.onStatus?.(`正在读取 ${index + 1}/${course.documents.length}：${meta.name}`);
+      const extractionOptions = isPdfMeta(meta) && options.requireCompletePdfOcr
+        ? {
+            ...options,
+            extractionOptions: buildLearningPdfExtractionOptions(meta, {
+              totalTextLimit: RAG_KNOWLEDGE_TEXT_LIMIT,
+              onStatus: options.onStatus,
+            }),
+            textLimit: options.textLimit || GRAPH_TEXT_LIMIT,
+          }
+        : options;
+      const aiDocument = await buildAiDocumentFromMeta(meta, extractionOptions);
       if (aiDocument?.text?.trim()) documents.push(aiDocument);
     } catch {
       // 单个资料读取失败时继续处理其他资料，避免整门课生成中断。
@@ -5770,7 +6400,15 @@ async function generateStudyModuleFromUploads() {
     saveWorkspace();
     renderStudyModuleViews();
 
-    documents = await buildStudyAiDocumentsForCourse();
+    documents = await buildStudyAiDocumentsForCourse({
+      requireCompletePdfOcr: true,
+      textLimit: GRAPH_TEXT_LIMIT,
+      onStatus: (message) => {
+        studyModule.generation = { state: "extracting", engine: "", message, updatedAt: Date.now() };
+        saveWorkspace();
+        renderStudyModuleViews();
+      },
+    });
     if (!documents.length) throw new Error("没有可用于生成的资料文本。");
     documents = documents.map((documentMeta) => ({
       ...documentMeta,
@@ -5778,7 +6416,7 @@ async function generateStudyModuleFromUploads() {
     }));
 
     if (!graph && window.mindStudy?.ai?.askQuestion) {
-      studyModule.generation = { state: "ai", engine: "DeepSeek", message: "", updatedAt: Date.now() };
+      studyModule.generation = { state: "ai", engine: "Qwen", message: "", updatedAt: Date.now() };
       saveWorkspace();
       renderStudyModuleViews();
       try {
@@ -5792,14 +6430,15 @@ async function generateStudyModuleFromUploads() {
             maxTokens: 2600,
             temperature: 0.15,
             persona: false,
+            multimodal: true,
           },
         });
         const parsed = extractJsonFromAiText(response.answer);
         if (parsed) {
-          graph = adaptExternalGraphPayload(parsed, documents, "deepseek");
+          graph = adaptExternalGraphPayload(parsed, documents, "qwen");
           questions = (parsed.quiz?.questions || []).map((question) => normalizeStudyQuestion(question, graph.nodes)).filter(Boolean);
           studyModule.recommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
-          engine = "deepseek";
+          engine = "qwen";
         }
       } catch (error) {
         studyModule.generation.message = `AI 生成不可用，使用本地规则：${getAiErrorMessage(error)}`;
@@ -6861,7 +7500,7 @@ function renderAiReadingWindow(doc) {
           <span class="tag muted">AI 阅读窗口</span>
           <h3>解析与翻译</h3>
         </div>
-        <button class="mini-button" data-ai-action="settings" title="设置 DeepSeek API Key">
+        <button class="mini-button" data-ai-action="settings" title="设置 Qwen API Key">
           <i data-lucide="key-round"></i>
           <span>Key</span>
         </button>
@@ -8031,7 +8670,7 @@ async function openAiSettingsDialog(preloadedStatus = null) {
         <section class="course-modal" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
           <div class="modal-heading">
             <div>
-              <span class="tag muted">DeepSeek</span>
+              <span class="tag muted">Qwen</span>
               <h2 id="ai-settings-title">AI API Key</h2>
             </div>
             <button class="icon-button light" data-modal-action="close" title="关闭">
@@ -8040,10 +8679,10 @@ async function openAiSettingsDialog(preloadedStatus = null) {
           </div>
           <form class="course-form" id="ai-settings-form">
             <label>
-              <span>DeepSeek API Key</span>
-              <input id="deepseek-api-key-input" name="apiKey" type="password" placeholder="${escapeHtml(placeholder)}" autocomplete="off" />
+              <span>Qwen / DashScope API Key</span>
+              <input id="qwen-api-key-input" name="apiKey" type="password" placeholder="${escapeHtml(placeholder)}" autocomplete="off" />
             </label>
-            <p class="ai-settings-note">Key 会保存在本机应用数据目录，不会写入 Git 仓库。环境变量 DEEPSEEK_API_KEY 优先级更高。</p>
+            <p class="ai-settings-note">Key 会保存在本机应用数据目录，不会写入 Git 仓库。环境变量 DASHSCOPE_API_KEY 或 QWEN_API_KEY 优先级更高。</p>
             <p class="ai-status-line ${statusClass}" id="ai-settings-status">${escapeHtml(getAiStatusText(status))}</p>
             <div class="modal-actions">
               <button type="button" class="ghost-action compact" data-ai-action="clear-key">清除本地 Key</button>
@@ -8057,7 +8696,7 @@ async function openAiSettingsDialog(preloadedStatus = null) {
   );
 
   window.lucide?.createIcons();
-  document.querySelector("#deepseek-api-key-input")?.focus();
+  document.querySelector("#qwen-api-key-input")?.focus();
 }
 
 async function submitAiSettingsForm(event) {
@@ -8070,7 +8709,7 @@ async function submitAiSettingsForm(event) {
   if (!apiKey) {
     input.focus();
     if (statusLine) {
-      statusLine.textContent = "请输入 DeepSeek API Key。";
+      statusLine.textContent = "请输入 Qwen API Key。";
       statusLine.className = "ai-status-line warning";
     }
     return;
@@ -8514,9 +9153,10 @@ document.addEventListener("submit", (event) => {
     addPlannerEvent(event);
   }
 
-  if (event.target.matches("#longlong-rag-form")) {
-    submitLonglongRagQuestion(event);
+  if (event.target.matches("#longlong-chat-form")) {
+    submitLonglongChat(event);
   }
+
 });
 
 document.addEventListener("click", (event) => {
@@ -8544,6 +9184,7 @@ document.addEventListener("click", (event) => {
   const codingActionButton = event.target.closest("[data-coding-action]");
   const longlongToggleButton = event.target.closest("[data-longlong-toggle]");
   const longlongActionButton = event.target.closest("[data-longlong-action]");
+  const longlongGiftButton = event.target.closest("[data-longlong-gift]");
   const mapModeButton = event.target.closest("[data-map-mode]");
   const graphNodeButton = event.target.closest("[data-node]");
   const mapRelatedButton = event.target.closest("[data-map-related]");
@@ -8641,13 +9282,19 @@ document.addEventListener("click", (event) => {
 
   if (longlongToggleButton) {
     if (longlongDragState.suppressToggle) return;
-    playLonglongSprite("touch", 1400);
-    toggleLonglongPanel();
+    hideLonglongActions();
+    handleLonglongAction("poke");
     return;
   }
 
   if (longlongActionButton) {
+    hideLonglongActions();
     handleLonglongAction(longlongActionButton.dataset.longlongAction);
+    return;
+  }
+
+  if (longlongGiftButton) {
+    sendLonglongGift(longlongGiftButton.dataset.longlongGift);
     return;
   }
 
@@ -8797,6 +9444,8 @@ window.addEventListener("DOMContentLoaded", () => {
   setupGestureCategoryLabels();
   applyAppZoom();
   initStudyTimer();
+  initLonglongBond();
+  initLonglongActionHover();
   applyLonglongPosition();
   renderAllCourseViews();
   setCameraStatus("idle");

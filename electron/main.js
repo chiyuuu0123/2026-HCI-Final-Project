@@ -8,12 +8,13 @@ const { pathToFileURL } = require("node:url");
 const {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
-  DeepSeekClient,
+  DEFAULT_MULTIMODAL_MODEL,
+  QwenClient,
   createStudyAiService,
   extractPdfTextFromBase64,
   recognizeImageTextFromBase64,
   terminateOcrWorkers,
-} = require("../b_deepseek_module");
+} = require("../b_qwen_module");
 
 const isWindows = process.platform === "win32";
 const maxImportBytes = 80 * 1024 * 1024;
@@ -23,6 +24,90 @@ const companionChatSize = { width: 440, height: 568 };
 const longlongVoiceProvider = "gpt-sovits";
 const longlongVoiceTextLimit = 420;
 const longlongVoiceStartupTimeoutMs = 30000;
+const longlongStudyCoinSeconds = 10 * 60;
+const longlongDailyCoinCap = 18;
+const longlongBondLevels = [
+  { threshold: 0, name: "初识", detail: "龙龙刚刚探头" },
+  { threshold: 20, name: "熟悉", detail: "龙龙开始认得你的脚步" },
+  { threshold: 60, name: "贴贴", detail: "龙龙愿意把肚皮露出来" },
+  { threshold: 120, name: "信赖", detail: "龙龙把今天的勇气分你一半" },
+  { threshold: 220, name: "小七候选", detail: "龙龙开始认真等你" },
+  { threshold: 360, name: "龙龙的小七", detail: "龙龙找到自己的小七了" },
+];
+const longlongGiftCatalog = [
+  {
+    id: "breath-pillow",
+    name: "呼吸抱枕",
+    price: 3,
+    affection: 8,
+    icon: "cloud",
+    line: "谢谢你的呼吸抱枕。龙龙吞咽了太多意义，但其实生命只需要呼吸。",
+    audio: "./assets/longlong-voice/gift-01.wav",
+  },
+  {
+    id: "tear-marble",
+    name: "眼泪玻璃珠",
+    price: 4,
+    affection: 10,
+    icon: "droplets",
+    line: "这颗眼泪玻璃珠好亮。你欠龙龙的眼泪太多，龙龙数不清。",
+    audio: "./assets/longlong-voice/gift-02.wav",
+  },
+  {
+    id: "blue-cape",
+    name: "蓝色小斗篷",
+    price: 5,
+    affection: 12,
+    icon: "shirt",
+    line: "蓝色小斗篷收到。如果忧郁是一种天赋，那我龙龙将天赋异禀。",
+    audio: "./assets/longlong-voice/gift-03.wav",
+  },
+  {
+    id: "tiny-scale",
+    name: "迷你体重秤",
+    price: 2,
+    affection: 6,
+    icon: "scale",
+    line: "体重秤就放远一点。龙龙不胖，龙龙只有两吨。",
+    audio: "./assets/longlong-voice/gift-04.wav",
+  },
+  {
+    id: "star-lamp",
+    name: "星星夜灯",
+    price: 6,
+    affection: 14,
+    icon: "star",
+    line: "星星夜灯亮啦。今夜星光闪闪，我爱你的心满满！",
+    audio: "./assets/longlong-voice/gift-05.wav",
+  },
+  {
+    id: "little-seven-doll",
+    name: "小七玩偶",
+    price: 8,
+    affection: 18,
+    icon: "heart",
+    line: "小七玩偶到龙龙怀里啦。每只龙龙都一定会找到自己的小七哦！",
+    audio: "./assets/longlong-voice/gift-06.wav",
+  },
+  {
+    id: "cream-cloud",
+    name: "奶油云朵",
+    price: 4,
+    affection: 9,
+    icon: "sparkles",
+    line: "奶油云朵软软的，龙龙今天也被你好好接住了。",
+    audio: "./assets/longlong-voice/gift-07.wav",
+  },
+  {
+    id: "study-bookmark",
+    name: "学习书签",
+    price: 2,
+    affection: 5,
+    icon: "bookmark",
+    line: "学习书签收到，龙龙会把你努力的这一页好好夹住。",
+    audio: "./assets/longlong-voice/gift-08.wav",
+  },
+];
 let mainWindow = null;
 let companionWindow = null;
 let companionSnapshot = null;
@@ -36,21 +121,22 @@ let studyTimerInterval = null;
 let studyTimerLastSaveAt = 0;
 let longlongVoiceServiceProcess = null;
 let longlongVoiceServiceStartPromise = null;
+let longlongBondState = null;
 
-function getDeepSeekConfigPath() {
-  return path.join(app.getPath("userData"), "deepseek-config.json");
+function getQwenConfigPath() {
+  return path.join(app.getPath("userData"), "qwen-config.json");
 }
 
-function readDeepSeekLocalConfig() {
+function readQwenLocalConfig() {
   try {
-    return JSON.parse(fsSync.readFileSync(getDeepSeekConfigPath(), "utf8"));
+    return JSON.parse(fsSync.readFileSync(getQwenConfigPath(), "utf8"));
   } catch {
     return {};
   }
 }
 
-function writeDeepSeekLocalConfig(config) {
-  const configPath = getDeepSeekConfigPath();
+function writeQwenLocalConfig(config) {
+  const configPath = getQwenConfigPath();
   fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
   fsSync.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
 }
@@ -513,6 +599,185 @@ function writeStudyTimerState(state) {
   fsSync.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf8");
 }
 
+function getLonglongBondPath() {
+  return path.join(app.getPath("userData"), "longlong-bond.json");
+}
+
+function normalizeLonglongNumber(value, fallback = 0) {
+  const numericValue = Math.floor(Number(value));
+  return Number.isFinite(numericValue) ? Math.max(0, numericValue) : fallback;
+}
+
+function normalizeLonglongCounterMap(value = {}) {
+  if (!value || typeof value !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, count]) => [String(key), normalizeLonglongNumber(count)])
+      .filter(([key]) => key),
+  );
+}
+
+function normalizeLonglongBondState(raw = {}) {
+  return {
+    affection: normalizeLonglongNumber(raw.affection),
+    coins: normalizeLonglongNumber(raw.coins),
+    gifted: normalizeLonglongCounterMap(raw.gifted),
+    claimedStudyBlocksByDate: normalizeLonglongCounterMap(raw.claimedStudyBlocksByDate),
+    chatCount: normalizeLonglongNumber(raw.chatCount),
+    updatedAt: normalizeLonglongNumber(raw.updatedAt),
+  };
+}
+
+function readLonglongBondState() {
+  try {
+    return normalizeLonglongBondState(JSON.parse(fsSync.readFileSync(getLonglongBondPath(), "utf8")));
+  } catch {
+    return normalizeLonglongBondState();
+  }
+}
+
+function writeLonglongBondState(state) {
+  const statePath = getLonglongBondPath();
+  fsSync.mkdirSync(path.dirname(statePath), { recursive: true });
+  fsSync.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf8");
+}
+
+function ensureLonglongBondState() {
+  if (!longlongBondState) longlongBondState = readLonglongBondState();
+  return longlongBondState;
+}
+
+function getLonglongBondLevel(affection) {
+  const total = normalizeLonglongNumber(affection);
+  const currentIndex = longlongBondLevels.reduce(
+    (bestIndex, level, index) => (total >= level.threshold ? index : bestIndex),
+    0,
+  );
+  const current = longlongBondLevels[currentIndex];
+  const next = longlongBondLevels[currentIndex + 1] || null;
+  const currentThreshold = current.threshold;
+  const nextThreshold = next?.threshold || currentThreshold;
+  const progress = next
+    ? Math.round(((total - currentThreshold) / Math.max(1, nextThreshold - currentThreshold)) * 100)
+    : 100;
+
+  return {
+    ...current,
+    nextName: next?.name || "",
+    nextThreshold,
+    progress: Math.min(100, Math.max(0, progress)),
+    isMax: !next,
+  };
+}
+
+function getLonglongBondSnapshot(state = ensureLonglongBondState()) {
+  const normalized = normalizeLonglongBondState(state);
+  const level = getLonglongBondLevel(normalized.affection);
+  return {
+    ...normalized,
+    level,
+    coinRule: {
+      secondsPerCoin: longlongStudyCoinSeconds,
+      dailyCoinCap: longlongDailyCoinCap,
+    },
+    giftCatalog: longlongGiftCatalog,
+  };
+}
+
+function sendLonglongBondToWindow(targetWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  targetWindow.webContents.send("longlong-bond:update", getLonglongBondSnapshot());
+}
+
+function broadcastLonglongBond() {
+  sendLonglongBondToWindow(mainWindow);
+  sendLonglongBondToWindow(companionWindow);
+}
+
+function saveLonglongBondAndBroadcast() {
+  const state = ensureLonglongBondState();
+  state.updatedAt = Date.now();
+  writeLonglongBondState(state);
+  broadcastLonglongBond();
+  return getLonglongBondSnapshot(state);
+}
+
+function addLonglongAffection(amount = 0, reason = "") {
+  const value = normalizeLonglongNumber(amount);
+  if (!value) return getLonglongBondSnapshot();
+
+  const state = ensureLonglongBondState();
+  state.affection += Math.min(50, value);
+  if (reason === "chat") state.chatCount += 1;
+  return saveLonglongBondAndBroadcast();
+}
+
+function claimLonglongStudyCoins({ seconds = 0, date = "" } = {}) {
+  const state = ensureLonglongBondState();
+  const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(date)) ? String(date) : getTodayStudyDateKey();
+  const earnedBlocks = Math.min(
+    longlongDailyCoinCap,
+    Math.floor(normalizeLonglongNumber(seconds) / longlongStudyCoinSeconds),
+  );
+  const claimedBlocks = normalizeLonglongNumber(state.claimedStudyBlocksByDate[dateKey]);
+  const newBlocks = Math.max(0, earnedBlocks - claimedBlocks);
+
+  if (!newBlocks) {
+    return {
+      ...getLonglongBondSnapshot(state),
+      claimedCoins: 0,
+      earnedBlocks,
+      claimedBlocks,
+      date: dateKey,
+    };
+  }
+
+  state.coins += newBlocks;
+  state.claimedStudyBlocksByDate[dateKey] = earnedBlocks;
+  const snapshot = saveLonglongBondAndBroadcast();
+  return {
+    ...snapshot,
+    claimedCoins: newBlocks,
+    earnedBlocks,
+    claimedBlocks: earnedBlocks,
+    date: dateKey,
+  };
+}
+
+function buyLonglongGift(giftId = "") {
+  const gift = longlongGiftCatalog.find((item) => item.id === String(giftId));
+  const state = ensureLonglongBondState();
+
+  if (!gift) {
+    return {
+      ok: false,
+      reason: "unknown-gift",
+      snapshot: getLonglongBondSnapshot(state),
+    };
+  }
+
+  if (state.coins < gift.price) {
+    return {
+      ok: false,
+      reason: "insufficient-coins",
+      missingCoins: gift.price - state.coins,
+      gift,
+      snapshot: getLonglongBondSnapshot(state),
+    };
+  }
+
+  state.coins -= gift.price;
+  state.affection += gift.affection;
+  state.gifted[gift.id] = normalizeLonglongNumber(state.gifted[gift.id]) + 1;
+  const snapshot = saveLonglongBondAndBroadcast();
+  return {
+    ok: true,
+    gift,
+    gainedAffection: gift.affection,
+    snapshot,
+  };
+}
+
 function ensureStudyTimerState() {
   const now = Date.now();
   const today = getTodayStudyDateKey(new Date(now));
@@ -623,49 +888,54 @@ function startStudyTimer() {
   studyTimerInterval = setInterval(broadcastStudyTimer, 1000);
 }
 
-function getDeepSeekRuntimeConfig() {
-  const localConfig = readDeepSeekLocalConfig();
-  const envApiKey = process.env.DEEPSEEK_API_KEY || "";
+function getQwenRuntimeConfig() {
+  const localConfig = readQwenLocalConfig();
+  const envApiKey = process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || "";
   const localApiKey = typeof localConfig.apiKey === "string" ? localConfig.apiKey : "";
 
   return {
     apiKey: envApiKey || localApiKey,
-    baseUrl: process.env.DEEPSEEK_BASE_URL || localConfig.baseUrl || DEFAULT_BASE_URL,
-    model: process.env.DEEPSEEK_MODEL || localConfig.model || DEFAULT_MODEL,
+    baseUrl: process.env.DASHSCOPE_BASE_URL || process.env.QWEN_BASE_URL || localConfig.baseUrl || DEFAULT_BASE_URL,
+    model: process.env.QWEN_MODEL || process.env.DASHSCOPE_MODEL || localConfig.model || DEFAULT_MODEL,
+    multimodalModel: process.env.QWEN_MULTIMODAL_MODEL || localConfig.multimodalModel || DEFAULT_MULTIMODAL_MODEL,
     source: envApiKey ? "environment" : localApiKey ? "app-settings" : "missing",
   };
 }
 
-function getDeepSeekStatus() {
-  const config = getDeepSeekRuntimeConfig();
+function getQwenStatus() {
+  const config = getQwenRuntimeConfig();
 
   return {
     configured: Boolean(config.apiKey),
     baseUrl: config.baseUrl,
     model: config.model,
+    multimodalModel: config.multimodalModel,
+    provider: "qwen",
     source: config.source,
   };
 }
 
 function createCurrentStudyAiService() {
-  const config = getDeepSeekRuntimeConfig();
+  const config = getQwenRuntimeConfig();
 
   return createStudyAiService({
     clientOptions: {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       model: config.model,
+      multimodalModel: config.multimodalModel,
     },
   });
 }
 
-function createCurrentDeepSeekClient() {
-  const config = getDeepSeekRuntimeConfig();
+function createCurrentQwenClient() {
+  const config = getQwenRuntimeConfig();
 
-  return new DeepSeekClient({
+  return new QwenClient({
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
     model: config.model,
+    multimodalModel: config.multimodalModel,
   });
 }
 
@@ -720,7 +990,7 @@ function buildCodingAssistantMessages(request = {}) {
 async function askCodingAssistant(request = {}) {
   const { mode, messages } = buildCodingAssistantMessages(request);
   const options = request.options || {};
-  const response = await createCurrentDeepSeekClient().chat({
+  const response = await createCurrentQwenClient().chat({
     messages,
     temperature: options.temperature != null ? options.temperature : 0.18,
     maxTokens: options.maxTokens != null ? options.maxTokens : 2200,
@@ -806,7 +1076,7 @@ function normalizeLonglongChatHistory(history = []) {
     .filter((message) => message.content.trim());
 }
 
-function buildLonglongChatMessages(request = {}, screenContext = null, screenError = "") {
+function buildLonglongChatMessages(request = {}, screenContext = null, screenError = "", screenCapture = null) {
   const message = String(request.message || request.question || "").trim().slice(0, 8000);
   const history = normalizeLonglongChatHistory(request.history);
 
@@ -817,7 +1087,7 @@ function buildLonglongChatMessages(request = {}, screenContext = null, screenErr
   const system = [
     "你是 MindStudy 的桌宠 AI 助手龙龙。",
     "你必须自然自称“龙龙”，像一直陪在用户身边的学习搭子一样说话，亲和、简洁、有行动建议。",
-    "如果用户的问题和屏幕内容相关，请优先根据本机 OCR 提取出的屏幕文字回答；看不清或无法判断时要坦诚说明。",
+    "如果用户的问题和屏幕内容相关，请优先结合截图图像和本机 OCR 文字回答；看不清或无法判断时要坦诚说明。",
     "不要声称你读取了用户没有提供的文件、后台窗口或隐私内容。",
     "请使用中文 Markdown 排版，标题和列表要清晰，回答不要过长。",
   ].join(" ");
@@ -840,18 +1110,24 @@ function buildLonglongChatMessages(request = {}, screenContext = null, screenErr
     "",
     `用户对龙龙说：${message}`,
   ].join("\n");
+  const userContent = screenCapture?.dataUrl
+    ? [
+        { type: "text", text: userText },
+        { type: "image_url", image_url: { url: screenCapture.dataUrl } },
+      ]
+    : userText;
 
   return [
     { role: "system", content: system },
     ...history,
-    { role: "user", content: userText },
+    { role: "user", content: userContent },
   ];
 }
 
 async function askLonglongCompanion(request = {}) {
   const options = request.options || {};
   const includeScreen = request.includeScreen !== false;
-  const client = createCurrentDeepSeekClient();
+  const client = createCurrentQwenClient();
   let screenCapture = null;
   let screenContext = null;
   let screenError = "";
@@ -885,7 +1161,8 @@ async function askLonglongCompanion(request = {}) {
   }
 
   const response = await client.chat({
-    messages: buildLonglongChatMessages(request, screenContext, screenError),
+    messages: buildLonglongChatMessages(request, screenContext, screenError, screenCapture),
+    multimodal: Boolean(screenCapture?.dataUrl),
     temperature: options.temperature != null ? options.temperature : 0.28,
     maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
     model: options.model,
@@ -911,29 +1188,29 @@ async function askLonglongCompanion(request = {}) {
   };
 }
 
-function saveDeepSeekApiKey(apiKey) {
+function saveQwenApiKey(apiKey) {
   const nextApiKey = String(apiKey || "").trim();
 
   if (!nextApiKey) {
-    throw new Error("DeepSeek API key cannot be empty.");
+    throw new Error("Qwen API key cannot be empty.");
   }
 
-  const localConfig = readDeepSeekLocalConfig();
-  writeDeepSeekLocalConfig({
+  const localConfig = readQwenLocalConfig();
+  writeQwenLocalConfig({
     ...localConfig,
     apiKey: nextApiKey,
     updatedAt: Date.now(),
   });
 
-  return getDeepSeekStatus();
+  return getQwenStatus();
 }
 
-function clearDeepSeekApiKey() {
-  const localConfig = readDeepSeekLocalConfig();
+function clearQwenApiKey() {
+  const localConfig = readQwenLocalConfig();
   delete localConfig.apiKey;
   localConfig.updatedAt = Date.now();
-  writeDeepSeekLocalConfig(localConfig);
-  return getDeepSeekStatus();
+  writeQwenLocalConfig(localConfig);
+  return getQwenStatus();
 }
 
 function getBase64Payload(payload) {
@@ -1598,15 +1875,15 @@ ipcMain.handle("file:save-markdown", async (event, options) => {
 });
 
 ipcMain.handle("b:ai:get-status", () => {
-  return getDeepSeekStatus();
+  return getQwenStatus();
 });
 
 ipcMain.handle("b:ai:save-api-key", async (event, apiKey) => {
-  return saveDeepSeekApiKey(apiKey);
+  return saveQwenApiKey(apiKey);
 });
 
 ipcMain.handle("b:ai:clear-api-key", () => {
-  return clearDeepSeekApiKey();
+  return clearQwenApiKey();
 });
 
 ipcMain.handle("b:ai:ask-question", async (event, request) => {
@@ -1623,6 +1900,22 @@ ipcMain.handle("b:ai:ask-coding", async (event, request) => {
 
 ipcMain.handle("companion:ask-longlong", async (event, request) => {
   return askLonglongCompanion(request);
+});
+
+ipcMain.handle("longlong-bond:get", () => {
+  return getLonglongBondSnapshot();
+});
+
+ipcMain.handle("longlong-bond:add-affection", (event, request = {}) => {
+  return addLonglongAffection(request.amount, String(request.reason || ""));
+});
+
+ipcMain.handle("longlong-bond:claim-study-coins", (event, request = {}) => {
+  return claimLonglongStudyCoins(request);
+});
+
+ipcMain.handle("longlong-bond:buy-gift", (event, giftId) => {
+  return buyLonglongGift(giftId);
 });
 
 ipcMain.handle("companion:set-mode", (event, mode) => {
