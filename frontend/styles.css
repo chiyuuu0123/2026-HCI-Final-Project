@@ -227,6 +227,7 @@ html.css-app-zoom .app-shell {
 }
 
 .main-area {
+  position: relative;
   display: grid;
   grid-template-rows: 88px minmax(0, 1fr);
   min-width: 0;
@@ -394,6 +395,75 @@ h3 {
 .status-camera.active {
   border-color: rgba(24, 143, 132, 0.32);
   box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.1);
+}
+
+.voice-control-pill {
+  background: #fff;
+  color: var(--teal);
+}
+
+.voice-control-pill.active {
+  border-color: rgba(24, 143, 132, 0.4);
+  background: var(--teal-soft);
+  color: #0b6f66;
+  box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.1);
+}
+
+.voice-control-pill.recording {
+  border-color: rgba(223, 105, 93, 0.5);
+  background: var(--coral-soft);
+  color: #b3473e;
+}
+
+.voice-command-panel {
+  position: absolute;
+  top: 74px;
+  right: 0;
+  z-index: 45;
+  display: grid;
+  gap: 12px;
+  width: min(360px, calc(100vw - 340px));
+  padding: 16px;
+  border: 1px solid rgba(24, 143, 132, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow);
+}
+
+.voice-command-panel[hidden] {
+  display: none;
+}
+
+.voice-command-head,
+.voice-command-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.voice-command-head strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.voice-command-panel p {
+  margin: 0;
+  min-height: 48px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.voice-command-panel.listening {
+  border-color: rgba(223, 105, 93, 0.3);
+}
+
+.voice-command-panel.ready {
+  border-color: rgba(24, 143, 132, 0.24);
+}
+
+.voice-command-panel.warning {
+  border-color: rgba(214, 166, 45, 0.38);
 }
 
 .calm {
@@ -5051,6 +5121,12 @@ button.review-row:hover {
     padding: 18px 0;
   }
 
+  .voice-command-panel {
+    top: 104px;
+    right: 0;
+    width: min(360px, 100%);
+  }
+
   .top-course-switcher {
     flex: 1 1 380px;
     min-width: 320px;
@@ -5100,6 +5176,13 @@ button.review-row:hover {
   .top-actions {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .voice-command-panel {
+    left: 14px;
+    right: 14px;
+    top: 138px;
+    width: auto;
   }
 
   .hero-panel,

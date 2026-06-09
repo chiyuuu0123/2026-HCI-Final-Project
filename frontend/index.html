@@ -78,6 +78,10 @@
             <button class="icon-button" title="搜索">
               <i data-lucide="search"></i>
             </button>
+            <button class="status-pill voice-control-pill" id="voice-control-toggle" title="语音控制">
+              <i data-lucide="mic"></i>
+              <span id="voice-control-status-text">语音控制</span>
+            </button>
             <button class="status-pill status-camera" id="toggle-camera">
               <i data-lucide="camera"></i>
               <span id="camera-status-text">摄像头未开启</span>
@@ -88,6 +92,25 @@
             </button>
           </div>
         </header>
+
+        <section class="voice-command-panel" id="voice-command-panel" aria-live="polite" hidden>
+          <div class="voice-command-head">
+            <div>
+              <span class="tag muted">Voice Control</span>
+              <strong id="voice-command-title">等待语音指令</strong>
+            </div>
+            <button type="button" class="icon-button light" id="voice-control-close" title="关闭语音控制">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <p id="voice-command-transcript">按下开始后说出操作。</p>
+          <div class="voice-command-actions">
+            <button type="button" class="primary-action compact" id="voice-command-record">
+              <i data-lucide="mic"></i>
+              <span id="voice-command-record-label">开始</span>
+            </button>
+          </div>
+        </section>
 
         <section class="view active" data-view-panel="dashboard">
           <div class="dashboard-grid">
