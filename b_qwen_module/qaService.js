@@ -70,6 +70,7 @@ function buildQuestionMessages(question, chunks, options = {}) {
         "If the context is insufficient, say what is missing.",
         "Cite sources with labels such as [S1] or [S2].",
         "Keep the answer concise and helpful for study.",
+        "When formulas are useful, write inline formulas as $...$ and display formulas as $$...$$; do not put formulas in code blocks.",
       ].join(" "),
     },
     {

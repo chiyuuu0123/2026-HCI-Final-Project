@@ -2638,6 +2638,95 @@ h3 {
   color: inherit;
 }
 
+.math-inline,
+.math-display {
+  color: var(--deep);
+  font-family: "Cambria Math", "Times New Roman", serif;
+  font-size: 1.02em;
+}
+
+.math-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.math-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f7faf8;
+}
+
+.math-frac {
+  display: inline-grid;
+  grid-template-rows: auto auto;
+  align-items: center;
+  margin: 0 2px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.math-frac > span:first-child {
+  padding: 0 4px 1px;
+  border-bottom: 1.5px solid currentColor;
+}
+
+.math-frac > span:last-child {
+  padding: 1px 4px 0;
+}
+
+.math-sqrt {
+  display: inline-flex;
+  align-items: flex-start;
+}
+
+.math-sqrt::before {
+  content: "√";
+  font-size: 1.2em;
+  line-height: 1;
+}
+
+.math-sqrt > span:last-child {
+  padding: 0 3px;
+  border-top: 1.5px solid currentColor;
+}
+
+.math-sqrt > sup {
+  margin-right: -2px;
+  font-size: 0.6em;
+}
+
+.math-inline sup,
+.math-inline sub,
+.math-display sup,
+.math-display sub {
+  line-height: 0;
+}
+
+.math-symbol {
+  display: inline-block;
+  min-width: 0.35em;
+  text-align: center;
+}
+
+.math-text {
+  font-family: var(--font-sans, inherit);
+}
+
+.math-bold {
+  font-weight: 900;
+}
+
 .ai-markdown table {
   width: 100%;
   border-collapse: collapse;

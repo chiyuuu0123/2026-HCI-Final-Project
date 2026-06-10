@@ -8687,6 +8687,324 @@ function parseMarkdownLinkTarget(rawTarget) {
   };
 }
 
+const MATH_SYMBOLS = {
+  alpha: "α",
+  beta: "β",
+  gamma: "γ",
+  delta: "δ",
+  epsilon: "ε",
+  varepsilon: "ε",
+  zeta: "ζ",
+  eta: "η",
+  theta: "θ",
+  vartheta: "θ",
+  lambda: "λ",
+  mu: "μ",
+  pi: "π",
+  rho: "ρ",
+  sigma: "σ",
+  tau: "τ",
+  phi: "φ",
+  varphi: "φ",
+  omega: "ω",
+  Gamma: "Γ",
+  Delta: "Δ",
+  Theta: "Θ",
+  Lambda: "Λ",
+  Pi: "Π",
+  Sigma: "Σ",
+  Phi: "Φ",
+  Omega: "Ω",
+  times: "×",
+  cdot: "·",
+  div: "÷",
+  pm: "±",
+  mp: "∓",
+  le: "≤",
+  leq: "≤",
+  ge: "≥",
+  geq: "≥",
+  neq: "≠",
+  ne: "≠",
+  approx: "≈",
+  equiv: "≡",
+  infty: "∞",
+  to: "→",
+  rightarrow: "→",
+  leftarrow: "←",
+  Rightarrow: "⇒",
+  Leftarrow: "⇐",
+  in: "∈",
+  notin: "∉",
+  subset: "⊂",
+  subseteq: "⊆",
+  cup: "∪",
+  cap: "∩",
+  forall: "∀",
+  exists: "∃",
+  partial: "∂",
+  nabla: "∇",
+  sum: "∑",
+  prod: "∏",
+  int: "∫",
+  lim: "lim",
+  sin: "sin",
+  cos: "cos",
+  tan: "tan",
+  log: "log",
+  ln: "ln",
+  max: "max",
+  min: "min",
+};
+
+const MATH_TEXT_COMMANDS = new Set(["text", "mathrm", "operatorname"]);
+const MATH_STYLE_COMMANDS = new Set(["mathbf", "boldsymbol"]);
+
+function isEscapedMarkdownDelimiter(source, index) {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && source[cursor] === "\\"; cursor -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+function findMathDelimiter(source, delimiter, startIndex) {
+  for (let index = startIndex; index < source.length; index += 1) {
+    if (source.startsWith(delimiter, index) && !isEscapedMarkdownDelimiter(source, index)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function looksLikeMathExpression(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/^\d+(?:\.\d+)?$/.test(text)) return false;
+  return /[A-Za-z]|\\(?:frac|sqrt|sum|prod|int|alpha|beta|gamma|delta|theta|lambda|pi|sigma|omega|leq|geq|neq|times|cdot)|[_^=<>+\-*/]/.test(text);
+}
+
+function skipMathSpaces(source, index) {
+  let cursor = index;
+  while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+  return cursor;
+}
+
+function readMathCommand(source, index) {
+  if (source[index] !== "\\") return null;
+  let cursor = index + 1;
+
+  if (cursor >= source.length) {
+    return { name: "", raw: "\\", endIndex: cursor };
+  }
+
+  if (/[A-Za-z]/.test(source[cursor])) {
+    while (cursor < source.length && /[A-Za-z]/.test(source[cursor])) cursor += 1;
+  } else {
+    cursor += 1;
+  }
+
+  return {
+    name: source.slice(index + 1, cursor),
+    raw: source.slice(index, cursor),
+    endIndex: cursor,
+  };
+}
+
+function readMathGroup(source, index, opener = "{", closer = "}") {
+  let cursor = skipMathSpaces(source, index);
+  if (source[cursor] !== opener) return null;
+
+  let depth = 1;
+  const start = cursor + 1;
+  cursor += 1;
+
+  while (cursor < source.length) {
+    if (source[cursor] === "\\" && cursor + 1 < source.length) {
+      cursor += 2;
+      continue;
+    }
+    if (source[cursor] === opener) depth += 1;
+    if (source[cursor] === closer) depth -= 1;
+    if (depth === 0) {
+      return {
+        content: source.slice(start, cursor),
+        endIndex: cursor + 1,
+      };
+    }
+    cursor += 1;
+  }
+
+  return {
+    content: source.slice(start),
+    endIndex: source.length,
+  };
+}
+
+function readMathAtom(source, index) {
+  const cursor = skipMathSpaces(source, index);
+  const group = readMathGroup(source, cursor);
+  if (group) return group;
+
+  const command = readMathCommand(source, cursor);
+  if (command) {
+    return {
+      content: command.raw,
+      endIndex: command.endIndex,
+    };
+  }
+
+  return {
+    content: source[cursor] || "",
+    endIndex: Math.min(source.length, cursor + 1),
+  };
+}
+
+function renderMathExpression(expression) {
+  const source = String(expression || "").replace(/\r/g, "").trim();
+  let html = "";
+  let index = 0;
+
+  while (index < source.length) {
+    const char = source[index];
+
+    if (source.startsWith("\\\\", index)) {
+      html += "<br />";
+      index += 2;
+      continue;
+    }
+
+    if (char === "\\") {
+      const command = readMathCommand(source, index);
+      index = command.endIndex;
+
+      if (command.name === "left" || command.name === "right") {
+        continue;
+      }
+
+      if (command.name === "begin" || command.name === "end") {
+        const group = readMathGroup(source, index);
+        index = group ? group.endIndex : index;
+        continue;
+      }
+
+      if (command.name === "frac" || command.name === "dfrac" || command.name === "tfrac") {
+        const numerator = readMathGroup(source, index);
+        const denominator = numerator ? readMathGroup(source, numerator.endIndex) : null;
+        if (numerator && denominator) {
+          html += `<span class="math-frac"><span>${renderMathExpression(numerator.content)}</span><span>${renderMathExpression(denominator.content)}</span></span>`;
+          index = denominator.endIndex;
+          continue;
+        }
+      }
+
+      if (command.name === "sqrt") {
+        const root = readMathGroup(source, index, "[", "]");
+        const radicand = readMathGroup(source, root ? root.endIndex : index);
+        if (radicand) {
+          html += `<span class="math-sqrt">${root ? `<sup>${renderMathExpression(root.content)}</sup>` : ""}<span>${renderMathExpression(radicand.content)}</span></span>`;
+          index = radicand.endIndex;
+          continue;
+        }
+      }
+
+      if (MATH_TEXT_COMMANDS.has(command.name) || MATH_STYLE_COMMANDS.has(command.name)) {
+        const group = readMathGroup(source, index);
+        if (group) {
+          const className = MATH_STYLE_COMMANDS.has(command.name) ? "math-bold" : "math-text";
+          const content = MATH_TEXT_COMMANDS.has(command.name)
+            ? escapeHtml(group.content)
+            : renderMathExpression(group.content);
+          html += `<span class="${className}">${content}</span>`;
+          index = group.endIndex;
+          continue;
+        }
+      }
+
+      if (Object.hasOwn(MATH_SYMBOLS, command.name)) {
+        html += `<span class="math-symbol">${escapeHtml(MATH_SYMBOLS[command.name])}</span>`;
+        continue;
+      }
+
+      if ([",", ";", ":", "!", " "].includes(command.name)) {
+        html += " ";
+        continue;
+      }
+
+      html += escapeHtml(command.raw.replace(/^\\/, ""));
+      continue;
+    }
+
+    if (char === "^" || char === "_") {
+      const atom = readMathAtom(source, index + 1);
+      const tag = char === "^" ? "sup" : "sub";
+      html += `<${tag}>${renderMathExpression(atom.content)}</${tag}>`;
+      index = atom.endIndex;
+      continue;
+    }
+
+    if (char === "{") {
+      const group = readMathGroup(source, index);
+      html += renderMathExpression(group?.content || "");
+      index = group?.endIndex || index + 1;
+      continue;
+    }
+
+    if (char === "&") {
+      index += 1;
+      continue;
+    }
+
+    html += /\s/.test(char) ? " " : escapeHtml(char);
+    index += 1;
+  }
+
+  return html;
+}
+
+function renderMathInline(expression) {
+  return `<span class="math-inline">${renderMathExpression(expression)}</span>`;
+}
+
+function renderMathBlock(expression) {
+  return `<div class="math-display">${renderMathExpression(expression)}</div>`;
+}
+
+function collectMarkdownMathBlock(lines, startIndex, opener, closer) {
+  const firstLine = lines[startIndex].trim();
+  const firstContent = firstLine.slice(opener.length);
+  const sameLineEnd = firstContent.lastIndexOf(closer);
+
+  if (sameLineEnd >= 0 && firstContent.slice(sameLineEnd + closer.length).trim() === "") {
+    return {
+      content: firstContent.slice(0, sameLineEnd).trim(),
+      endIndex: startIndex,
+    };
+  }
+
+  const mathLines = [firstContent];
+  let index = startIndex + 1;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const endIndex = line.indexOf(closer);
+    if (endIndex !== -1) {
+      mathLines.push(line.slice(0, endIndex));
+      return {
+        content: mathLines.join("\n").trim(),
+        endIndex: index,
+      };
+    }
+    mathLines.push(line);
+    index += 1;
+  }
+
+  return {
+    content: mathLines.join("\n").trim(),
+    endIndex: lines.length - 1,
+  };
+}
+
 function renderMarkdownInline(text, doc) {
   const source = String(text || "");
   let html = "";
@@ -8703,6 +9021,48 @@ function renderMarkdownInline(text, doc) {
         html += `<code>${escapeHtml(source.slice(index + 1, endIndex))}</code>`;
         index = endIndex + 1;
         continue;
+      }
+    }
+
+    if (source.startsWith("\\(", index)) {
+      const endIndex = findMathDelimiter(source, "\\)", index + 2);
+      if (endIndex !== -1) {
+        html += renderMathInline(source.slice(index + 2, endIndex));
+        index = endIndex + 2;
+        continue;
+      }
+    }
+
+    if (source.startsWith("\\[", index)) {
+      const endIndex = findMathDelimiter(source, "\\]", index + 2);
+      if (endIndex !== -1) {
+        html += renderMathInline(source.slice(index + 2, endIndex));
+        index = endIndex + 2;
+        continue;
+      }
+    }
+
+    if (source.startsWith("$$", index)) {
+      const endIndex = findMathDelimiter(source, "$$", index + 2);
+      if (endIndex !== -1) {
+        const expression = source.slice(index + 2, endIndex);
+        if (looksLikeMathExpression(expression)) {
+          html += renderMathInline(expression);
+          index = endIndex + 2;
+          continue;
+        }
+      }
+    }
+
+    if (source[index] === "$" && source[index + 1] !== "$" && !isEscapedMarkdownDelimiter(source, index)) {
+      const endIndex = findMathDelimiter(source, "$", index + 1);
+      if (endIndex !== -1) {
+        const expression = source.slice(index + 1, endIndex);
+        if (looksLikeMathExpression(expression)) {
+          html += renderMathInline(expression);
+          index = endIndex + 1;
+          continue;
+        }
       }
     }
 
@@ -8837,6 +9197,24 @@ function renderMarkdownPreview(markdown, doc = documentState.current) {
       }
       const langLabel = language ? `<span>${escapeHtml(language)}</span>` : "";
       blocks.push(`<pre class="markdown-code-block">${langLabel}<code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    if (trimmed.startsWith("$$")) {
+      flushParagraph();
+      flushList();
+      const mathBlock = collectMarkdownMathBlock(lines, index, "$$", "$$");
+      blocks.push(renderMathBlock(mathBlock.content));
+      index = mathBlock.endIndex;
+      continue;
+    }
+
+    if (trimmed.startsWith("\\[")) {
+      flushParagraph();
+      flushList();
+      const mathBlock = collectMarkdownMathBlock(lines, index, "\\[", "\\]");
+      blocks.push(renderMathBlock(mathBlock.content));
+      index = mathBlock.endIndex;
       continue;
     }
 
