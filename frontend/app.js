@@ -6701,16 +6701,6 @@ function getQuizModeLabel(mode = "adaptive") {
   }[mode] || "自适应练习";
 }
 
-function getRelatedTopicIds(topicId) {
-  const studyModule = getStudyModule();
-  return new Set([
-    topicId,
-    ...(studyModule.graph.edges || [])
-      .filter((edge) => edge.source === topicId || edge.target === topicId)
-      .map((edge) => edge.source === topicId ? edge.target : edge.source),
-  ].filter(Boolean));
-}
-
 function getQuestionAttemptHistory(questionId) {
   return getStudyModule().attempts.filter((attempt) => attempt.questionId === questionId);
 }
@@ -6730,7 +6720,6 @@ function getQuestionPriority(question, context = {}) {
   const history = getQuestionAttemptHistory(question.id);
   const lastAttempt = history[history.length - 1];
   const dueMistake = studyModule.mistakes.find((mistake) => mistake.questionId === question.id && !mistake.reviewed);
-  const related = context.relatedTopicIds?.has(question.topic);
   const difficultyBoost = mode === "exam"
     ? { 基础: 4, 中等: 8, 较难: 12 }[question.difficulty] || 6
     : { 基础: 8, 中等: 6, 较难: 4 }[question.difficulty] || 5;
@@ -6740,7 +6729,6 @@ function getQuestionPriority(question, context = {}) {
     stats.mastery < 60 ? 34 : stats.mastery < 78 ? 18 : 4,
     lastAttempt && !lastAttempt.correct ? 26 : 0,
     history.length === 0 ? 18 : Math.max(0, 10 - history.length * 2),
-    related ? 12 : 0,
     difficultyBoost,
     question.type === "short" && mode !== "diagnostic" ? 6 : 0,
   ].reduce((sum, value) => sum + value, 0);
@@ -6821,27 +6809,11 @@ function getTopicQuestions(topicId, difficulty = "all") {
     return sortQuestionsForMode(filtered, { mode }).slice(0, mode === "exam" ? 16 : 10);
   }
 
-  const related = getRelatedTopicIds(topic?.id);
-  const direct = questions.filter((question) => question.topic === topic?.id);
-  const adjacent = questions.filter((question) => question.topic !== topic?.id && related.has(question.topic));
-  const fallback = questions.filter((question) => !related.has(question.topic));
-  const generatedDirect = direct.length ? direct : createDirectQuestionsForNode(topic);
-  const directFiltered = generatedDirect.filter((question) => difficulty === "all" || question.difficulty === difficulty);
-  if (directFiltered.length) {
-    return [
-      ...directFiltered,
-      ...adjacent.filter((question) => difficulty === "all" || question.difficulty === difficulty),
-      ...fallback.filter((question) => difficulty === "all" || question.difficulty === difficulty),
-    ].slice(0, 10);
-  }
+  const filtered = questions
+    .filter((question) => question.topic === topic?.id)
+    .filter((question) => difficulty === "all" || question.difficulty === difficulty);
 
-  if (topic && difficulty !== "all") return createDirectQuestionsForNode(topic, difficulty).slice(0, 10);
-
-  const filtered = [...generatedDirect, ...adjacent, ...fallback]
-    .filter((question) => difficulty === "all" || question.difficulty === difficulty)
-    .slice(0, 10);
-
-  return sortQuestionsForMode(filtered, { mode, relatedTopicIds: related });
+  return sortQuestionsForMode(filtered, { mode }).slice(0, 10);
 }
 
 function getQuizTypeLabel(type) {
@@ -7187,7 +7159,6 @@ function showQuizFeedback(correct, explanation, correctAnswer = "", meta = {}) {
     ${sourceSnippet ? `<blockquote>来源片段：${escapeHtml(sourceSnippet)}</blockquote>` : ""}
     <div class="quiz-feedback-actions">
       <button class="mini-button" data-quiz-action="open-topic">查看图谱节点</button>
-      ${correct ? "" : `<button class="mini-button" data-quiz-action="variant">生成变式题</button>`}
       <button class="mini-button" data-quiz-action="review-mode">今日复习</button>
     </div>
   `;
@@ -7325,43 +7296,6 @@ function submitMatchQuizAnswer() {
   refreshAfterQuizAnswer();
 }
 
-function createVariantQuestionFromCurrent() {
-  const studyModule = getStudyModule();
-  const question = getCurrentQuizQuestion();
-  if (!question) return;
-  const topic = getKnowledgeTopic(question.topic);
-  const related = Array.from(getRelatedTopicIds(question.topic))
-    .map((topicId) => getKnowledgeTopic(topicId))
-    .filter((node) => node && node.id !== topic?.id)[0];
-  const variant = normalizeStudyQuestion({
-    id: createId("variant"),
-    topic: topic?.id || question.topic,
-    type: "short",
-    difficulty: question.difficulty === "基础" ? "中等" : question.difficulty,
-    prompt: related
-      ? `请结合“${topic.label}”和“${related.label}”的关系，说明这两个知识点为什么需要一起复习。`
-      : `换一种说法解释“${topic?.label || question.topic}”，并补充一个应用场景。`,
-    keywords: Array.from(new Set([...(topic?.keywords || []), topic?.label, related?.label].filter(Boolean))).slice(0, 6),
-    sampleAnswer: related
-      ? `${topic.label} 的核心是：${topic.summary}。它与 ${related.label} 的关系可以从知识图谱中的关联边和资料原文中理解。`
-      : topic?.summary || question.sampleAnswer,
-    explanation: related
-      ? `这道变式题考查概念迁移：不仅要知道 ${topic.label}，还要能说明它与 ${related.label} 的联系。`
-      : `这道变式题考查你是否能脱离原题复述核心概念。`,
-    source: topic?.source || question.source,
-    sourceSnippet: getQuestionSourceSnippet(question),
-  }, studyModule.graph.nodes);
-
-  studyModule.quiz.questions = uniqueQuestions([variant, ...studyModule.quiz.questions]);
-  studyModule.quiz.scope = variant.topic;
-  studyModule.quiz.mode = "adaptive";
-  studyModule.quiz.difficulty = "all";
-  studyModule.quiz.cursor = 0;
-  studyModule.activeQuizTopic = variant.topic;
-  saveWorkspace();
-  renderQuizModule();
-}
-
 function withTimeout(promise, timeoutMs, label) {
   let timer = null;
   const guarded = Promise.resolve(promise);
@@ -7432,7 +7366,6 @@ function handleQuizActionButton(quizActionButton) {
     if (question?.topic) selectKnowledgeNode(question.topic);
     showView("map");
   }
-  if (action === "variant") createVariantQuestionFromCurrent();
   if (action === "review-mode") {
     const studyModule = getStudyModule();
     studyModule.quiz.mode = "review";
@@ -7657,7 +7590,7 @@ function buildStudyGenerationPrompt(documents) {
     '  "recommendations": [{"topic":"节点id","title":"复习建议标题","detail":"具体建议"}]',
     "}",
     "质量要求：8-16 个节点，边不少于 6 条，覆盖定义、方法、指标、应用场景，题型必须包含单选、多选、判断、简答、概念匹配。",
-    "题目要求：至少 3 道题考查两个知识点之间的关系或对比；每道题都要有 source/sourceSnippet，解析要说明为什么错选项不合适。",
+    "题目要求：题目必须直接来自课程资料内容，每道题都要有 source/sourceSnippet，解析要说明为什么错选项不合适；不要为了配合知识图谱关系而编造题目。",
     `资料标题：${titles}`,
   ].join("\n");
 }
@@ -7788,97 +7721,6 @@ function createRuleBasedGraphFromDocuments(documents = []) {
   }, documents, "local-rules");
 }
 
-function createQuestionsFromGraph(graph, documents = [], engine = "local-rules") {
-  const fallback = createFallbackQuizQuestions(graph.nodes);
-  const generated = graph.nodes.slice(0, 8).flatMap((node, index) => {
-    const edge = graph.edges.find((item) => item.source === node.id || item.target === node.id);
-    const relatedId = edge ? edge.source === node.id ? edge.target : edge.source : graph.nodes[(index + 1) % graph.nodes.length]?.id;
-    const relatedNode = graph.nodes.find((item) => item.id === relatedId);
-    return [
-      normalizeStudyQuestion({
-        id: `auto-choice-${node.id}`,
-        topic: node.id,
-        type: "choice",
-        difficulty: node.difficulty,
-        prompt: `关于“${node.label}”，下列哪一项描述最准确？`,
-        options: [
-          node.summary,
-          "它只表示页面颜色搭配，与学习任务无关。",
-          "它是随机生成的装饰节点。",
-          "它只用于数据库性能调优。",
-        ],
-        answer: 0,
-        explanation: `“${node.label}”的核心解释来自 ${node.source}：${node.summary}`,
-        source: node.source,
-        sourceSnippet: (node.sourceSnippets || [])[0] || (node.examples || [])[0] || node.summary,
-      }, graph.nodes),
-      normalizeStudyQuestion({
-        id: `auto-judge-${node.id}`,
-        topic: node.id,
-        type: "judge",
-        difficulty: node.difficulty === "基础" ? "基础" : "中等",
-        prompt: `“${node.label}”可以和“${relatedNode?.label || "相关概念"}”一起复习，因为它们在资料中存在关联。`,
-        answer: Boolean(relatedNode),
-        explanation: relatedNode ? `图谱中二者通过“${edge?.relation || "相关"}”相连。` : "当前节点暂未发现明确关联。",
-        source: node.source,
-        sourceSnippet: (node.sourceSnippets || [])[0] || node.summary,
-      }, graph.nodes),
-    ];
-  });
-
-  return [...generated, ...fallback].filter((question, index, list) =>
-    question && list.findIndex((item) => item.id === question.id) === index,
-  ).slice(0, 24).map((question) => ({ ...question, source: question.source || engine }));
-}
-
-function createDirectQuestionsForNode(node, preferredDifficulty = "") {
-  if (!node) return [];
-  const graphNodes = getStudyModule().graph.nodes;
-  const directDifficulty = preferredDifficulty && preferredDifficulty !== "all" ? preferredDifficulty : node.difficulty;
-  return [
-    normalizeStudyQuestion({
-      id: `direct-choice-${node.id}`,
-      topic: node.id,
-      type: "choice",
-      difficulty: directDifficulty,
-      prompt: `关于“${node.label}”，哪一项最符合资料中的解释？`,
-      options: [
-        node.summary,
-        "它只是界面装饰元素，不影响学习或交互。",
-        "它只与后端部署有关。",
-        "它是与课程内容无关的随机标签。",
-      ],
-      answer: 0,
-      explanation: `资料中对“${node.label}”的解释是：${node.summary}`,
-      source: node.source,
-      sourceSnippet: (node.sourceSnippets || [])[0] || (node.examples || [])[0] || node.summary,
-    }, graphNodes),
-    normalizeStudyQuestion({
-      id: `direct-judge-${node.id}`,
-      topic: node.id,
-      type: "judge",
-      difficulty: preferredDifficulty && preferredDifficulty !== "all" ? preferredDifficulty : node.difficulty === "较难" ? "中等" : "基础",
-      prompt: `复习“${node.label}”时，应结合定义、应用例子和相关概念一起理解。`,
-      answer: true,
-      explanation: `知识图谱会把“${node.label}”与相关节点、原文出处和例子一起呈现。`,
-      source: node.source,
-      sourceSnippet: (node.sourceSnippets || [])[0] || node.summary,
-    }, graphNodes),
-    normalizeStudyQuestion({
-      id: `direct-short-${node.id}`,
-      topic: node.id,
-      type: "short",
-      difficulty: directDifficulty,
-      prompt: `用自己的话解释“${node.label}”的核心含义。`,
-      keywords: node.keywords || [node.label],
-      sampleAnswer: node.summary,
-      explanation: `简答题重点看是否提到 ${[node.label, ...(node.keywords || [])].slice(0, 3).join("、")}。`,
-      source: node.source,
-      sourceSnippet: (node.sourceSnippets || [])[0] || node.summary,
-    }, graphNodes),
-  ];
-}
-
 async function generateStudyModuleFromUploads() {
   const course = getActiveCourse();
   const studyModule = getStudyModule(course);
@@ -7996,7 +7838,9 @@ async function generateStudyModuleFromUploads() {
         studyModule.generation.message = `本地图谱已生成，但写入 Neo4j 失败：${getAiErrorMessage(error)}`;
       }
     }
-    if (!questions.length) questions = createQuestionsFromGraph(graph, documents, engine);
+    if (!questions.length) {
+      questions = createFallbackQuizQuestions(graph.nodes).map((question) => ({ ...question, source: question.source || "built-in-bank" }));
+    }
     studyModule.graph = graph;
     studyModule.quiz = sanitizeStudyQuiz({
       scope: graph.nodes[0]?.id || "all",
