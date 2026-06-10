@@ -86,6 +86,7 @@ const viewTitles = {
   coding: "阿龙在 Coding",
   planner: "TodoList",
   map: "知识图谱",
+  mindmap: "思维导图",
   quiz: "自动测验",
   report: "学习报告",
   focus: "状态与音乐",
@@ -220,6 +221,8 @@ const GRAPH_NODE_LIMIT = 18;
 const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
 const GRAPH_GENERATION_TIMEOUT_MS = 120000;
 const GRAPH_SECONDARY_AI_TIMEOUT_MS = 90000;
+const GRAPH_NOISE_LINE_PATTERN = /(ISBN|CIP|copyright|all rights reserved|seventh edition|edition|机械工业出版社|出版社|出版|印刷|版次|责任编辑|责任编|版权所有|盗版|防伪|校区|大学|学院|图书在版|编目|定价|开本|印张|字数|书名|作者|译者|封面|封底|library of congress|pearson|mcgraw|press)/i;
+const GRAPH_CONCEPT_SIGNAL_PATTERN = /(是|指|表示|定义|概念|包括|分为|组成|用于|作用|特点|模型|算法|方法|系统|结构|过程|关系|约束|查询|事务|索引|范式|模式|实体|属性|完整性|并发|恢复|SQL|ER|database|relation|transaction|query|index|schema)/i;
 const GRAPH_GENERATION_STEPS = {
   idle: { title: "等待生成", detail: "导入资料后可用 Qwen / 本地规则生成课程图谱和题目。", progress: 0 },
   extracting: { title: "正在整理资料", detail: "提取 PDF / Markdown 文本，准备生成课程知识结构。", progress: 18 },
@@ -1538,17 +1541,104 @@ function createEmptyStudyGraph(course = {}) {
   };
 }
 
+function createEmptyMindmap(course = {}) {
+  return {
+    id: "mindmap-root",
+    title: course.name || "课程思维导图",
+    summary: "导入资料后可独立生成层级式思维导图。",
+    nodes: [],
+    meta: {
+      generatedBy: "empty",
+      generatedAt: Date.now(),
+      empty: true,
+      sourceDocuments: (course.documents || []).map((documentMeta) => documentMeta.title || documentMeta.name).filter(Boolean),
+    },
+  };
+}
+
+function createFallbackMindmap(course = {}) {
+  const title = course.name || "用户交互技术";
+  return {
+    id: "mindmap-root",
+    title,
+    summary: "按复习层级独立整理的课程脑图，不依赖知识图谱关系。",
+    nodes: [
+      {
+        id: "mindmap-founder",
+        label: "课程定位",
+        summary: "明确课程讨论的人、系统与交互体验。",
+        children: [
+          { id: "mindmap-founder-1", label: "人机交互", summary: "研究人与计算系统之间的交互过程。" },
+          { id: "mindmap-founder-2", label: "用户体验", summary: "关注使用前、使用中和使用后的整体感受。" },
+        ],
+      },
+      {
+        id: "mindmap-definition",
+        label: "核心概念",
+        summary: "建立后续评估和设计分析的基础术语。",
+        children: [
+          { id: "mindmap-definition-1", label: "可用性", summary: "有效性、效率和满意度共同构成评价基础。" },
+          { id: "mindmap-definition-2", label: "认知负荷", summary: "界面理解和操作过程中的心理负担。" },
+          { id: "mindmap-definition-3", label: "Fitts 定律", summary: "解释目标距离、大小与指向时间的关系。" },
+        ],
+      },
+      {
+        id: "mindmap-function",
+        label: "评估方法",
+        summary: "把概念转化为可观察、可记录的评价流程。",
+        children: [
+          { id: "mindmap-function-1", label: "SUS 量表", summary: "快速收集主观可用性评分。" },
+          { id: "mindmap-function-2", label: "用户访谈", summary: "通过追问理解动机、痛点和真实场景。" },
+          { id: "mindmap-function-3", label: "原型测试", summary: "用低成本原型尽早发现流程问题。" },
+        ],
+      },
+      {
+        id: "mindmap-metaphor",
+        label: "复习线索",
+        summary: "按问题、证据和例题组织复习路径。",
+        children: [
+          { id: "mindmap-metaphor-1", label: "定义辨析", summary: "区分概念边界和适用场景。" },
+          { id: "mindmap-metaphor-2", label: "指标匹配", summary: "把方法与评价指标对应起来。" },
+          { id: "mindmap-metaphor-3", label: "案例应用", summary: "用课堂案例解释方法选择理由。" },
+        ],
+      },
+      {
+        id: "mindmap-alias",
+        label: "别名",
+        summary: "常见表达与同义概念，便于检索和报告撰写。",
+        children: [
+          { id: "mindmap-alias-1", label: "脑图", summary: "强调发散式层级表达。" },
+          { id: "mindmap-alias-2", label: "心智地图", summary: "强调思考主题和关键节点。" },
+          { id: "mindmap-alias-3", label: "概念地图", summary: "强调概念组织，但本页不展示网状关系。" },
+          { id: "mindmap-alias-4", label: "树状图", summary: "强调父子层级。" },
+        ],
+      },
+    ],
+    meta: {
+      generatedBy: "local-mindmap-seed",
+      generatedAt: Date.now(),
+      empty: false,
+      sourceDocuments: (course.documents || []).map((documentMeta) => documentMeta.title || documentMeta.name).filter(Boolean),
+    },
+  };
+}
+
 function createDefaultStudyModule(options = {}) {
   const useSeedGraph = options.seedGraph !== false;
   const graph = useSeedGraph ? createFallbackStudyGraph([]) : createEmptyStudyGraph(options.course);
+  const mindmap = useSeedGraph ? createFallbackMindmap(options.course) : createEmptyMindmap(options.course);
   const questions = createFallbackQuizQuestions(graph.nodes);
 
   return {
     version: STUDY_MODULE_VERSION,
     selectedNodeId: graph.nodes[0]?.id || "",
+    selectedMindmapNodeId: mindmap.nodes[0]?.id || mindmap.id || "",
     activeQuizTopic: graph.nodes[0]?.id || "all",
     quizCursor: 0,
     mapMode: "mastery",
+    mindmapMode: "classic",
+    mindmapCollapsed: [],
+    mindmapFocusId: "",
     graphFilters: {
       chapter: "all",
       difficulty: "all",
@@ -1562,6 +1652,7 @@ function createDefaultStudyModule(options = {}) {
       updatedAt: 0,
     },
     graph,
+    mindmap,
     quiz: {
       scope: graph.nodes[0]?.id || "all",
       mode: "adaptive",
@@ -1852,8 +1943,13 @@ function sanitizeRagKnowledge(ragKnowledge = {}) {
 function sanitizeStudyModule(studyModule = {}) {
   const defaults = createDefaultStudyModule();
   const graph = sanitizeStudyGraph(studyModule.graph || defaults.graph);
+  const mindmap = sanitizeMindmap(studyModule.mindmap || defaults.mindmap);
   const topicIds = new Set(graph.nodes.map((topic) => topic.id));
+  const mindmapIds = new Set([mindmap.id, ...flattenMindmapNodes(mindmap).map((node) => node.id)]);
   const selectedNodeId = topicIds.has(studyModule.selectedNodeId) ? studyModule.selectedNodeId : graph.nodes[0]?.id || defaults.selectedNodeId;
+  const selectedMindmapNodeId = mindmapIds.has(studyModule.selectedMindmapNodeId)
+    ? studyModule.selectedMindmapNodeId
+    : mindmap.nodes[0]?.id || mindmap.id || "";
   const activeQuizTopic = topicIds.has(studyModule.activeQuizTopic) ? studyModule.activeQuizTopic : selectedNodeId;
   const attempts = Array.isArray(studyModule.attempts) ? studyModule.attempts : [];
   const mistakes = Array.isArray(studyModule.mistakes)
@@ -1876,9 +1972,14 @@ function sanitizeStudyModule(studyModule = {}) {
     ...studyModule,
     version: STUDY_MODULE_VERSION,
     graph,
+    mindmap,
     selectedNodeId,
+    selectedMindmapNodeId,
     activeQuizTopic,
     mapMode: ["mastery", "chapter", "difficulty"].includes(studyModule.mapMode) ? studyModule.mapMode : defaults.mapMode,
+    mindmapMode: ["classic", "compact", "chapter", "difficulty"].includes(studyModule.mindmapMode) ? studyModule.mindmapMode : defaults.mindmapMode,
+    mindmapCollapsed: Array.isArray(studyModule.mindmapCollapsed) ? studyModule.mindmapCollapsed.map(String).slice(0, 24) : [],
+    mindmapFocusId: mindmapIds.has(studyModule.mindmapFocusId) ? studyModule.mindmapFocusId : "",
     graphFilters: {
       ...defaults.graphFilters,
       ...(studyModule.graphFilters || {}),
@@ -5353,6 +5454,10 @@ function showView(viewName) {
     renderKnowledgeModule();
   }
 
+  if (viewName === "mindmap") {
+    renderMindmapModule();
+  }
+
   if (viewName === "quiz") {
     renderQuizModule();
   }
@@ -5872,6 +5977,7 @@ function resolveVoiceView(normalizedText) {
     { view: "coding", patterns: ["coding", "代码", "编程"] },
     { view: "planner", patterns: ["todo", "待办", "计划", "日程"] },
     { view: "map", patterns: ["知识图谱", "图谱", "知识图"] },
+    { view: "mindmap", patterns: ["思维导图", "脑图", "导图"] },
     { view: "quiz", patterns: ["测验", "测试", "刷题", "题目"] },
     { view: "report", patterns: ["报告", "学习报告"] },
     { view: "focus", patterns: ["状态", "摄像头", "音乐", "专注"] },
@@ -6145,6 +6251,136 @@ function createFallbackQuizQuestions(nodes = createFallbackStudyGraph([]).nodes)
   );
 }
 
+function normalizeComparableText(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^\u4e00-\u9fa5a-z0-9]+/g, "");
+}
+
+function resolveQuestionTopic(rawTopic, nodes = []) {
+  const topicText = String(rawTopic || "").trim();
+  if (!topicText || !nodes.length) return null;
+  const exact = nodes.find((node) => node.id === topicText || node.label === topicText);
+  if (exact) return exact;
+  const comparable = normalizeComparableText(topicText);
+  if (!comparable) return null;
+  return nodes.find((node) => {
+    const id = normalizeComparableText(node.id);
+    const label = normalizeComparableText(node.label);
+    return id === comparable
+      || label === comparable
+      || (comparable.length >= 3 && (id.includes(comparable) || label.includes(comparable) || comparable.includes(label)));
+  }) || null;
+}
+
+function getCourseStudyDocumentsSnapshot(course = getActiveCourse()) {
+  return (course?.documents || [])
+    .map((documentMeta) => ({
+      id: documentMeta.id,
+      title: documentMeta.title || documentMeta.name || "课程资料",
+      text: cleanCourseTextForStudyGeneration(documentMeta.extractedText || documentMeta.text || documentMeta.content || ""),
+      extension: documentMeta.extension || "",
+    }))
+    .filter((documentMeta) => documentMeta.text);
+}
+
+function rotateOptions(options = [], answerIndex = 0) {
+  const unique = Array.from(new Set(options.filter(Boolean))).slice(0, 4);
+  while (unique.length < 4) unique.push(["概念定义", "应用场景", "评价标准", "操作步骤"][unique.length]);
+  const correct = unique[0];
+  const targetIndex = Math.min(3, Math.max(0, answerIndex));
+  const arranged = unique.slice(1);
+  arranged.splice(targetIndex, 0, correct);
+  return { options: arranged, answer: targetIndex };
+}
+
+function createRuleBasedQuizQuestions(graph = getStudyModule().graph, documents = []) {
+  const nodes = (graph.nodes || []).filter((node) => isLikelyCourseConceptLabel(node.label || node.id, node.summary || ""));
+  if (!nodes.length) return [];
+  const documentText = documents.map((documentMeta) => documentMeta.text).join("\n");
+  const questions = [];
+
+  nodes.slice(0, 12).forEach((node, index) => {
+    const snippet = (node.sourceSnippets || [])[0] || getSourceSnippetForLabel(node.label, documentText) || node.summary;
+    const otherNodes = nodes.filter((item) => item.id !== node.id);
+    const distractors = otherNodes
+      .map((item) => item.summary || `${item.label} 的相关概念。`)
+      .filter((summary) => summary && summary !== node.summary)
+      .slice(0, 3);
+    const source = node.source || documents[0]?.title || "课程资料";
+
+    if (index % 3 === 0) {
+      const arrangement = rotateOptions([
+        node.summary || `${node.label} 是资料中的核心概念。`,
+        ...distractors,
+      ], index % 4);
+      questions.push(normalizeStudyQuestion({
+        id: `rq-${normalizeComparableText(node.id)}-choice`,
+        topic: node.id,
+        type: "choice",
+        difficulty: node.difficulty || "中等",
+        prompt: `下列哪一项最符合“${node.label}”的含义？`,
+        options: arrangement.options,
+        answer: arrangement.answer,
+        explanation: `“${node.label}”应结合资料中的定义、作用和上下文理解。`,
+        source,
+        sourceSnippet: snippet,
+        keywords: node.keywords || [node.label],
+      }, nodes));
+      return;
+    }
+
+    if (index % 3 === 1 && (node.keywords || []).length >= 2) {
+      const correctKeywords = (node.keywords || []).filter((keyword) => keyword !== node.label).slice(0, 3);
+      const wrongKeywords = otherNodes.flatMap((item) => item.keywords || [item.label]).filter((keyword) => !correctKeywords.includes(keyword)).slice(0, 3);
+      const options = Array.from(new Set([...correctKeywords, ...wrongKeywords])).slice(0, 4);
+      questions.push(normalizeStudyQuestion({
+        id: `rq-${normalizeComparableText(node.id)}-multi`,
+        topic: node.id,
+        type: "multi",
+        difficulty: node.difficulty || "中等",
+        prompt: `下列哪些关键词与“${node.label}”直接相关？`,
+        options,
+        answer: correctKeywords.map((keyword) => options.indexOf(keyword)).filter((value) => value >= 0),
+        explanation: `这些关键词来自“${node.label}”的资料片段或概念摘要。`,
+        source,
+        sourceSnippet: snippet,
+        keywords: correctKeywords,
+      }, nodes));
+      return;
+    }
+
+    questions.push(normalizeStudyQuestion({
+      id: `rq-${normalizeComparableText(node.id)}-short`,
+      topic: node.id,
+      type: "short",
+      difficulty: node.difficulty || "中等",
+      prompt: `简述“${node.label}”的核心含义或作用。`,
+      sampleAnswer: node.summary || snippet,
+      explanation: `回答时应说明“${node.label}”的定义、作用，并尽量结合资料中的具体语境。`,
+      source,
+      sourceSnippet: snippet,
+      keywords: (node.keywords || [node.label]).slice(0, 5),
+    }, nodes));
+  });
+
+  if (nodes.length >= 3) {
+    questions.push(normalizeStudyQuestion({
+      id: "rq-concept-match",
+      topic: nodes[0].id,
+      type: "match",
+      difficulty: "中等",
+      prompt: "将概念与其核心解释匹配。",
+      pairs: nodes.slice(0, 4).map((node) => [node.label, node.summary || `${node.label} 的核心解释`]),
+      explanation: "概念匹配题用于检查你是否能区分多个核心术语。",
+      source: nodes[0].source || documents[0]?.title || "课程资料",
+      sourceSnippet: nodes.slice(0, 3).map((node) => (node.sourceSnippets || [])[0]).filter(Boolean).join(" "),
+    }, nodes));
+  }
+
+  return uniqueQuestions(questions.filter(Boolean));
+}
+
 function sanitizeGraphViewport(viewport = {}) {
   return {
     x: Number.isFinite(Number(viewport.x)) ? Number(viewport.x) : GRAPH_DEFAULT_VIEWPORT.x,
@@ -6169,7 +6405,7 @@ function sanitizeStudyGraph(graph = {}) {
     };
   }
   const fallback = createFallbackStudyGraph([]);
-  const rawNodes = Array.isArray(graph.nodes) && graph.nodes.length ? graph.nodes : fallback.nodes;
+  const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : fallback.nodes;
   const nodes = rawNodes
     .slice(0, GRAPH_NODE_LIMIT)
     .map((node, index) => {
@@ -6190,7 +6426,9 @@ function sanitizeStudyGraph(graph = {}) {
         sourceSnippets: Array.isArray(node.sourceSnippets) ? node.sourceSnippets : undefined,
       });
     });
-  const nodeIds = new Set(nodes.map((node) => node.id));
+  const conceptNodes = nodes.filter((node) => isLikelyCourseConceptLabel(node.label || node.id, `${node.summary || ""}\n${(node.keywords || []).join(" ")}`));
+  const usableNodes = conceptNodes;
+  const nodeIds = new Set(usableNodes.map((node) => node.id));
   const edges = (Array.isArray(graph.edges) ? graph.edges : fallback.edges)
     .map((edge, index) => ({
       id: edge.id || `edge-${index + 1}`,
@@ -6202,14 +6440,66 @@ function sanitizeStudyGraph(graph = {}) {
     .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target) && edge.source !== edge.target);
 
   return {
-    nodes,
+    nodes: usableNodes,
     edges,
     meta: {
       generatedBy: graph.meta?.generatedBy || graph.generatedBy || "local-fallback",
       generatedAt: Number(graph.meta?.generatedAt || graph.generatedAt) || Date.now(),
-      qualityScore: clampPercent(graph.meta?.qualityScore ?? graph.qualityScore ?? estimateGraphQuality({ nodes, edges })),
+      qualityScore: clampPercent(
+        usableNodes.length === nodes.length
+          ? graph.meta?.qualityScore ?? graph.qualityScore ?? estimateGraphQuality({ nodes: usableNodes, edges })
+          : estimateGraphQuality({ nodes: usableNodes, edges }),
+      ),
       fallbackUsed: Boolean(graph.meta?.fallbackUsed ?? graph.fallbackUsed),
       sourceDocuments: Array.isArray(graph.meta?.sourceDocuments) ? graph.meta.sourceDocuments : [],
+    },
+  };
+}
+
+function flattenMindmapNodes(mindmapOrNodes = []) {
+  const roots = Array.isArray(mindmapOrNodes) ? mindmapOrNodes : mindmapOrNodes?.nodes || [];
+  const result = [];
+  const visit = (node, parent = null, depth = 1) => {
+    if (!node) return;
+    result.push({ ...node, parent, depth });
+    (node.children || []).forEach((child) => visit(child, node, depth + 1));
+  };
+  roots.forEach((node) => visit(node));
+  return result;
+}
+
+function sanitizeMindmapNode(node = {}, index = 0, prefix = "mindmap", depth = 1) {
+  const label = String(node.label || node.title || node.name || `主题 ${index + 1}`).trim().slice(0, 36);
+  const id = String(node.id || `${prefix}-${index + 1}`).trim();
+  const children = Array.isArray(node.children)
+    ? node.children.slice(0, 8).map((child, childIndex) => sanitizeMindmapNode(child, childIndex, id, depth + 1)).filter(Boolean)
+    : [];
+  return {
+    id,
+    label,
+    summary: String(node.summary || node.description || node.text || "").trim().slice(0, 120),
+    source: String(node.source || "").trim().slice(0, 60),
+    children: depth >= 4 ? [] : children,
+  };
+}
+
+function sanitizeMindmap(mindmap = {}, course = {}) {
+  if (mindmap?.meta?.empty || mindmap?.empty || mindmap?.meta?.generatedBy === "empty") {
+    return createEmptyMindmap(course);
+  }
+  const fallback = createFallbackMindmap(course);
+  const rawNodes = Array.isArray(mindmap.nodes) && mindmap.nodes.length ? mindmap.nodes : fallback.nodes;
+  const nodes = rawNodes.slice(0, 8).map((node, index) => sanitizeMindmapNode(node, index)).filter(Boolean);
+  return {
+    id: String(mindmap.id || "mindmap-root"),
+    title: String(mindmap.title || course.name || fallback.title || "课程思维导图").trim(),
+    summary: String(mindmap.summary || "独立生成的层级复习导图。").trim().slice(0, 140),
+    nodes,
+    meta: {
+      generatedBy: mindmap.meta?.generatedBy || mindmap.generatedBy || "local-mindmap",
+      generatedAt: Number(mindmap.meta?.generatedAt || mindmap.generatedAt) || Date.now(),
+      empty: !nodes.length,
+      sourceDocuments: Array.isArray(mindmap.meta?.sourceDocuments) ? mindmap.meta.sourceDocuments : [],
     },
   };
 }
@@ -6217,7 +6507,8 @@ function sanitizeStudyGraph(graph = {}) {
 function normalizeStudyQuestion(question, nodes = getStudyModule().graph.nodes) {
   if (!question) return null;
   const topic = String(question.topic || question.nodeId || question.knowledgePoint || nodes[0]?.id || "知识点").trim();
-  const node = nodes.find((item) => item.id === topic) || nodes[0];
+  const node = resolveQuestionTopic(topic, nodes);
+  if (!node) return null;
   const type = question.type === "multiple" ? "multi" : question.type || "choice";
   const normalized = {
     id: question.id || createId("q"),
@@ -6263,7 +6554,7 @@ function sanitizeStudyQuiz(quiz = {}, graph = createFallbackStudyGraph([])) {
       source: "empty",
     };
   }
-  const fallbackQuestions = createFallbackQuizQuestions(graph.nodes);
+  const fallbackQuestions = createRuleBasedQuizQuestions(graph);
   const questions = (Array.isArray(quiz?.questions) && quiz.questions.length ? quiz.questions : fallbackQuestions)
     .map((question) => normalizeStudyQuestion(question, graph.nodes))
     .filter(Boolean);
@@ -6295,8 +6586,10 @@ function isDefaultSeedGraphForCourse(course, studyModule = {}) {
 function resetCourseSeedGraphIfNeeded(course) {
   if (!isDefaultSeedGraphForCourse(course, course.studyModule)) return false;
   course.studyModule.graph = createEmptyStudyGraph(course);
+  course.studyModule.mindmap = createEmptyMindmap(course);
   course.studyModule.quiz = sanitizeStudyQuiz({ mode: course.studyModule.quiz?.mode }, course.studyModule.graph);
   course.studyModule.selectedNodeId = "";
+  course.studyModule.selectedMindmapNodeId = "";
   course.studyModule.activeQuizTopic = "all";
   course.studyModule.graphViewport = { ...GRAPH_DEFAULT_VIEWPORT };
   course.studyModule.generation = {
@@ -6364,6 +6657,101 @@ function estimateGraphQuality(graph) {
   const sourceScore = (graph.nodes || []).filter((node) => node.source).length >= Math.min(5, graph.nodes?.length || 0) ? 15 : 6;
   const detailScore = (graph.nodes || []).filter((node) => node.summary && node.examples?.length).length >= 4 ? 10 : 4;
   return clampPercent(nodeScore + edgeScore + sourceScore + detailScore);
+}
+
+function normalizeStudyTextLine(line = "") {
+  return String(line || "")
+    .replace(/\s+/g, " ")
+    .replace(/[•●◆◇□■]+/g, "")
+    .trim();
+}
+
+function isBoilerplateStudyLine(line = "") {
+  const normalized = normalizeStudyTextLine(line);
+  if (!normalized) return true;
+  if (normalized.length < 2) return true;
+  if (/^第?\s*\d+\s*页$/i.test(normalized)) return true;
+  if (/^[\d\s\-–—_.:：@〇○oO]+$/.test(normalized)) return true;
+  if (/\.pdf$/i.test(normalized)) return true;
+  if (GRAPH_NOISE_LINE_PATTERN.test(normalized)) return true;
+  const digitRatio = (normalized.match(/\d/g) || []).length / Math.max(1, normalized.length);
+  const punctuationRatio = (normalized.match(/[^\u4e00-\u9fa5A-Za-z0-9\s]/g) || []).length / Math.max(1, normalized.length);
+  return digitRatio > 0.45 || punctuationRatio > 0.35;
+}
+
+function cleanCourseTextForStudyGeneration(text = "") {
+  const lines = String(text || "")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map(normalizeStudyTextLine)
+    .filter((line) => !isBoilerplateStudyLine(line));
+  const deduped = [];
+  const seen = new Map();
+  lines.forEach((line) => {
+    const key = normalizeComparableText(line);
+    const count = seen.get(key) || 0;
+    seen.set(key, count + 1);
+    if (count < 2) deduped.push(line);
+  });
+  return deduped.join("\n").slice(0, GRAPH_TEXT_LIMIT);
+}
+
+function cleanDocumentsForStudyGeneration(documents = []) {
+  return documents
+    .map((documentMeta) => {
+      const cleanedText = cleanCourseTextForStudyGeneration(documentMeta.text || "");
+      return {
+        ...documentMeta,
+        rawText: documentMeta.text || "",
+        text: cleanedText || String(documentMeta.text || "").slice(0, GRAPH_TEXT_LIMIT),
+      };
+    })
+    .filter((documentMeta) => documentMeta.text.trim());
+}
+
+function isLikelyNoiseConceptLabel(label = "") {
+  const normalized = normalizeStudyTextLine(label);
+  if (!normalized || normalized.length < 2 || normalized.length > 32) return true;
+  if (/\.pdf$/i.test(normalized) || GRAPH_NOISE_LINE_PATTERN.test(normalized)) return true;
+  if (/^[\d\s\-–—_.:：@〇○oO\[\]()/\\]+$/.test(normalized)) return true;
+  if (/^\d+%/.test(normalized) || /\[[A-Z]{1,3}\s*\[/.test(normalized)) return true;
+  const digitRatio = (normalized.match(/\d/g) || []).length / Math.max(1, normalized.length);
+  const letterCount = (normalized.match(/[A-Za-z\u4e00-\u9fa5]/g) || []).length;
+  return digitRatio > 0.35 || letterCount < 2;
+}
+
+function isLikelyCourseConceptLabel(label = "", context = "") {
+  const normalized = normalizeStudyTextLine(label);
+  if (isLikelyNoiseConceptLabel(normalized)) return false;
+  if (GRAPH_CONCEPT_SIGNAL_PATTERN.test(`${normalized}\n${context}`)) return true;
+  if (/^[A-Z]{2,8}$/.test(normalized)) return true;
+  return normalized.length >= 3 && normalized.length <= 18 && /[\u4e00-\u9fa5]/.test(normalized);
+}
+
+function getSourceSnippetForLabel(label, text = "") {
+  const lines = String(text || "").split("\n").map(normalizeStudyTextLine).filter(Boolean);
+  const index = lines.findIndex((line) => line.includes(label));
+  if (index < 0) return "";
+  return lines.slice(Math.max(0, index - 1), Math.min(lines.length, index + 2)).join(" ").slice(0, 180);
+}
+
+function getDomainConceptSeeds(documents = []) {
+  const text = documents.map((documentMeta) => `${documentMeta.title}\n${documentMeta.text}`).join("\n").toLowerCase();
+  if (!/(数据库|database|sql|关系模型|事务|索引|查询|schema|transaction|relational)/i.test(text)) return [];
+  return [
+    { id: "数据库系统", summary: "用于组织、存储、管理和查询数据的系统。", keywords: ["数据库", "DBMS", "数据管理"] },
+    { id: "数据模型", summary: "描述数据结构、数据约束和数据操作方式的抽象模型。", keywords: ["结构", "约束", "操作"] },
+    { id: "关系模型", summary: "用关系表表示数据和数据之间联系的数据库模型。", keywords: ["关系", "表", "元组"] },
+    { id: "SQL", summary: "用于定义、查询和操作关系数据库的结构化查询语言。", keywords: ["查询", "DDL", "DML"] },
+    { id: "实体-联系模型", summary: "用实体、属性和联系描述现实世界数据需求的概念模型。", keywords: ["实体", "属性", "联系"] },
+    { id: "完整性约束", summary: "用于保证数据库中数据正确性和一致性的规则。", keywords: ["主键", "外键", "约束"] },
+    { id: "范式", summary: "用于分析和改进关系模式、减少冗余和异常的设计准则。", keywords: ["规范化", "冗余", "依赖"] },
+    { id: "索引", summary: "用于加速数据检索的数据结构。", keywords: ["检索", "查询优化", "B+树"] },
+    { id: "事务", summary: "数据库中作为一个逻辑工作单元执行的一组操作。", keywords: ["ACID", "并发", "恢复"] },
+    { id: "并发控制", summary: "协调多个事务同时执行以保持一致性的机制。", keywords: ["锁", "调度", "隔离性"] },
+    { id: "恢复机制", summary: "在故障后利用日志等信息恢复数据库一致状态的机制。", keywords: ["日志", "故障", "恢复"] },
+    { id: "查询处理", summary: "把用户查询解析、优化并执行得到结果的过程。", keywords: ["查询优化", "执行计划", "代价"] },
+  ];
 }
 
 function getVisibleGraphNodes() {
@@ -6769,6 +7157,173 @@ function showKnowledgeSource() {
   }
 }
 
+function getMindmapNodeById(nodeId, mindmap = getStudyModule().mindmap) {
+  if (!nodeId) return null;
+  if (nodeId === mindmap?.id) {
+    return {
+      id: mindmap.id,
+      label: mindmap.title,
+      summary: mindmap.summary,
+      children: mindmap.nodes || [],
+      isRoot: true,
+    };
+  }
+  return flattenMindmapNodes(mindmap).find((node) => node.id === nodeId) || null;
+}
+
+function getFocusedMindmapRoot(studyModule = getStudyModule()) {
+  const mindmap = studyModule.mindmap || createEmptyMindmap(getActiveCourse());
+  const focused = getMindmapNodeById(studyModule.mindmapFocusId, mindmap);
+  if (!focused || focused.isRoot) return { ...mindmap, nodes: mindmap.nodes || [] };
+  return {
+    id: focused.id,
+    title: focused.label,
+    summary: focused.summary,
+    nodes: focused.children || [],
+    meta: mindmap.meta,
+  };
+}
+
+function renderMindmapChildNodes(nodes = [], selectedId = "", collapsed = new Set(), branchIndex = 0, depth = 2) {
+  if (!nodes.length) return "";
+  return `
+    <div class="mindmap-child-list depth-${depth}">
+      ${nodes.map((node) => {
+        const hasChildren = Boolean(node.children?.length);
+        const isCollapsed = collapsed.has(node.id);
+        return `
+          <div class="mindmap-child ${isCollapsed ? "collapsed" : ""}">
+            <button class="mindmap-node ${node.id === selectedId ? "selected" : ""}" data-mindmap-node="${escapeHtml(node.id)}">
+              <span>${escapeHtml(node.label)}</span>
+            </button>
+            ${hasChildren ? `
+              <button class="mindmap-fold" data-mindmap-toggle="${escapeHtml(node.id)}" title="${isCollapsed ? "展开" : "收起"}">
+                <i data-lucide="${isCollapsed ? "plus" : "minus"}"></i>
+              </button>
+              ${isCollapsed ? "" : renderMindmapChildNodes(node.children, selectedId, collapsed, branchIndex, depth + 1)}
+            ` : ""}
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderMindmapModule() {
+  const course = getActiveCourse();
+  const studyModule = getStudyModule(course);
+  const mindmap = studyModule.mindmap || createEmptyMindmap(course);
+  const focusedMindmap = getFocusedMindmapRoot(studyModule);
+  const selectedNode = getMindmapNodeById(studyModule.selectedMindmapNodeId, mindmap) || getMindmapNodeById(mindmap.id, mindmap);
+  const collapsed = new Set(studyModule.mindmapCollapsed || []);
+  const titleNode = document.querySelector("#mindmap-title");
+  const groupSelect = document.querySelector("#mindmap-group-select");
+  const focusSelect = document.querySelector("#mindmap-focus-select");
+  const tree = document.querySelector("#mindmap-tree");
+  const emptyState = document.querySelector("#mindmap-empty-state");
+  const detailTitle = document.querySelector("#mindmap-node-title");
+  const detailDesc = document.querySelector("#mindmap-node-desc");
+  const detailMeta = document.querySelector("#mindmap-node-meta");
+
+  if (titleNode) titleNode.textContent = `${mindmap.title || course.name || "当前课程"}思维导图`;
+  if (groupSelect) groupSelect.value = ["classic", "compact"].includes(studyModule.mindmapMode) ? studyModule.mindmapMode : "classic";
+  if (focusSelect) {
+    const options = flattenMindmapNodes(mindmap);
+    focusSelect.innerHTML = `<option value="">全部主题</option>${options
+      .map((node) => `<option value="${escapeHtml(node.id)}">${escapeHtml(node.label)}</option>`)
+      .join("")}`;
+    focusSelect.value = studyModule.mindmapFocusId || "";
+  }
+  if (emptyState) emptyState.classList.toggle("show", !mindmap.nodes.length);
+  if (tree) {
+    tree.classList.toggle("compact", studyModule.mindmapMode === "compact");
+    tree.innerHTML = mindmap.nodes.length
+      ? `
+        <div class="mindmap-canvas">
+          <button class="mindmap-root ${selectedNode?.id === focusedMindmap.id ? "selected" : ""}" data-mindmap-node="${escapeHtml(focusedMindmap.id)}">
+            ${escapeHtml(focusedMindmap.title || mindmap.title || course.name || "课程思维导图")}
+          </button>
+          <div class="mindmap-branches">
+          ${focusedMindmap.nodes.map((branch, branchIndex) => {
+            const isCollapsed = collapsed.has(branch.id);
+            const branchColor = ["#ff6b6b", "#4dabf7", "#ffc247", "#ef8ed5", "#58c4dc", "#7fc97f"][branchIndex % 6];
+            return `
+              <section class="mindmap-branch ${isCollapsed ? "collapsed" : ""}" style="--branch-color: ${branchColor}">
+                <div class="mindmap-branch-main">
+                  <button class="mindmap-branch-title ${branch.id === selectedNode?.id ? "selected" : ""}" data-mindmap-node="${escapeHtml(branch.id)}">
+                    <span>${escapeHtml(branch.label)}</span>
+                  </button>
+                  ${branch.children?.length ? `
+                    <button class="mindmap-fold" data-mindmap-toggle="${escapeHtml(branch.id)}" title="${isCollapsed ? "展开" : "收起"}">
+                      <i data-lucide="${isCollapsed ? "plus" : "minus"}"></i>
+                    </button>
+                  ` : ""}
+                </div>
+                <div class="mindmap-branch-children">
+                  ${isCollapsed ? "" : renderMindmapChildNodes(branch.children || [], selectedNode?.id, collapsed, branchIndex)}
+                </div>
+              </section>
+            `;
+          }).join("")}
+          </div>
+        </div>
+      `
+      : "";
+  }
+
+  if (detailTitle) detailTitle.textContent = selectedNode?.label || selectedNode?.title || "导图节点详情";
+  if (detailDesc) detailDesc.textContent = selectedNode?.summary || "点击导图节点查看该主题的复习提示。";
+  if (detailMeta) {
+    const childCount = selectedNode?.children?.length || 0;
+    detailMeta.innerHTML = selectedNode
+      ? `
+        <span>${selectedNode.isRoot ? "中心主题" : "导图主题"}</span>
+        <span>${childCount ? `${childCount} 个子主题` : "末级节点"}</span>
+        <span>${escapeHtml(selectedNode.source || mindmap.meta?.sourceDocuments?.[0] || "独立导图")}</span>
+      `
+      : `<span>暂无选中节点</span>`;
+  }
+  window.lucide?.createIcons();
+}
+
+function appendMermaidMindmapNode(lines, node, depth = 2) {
+  const indent = "  ".repeat(depth);
+  lines.push(`${indent}${String(node.label || "主题").replace(/[()\[\]{}]/g, "")}`);
+  (node.children || []).forEach((child) => appendMermaidMindmapNode(lines, child, depth + 1));
+}
+
+function buildMermaidMindmap(mindmap = getStudyModule().mindmap, course = getActiveCourse()) {
+  const safeTitle = String(mindmap?.title || course.name || "课程思维导图").replace(/[()]/g, "");
+  const lines = ["mindmap", `  root((${safeTitle}))`];
+  (mindmap?.nodes || []).forEach((node) => appendMermaidMindmapNode(lines, node, 2));
+  return lines.join("\n");
+}
+
+function openMindmapExportDialog() {
+  closeModal();
+  const mindmapText = buildMermaidMindmap();
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-backdrop" data-modal="mindmap-export">
+      <section class="course-modal" role="dialog" aria-modal="true" aria-labelledby="mindmap-export-title">
+        <div class="modal-heading">
+          <div>
+            <span class="tag muted">Mermaid Mindmap</span>
+            <h2 id="mindmap-export-title">思维导图 Mermaid 文本</h2>
+          </div>
+          <button class="icon-button light" data-modal-action="close" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <textarea class="mermaid-export-textarea" readonly>${escapeHtml(mindmapText)}</textarea>
+        <div class="modal-actions">
+          <button type="button" class="ghost-action compact" data-modal-action="close">关闭</button>
+        </div>
+      </section>
+    </div>
+  `);
+  window.lucide?.createIcons();
+}
+
 function getQuizModeLabel(mode = "adaptive") {
   return {
     adaptive: "自适应练习",
@@ -6777,16 +7332,6 @@ function getQuizModeLabel(mode = "adaptive") {
     review: "今日复习",
     exam: "考前冲刺",
   }[mode] || "自适应练习";
-}
-
-function getRelatedTopicIds(topicId) {
-  const studyModule = getStudyModule();
-  return new Set([
-    topicId,
-    ...(studyModule.graph.edges || [])
-      .filter((edge) => edge.source === topicId || edge.target === topicId)
-      .map((edge) => edge.source === topicId ? edge.target : edge.source),
-  ].filter(Boolean));
 }
 
 function getQuestionAttemptHistory(questionId) {
@@ -6808,7 +7353,6 @@ function getQuestionPriority(question, context = {}) {
   const history = getQuestionAttemptHistory(question.id);
   const lastAttempt = history[history.length - 1];
   const dueMistake = studyModule.mistakes.find((mistake) => mistake.questionId === question.id && !mistake.reviewed);
-  const related = context.relatedTopicIds?.has(question.topic);
   const difficultyBoost = mode === "exam"
     ? { 基础: 4, 中等: 8, 较难: 12 }[question.difficulty] || 6
     : { 基础: 8, 中等: 6, 较难: 4 }[question.difficulty] || 5;
@@ -6818,7 +7362,6 @@ function getQuestionPriority(question, context = {}) {
     stats.mastery < 60 ? 34 : stats.mastery < 78 ? 18 : 4,
     lastAttempt && !lastAttempt.correct ? 26 : 0,
     history.length === 0 ? 18 : Math.max(0, 10 - history.length * 2),
-    related ? 12 : 0,
     difficultyBoost,
     question.type === "short" && mode !== "diagnostic" ? 6 : 0,
   ].reduce((sum, value) => sum + value, 0);
@@ -6877,7 +7420,7 @@ function getDiagnosticQuestions(questions, difficulty = "all") {
 
 function getTopicQuestions(topicId, difficulty = "all") {
   const studyModule = getStudyModule();
-  const questions = studyModule.quiz.questions.length ? studyModule.quiz.questions : createFallbackQuizQuestions(studyModule.graph.nodes);
+  const questions = studyModule.quiz.questions.length ? studyModule.quiz.questions : createRuleBasedQuizQuestions(studyModule.graph);
   const topic = getKnowledgeTopic(topicId);
   const mode = studyModule.quiz.mode || "adaptive";
   if (mode === "review") {
@@ -6899,27 +7442,11 @@ function getTopicQuestions(topicId, difficulty = "all") {
     return sortQuestionsForMode(filtered, { mode }).slice(0, mode === "exam" ? 16 : 10);
   }
 
-  const related = getRelatedTopicIds(topic?.id);
-  const direct = questions.filter((question) => question.topic === topic?.id);
-  const adjacent = questions.filter((question) => question.topic !== topic?.id && related.has(question.topic));
-  const fallback = questions.filter((question) => !related.has(question.topic));
-  const generatedDirect = direct.length ? direct : createDirectQuestionsForNode(topic);
-  const directFiltered = generatedDirect.filter((question) => difficulty === "all" || question.difficulty === difficulty);
-  if (directFiltered.length) {
-    return [
-      ...directFiltered,
-      ...adjacent.filter((question) => difficulty === "all" || question.difficulty === difficulty),
-      ...fallback.filter((question) => difficulty === "all" || question.difficulty === difficulty),
-    ].slice(0, 10);
-  }
+  const filtered = questions
+    .filter((question) => question.topic === topic?.id)
+    .filter((question) => difficulty === "all" || question.difficulty === difficulty);
 
-  if (topic && difficulty !== "all") return createDirectQuestionsForNode(topic, difficulty).slice(0, 10);
-
-  const filtered = [...generatedDirect, ...adjacent, ...fallback]
-    .filter((question) => difficulty === "all" || question.difficulty === difficulty)
-    .slice(0, 10);
-
-  return sortQuestionsForMode(filtered, { mode, relatedTopicIds: related });
+  return sortQuestionsForMode(filtered, { mode }).slice(0, 10);
 }
 
 function getQuizTypeLabel(type) {
@@ -7265,7 +7792,6 @@ function showQuizFeedback(correct, explanation, correctAnswer = "", meta = {}) {
     ${sourceSnippet ? `<blockquote>来源片段：${escapeHtml(sourceSnippet)}</blockquote>` : ""}
     <div class="quiz-feedback-actions">
       <button class="mini-button" data-quiz-action="open-topic">查看图谱节点</button>
-      ${correct ? "" : `<button class="mini-button" data-quiz-action="variant">生成变式题</button>`}
       <button class="mini-button" data-quiz-action="review-mode">今日复习</button>
     </div>
   `;
@@ -7403,43 +7929,6 @@ function submitMatchQuizAnswer() {
   refreshAfterQuizAnswer();
 }
 
-function createVariantQuestionFromCurrent() {
-  const studyModule = getStudyModule();
-  const question = getCurrentQuizQuestion();
-  if (!question) return;
-  const topic = getKnowledgeTopic(question.topic);
-  const related = Array.from(getRelatedTopicIds(question.topic))
-    .map((topicId) => getKnowledgeTopic(topicId))
-    .filter((node) => node && node.id !== topic?.id)[0];
-  const variant = normalizeStudyQuestion({
-    id: createId("variant"),
-    topic: topic?.id || question.topic,
-    type: "short",
-    difficulty: question.difficulty === "基础" ? "中等" : question.difficulty,
-    prompt: related
-      ? `请结合“${topic.label}”和“${related.label}”的关系，说明这两个知识点为什么需要一起复习。`
-      : `换一种说法解释“${topic?.label || question.topic}”，并补充一个应用场景。`,
-    keywords: Array.from(new Set([...(topic?.keywords || []), topic?.label, related?.label].filter(Boolean))).slice(0, 6),
-    sampleAnswer: related
-      ? `${topic.label} 的核心是：${topic.summary}。它与 ${related.label} 的关系可以从知识图谱中的关联边和资料原文中理解。`
-      : topic?.summary || question.sampleAnswer,
-    explanation: related
-      ? `这道变式题考查概念迁移：不仅要知道 ${topic.label}，还要能说明它与 ${related.label} 的联系。`
-      : `这道变式题考查你是否能脱离原题复述核心概念。`,
-    source: topic?.source || question.source,
-    sourceSnippet: getQuestionSourceSnippet(question),
-  }, studyModule.graph.nodes);
-
-  studyModule.quiz.questions = uniqueQuestions([variant, ...studyModule.quiz.questions]);
-  studyModule.quiz.scope = variant.topic;
-  studyModule.quiz.mode = "adaptive";
-  studyModule.quiz.difficulty = "all";
-  studyModule.quiz.cursor = 0;
-  studyModule.activeQuizTopic = variant.topic;
-  saveWorkspace();
-  renderQuizModule();
-}
-
 function withTimeout(promise, timeoutMs, label) {
   let timer = null;
   const guarded = Promise.resolve(promise);
@@ -7460,15 +7949,26 @@ function isCurrentGraphGeneration(runId, courseId) {
 
 function generateQuizForTopic(topicId, difficulty = "all") {
   const studyModule = getStudyModule();
-  const topic = getKnowledgeTopic(topicId);
-  studyModule.quiz.scope = topic?.id || "all";
+  const topic = topicId === "all" ? null : getKnowledgeTopic(topicId);
+  studyModule.quiz.scope = topicId === "all" ? "all" : topic?.id || "all";
   studyModule.quiz.difficulty = difficulty;
   studyModule.quiz.cursor = 0;
   studyModule.activeQuizTopic = studyModule.quiz.scope;
-  studyModule.selectedNodeId = topic?.id || studyModule.selectedNodeId;
+  if (topic?.id) studyModule.selectedNodeId = topic.id;
   saveWorkspace();
   renderStudyModuleViews();
   showView("quiz");
+}
+
+function regenerateQuizQuestionsFromCurrentGraph(source = "local-quiz-rules") {
+  const studyModule = getStudyModule();
+  const questions = createRuleBasedQuizQuestions(studyModule.graph, getCourseStudyDocumentsSnapshot());
+  if (!questions.length) return false;
+  studyModule.quiz.questions = questions;
+  studyModule.quiz.generatedAt = Date.now();
+  studyModule.quiz.source = source;
+  studyModule.quiz.cursor = 0;
+  return true;
 }
 
 function moveQuizCursor(step = 1) {
@@ -7500,8 +8000,10 @@ function handleQuizActionButton(quizActionButton) {
     const mode = document.querySelector("#quiz-mode-select")?.value || getStudyModule().quiz.mode || "adaptive";
     const scope = document.querySelector("#quiz-scope-select")?.value || getStudyModule().selectedNodeId;
     const difficulty = document.querySelector("#quiz-difficulty-select")?.value || "all";
-    getStudyModule().quiz.mode = mode;
-    generateQuizForTopic(scope === "all" ? getStudyModule().selectedNodeId : scope, difficulty);
+    const studyModule = getStudyModule();
+    studyModule.quiz.mode = mode;
+    regenerateQuizQuestionsFromCurrentGraph();
+    generateQuizForTopic(scope || "all", difficulty);
   }
   if (action === "next") moveQuizCursor(1);
   if (action === "reset") generateQuizForTopic(getStudyModule().quiz.scope || getStudyModule().selectedNodeId);
@@ -7510,7 +8012,6 @@ function handleQuizActionButton(quizActionButton) {
     if (question?.topic) selectKnowledgeNode(question.topic);
     showView("map");
   }
-  if (action === "variant") createVariantQuestionFromCurrent();
   if (action === "review-mode") {
     const studyModule = getStudyModule();
     studyModule.quiz.mode = "review";
@@ -7663,6 +8164,7 @@ function renderReportModule() {
 
 function renderStudyModuleViews() {
   renderKnowledgeModule();
+  renderMindmapModule();
   renderQuizModule();
   renderReportModule();
 }
@@ -7719,6 +8221,8 @@ function buildStudyGenerationPrompt(documents) {
   return [
     "请基于课程资料生成 MindStudy 学习图谱和自动测验数据。",
     "必须返回严格 JSON，不要 Markdown，不要解释。",
+    "只抽取正文里的课程概念、原理、方法、模型、术语、流程和约束。",
+    "禁止把 PDF 文件名、书名、作者、学校、学院、出版社、版次、ISBN、CIP、版权声明、页码、目录项、封面/封底信息、人名、机构名当作知识点。",
     "JSON 结构：",
     "{",
     '  "graph": {',
@@ -7734,8 +8238,8 @@ function buildStudyGenerationPrompt(documents) {
     "  },",
     '  "recommendations": [{"topic":"节点id","title":"复习建议标题","detail":"具体建议"}]',
     "}",
-    "质量要求：8-16 个节点，边不少于 6 条，覆盖定义、方法、指标、应用场景，题型必须包含单选、多选、判断、简答、概念匹配。",
-    "题目要求：至少 3 道题考查两个知识点之间的关系或对比；每道题都要有 source/sourceSnippet，解析要说明为什么错选项不合适。",
+    "质量要求：8-16 个节点，边不少于 6 条，覆盖定义、方法、模型、约束、流程和应用场景；每个节点必须能在正文中找到证据。",
+    "题目要求：生成 8-12 道题，必须直接来自课程资料内容；topic 必须等于某个 graph.nodes[].id；每道题都要有 source/sourceSnippet，解析要说明为什么错选项不合适；不要为了配合知识图谱关系而编造题目。",
     `资料标题：${titles}`,
   ].join("\n");
 }
@@ -7790,13 +8294,16 @@ function adaptExternalGraphPayload(payload, documents = [], engine = "ai") {
 
 function ensureGraphQuality(graph, documents = [], engine = "local-fallback") {
   const normalized = sanitizeStudyGraph(graph);
+  normalized.nodes = normalized.nodes.filter((node) => isLikelyCourseConceptLabel(node.label || node.id, [node.summary, node.keywords?.join(" ")].filter(Boolean).join("\n")));
+  const nodeIds = new Set(normalized.nodes.map((node) => node.id));
+  normalized.edges = normalized.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
   const needsFallback = normalized.nodes.length < GRAPH_QUALITY_MIN_NODES || normalized.edges.length < GRAPH_QUALITY_MIN_EDGES;
   if (!needsFallback) {
     normalized.meta.qualityScore = estimateGraphQuality(normalized);
     return normalized;
   }
 
-  const fallback = createFallbackStudyGraph(documents);
+  const fallback = documents.length ? createRuleBasedGraphFromDocuments(documents, { skipQualityCheck: true }) : createFallbackStudyGraph(documents);
   const existingIds = new Set(normalized.nodes.map((node) => node.id));
   const mergedNodes = [
     ...normalized.nodes,
@@ -7821,140 +8328,200 @@ function ensureGraphQuality(graph, documents = [], engine = "local-fallback") {
   });
 }
 
-function createRuleBasedGraphFromDocuments(documents = []) {
+function createRuleBasedGraphFromDocuments(documents = [], options = {}) {
   if (!documents.length) return createFallbackStudyGraph([]);
-  const text = documents.map((documentMeta) => `${documentMeta.title}\n${documentMeta.text}`).join("\n\n").slice(0, GRAPH_TEXT_LIMIT);
-  const headingMatches = Array.from(text.matchAll(/^(#{1,3}\s*)?([A-Za-z0-9\u4e00-\u9fa5][^\n]{2,28})$/gm))
-    .map((match) => match[2].replace(/[：:。.\-—]+$/g, "").trim())
-    .filter((line) => line.length >= 2 && line.length <= 18);
-  const keywordMatches = Array.from(new Set((text.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9 ]{1,12}/g) || [])
-    .map((word) => word.trim())
-    .filter((word) => word.length >= 2 && !/^(the|and|for|with|this|that)$/i.test(word))))
-    .slice(0, 40);
-  const labels = Array.from(new Set([...headingMatches, ...keywordMatches, ...knowledgeTopics.map((topic) => topic.id)]))
-    .slice(0, GRAPH_NODE_LIMIT);
-  const nodes = labels.map((label, index) => ({
-    id: label,
-    label,
-    summary: `${label} 是从上传资料中抽取的重点内容，建议结合原文出处和相关题目复习。`,
-    chapter: documents[Math.min(documents.length - 1, Math.floor(index / 5))]?.title || "上传资料",
-    difficulty: index < 5 ? "基础" : index < 12 ? "中等" : "较难",
-    source: documents[Math.min(documents.length - 1, index % documents.length)]?.title || "上传资料",
-    examples: [`在资料中定位“${label}”相关段落，理解定义、场景和评价方式。`],
-    keywords: [label, ...keywordMatches.slice(index, index + 3)],
-    mastery: 46 + (index % 6) * 6,
-    x: 130 + (index % 5) * 180,
-    y: 110 + Math.floor(index / 5) * 150,
-  }));
-  const edges = nodes.slice(1).map((node, index) => ({
-    id: `edge-${index + 1}`,
-    source: nodes[Math.max(0, Math.floor((index + 1) / 2) - 1)]?.id || nodes[0].id,
-    target: node.id,
-    relation: index % 2 ? "支持" : "关联",
-    weight: 0.55,
-  }));
+  const cleanedDocuments = cleanDocumentsForStudyGeneration(documents);
+  const candidateMap = new Map();
+  const addCandidate = (label, context = "", source = "", weight = 1) => {
+    const normalized = normalizeStudyTextLine(label).replace(/^[#\d.、\s]+/, "").replace(/[：:。；;，,]+$/g, "");
+    if (!isLikelyCourseConceptLabel(normalized, context)) return;
+    const key = normalized;
+    const current = candidateMap.get(key) || { label: normalized, contexts: [], source, score: 0 };
+    current.contexts.push(context);
+    current.source = current.source || source;
+    current.score += weight + (GRAPH_CONCEPT_SIGNAL_PATTERN.test(context) ? 2 : 0);
+    candidateMap.set(key, current);
+  };
 
-  return ensureGraphQuality({
+  cleanedDocuments.forEach((documentMeta) => {
+    const lines = documentMeta.text.split("\n").map(normalizeStudyTextLine).filter((line) => !isBoilerplateStudyLine(line));
+    lines.forEach((line, index) => {
+      const context = lines.slice(Math.max(0, index - 1), Math.min(lines.length, index + 2)).join(" ");
+      const heading = line.match(/^(?:#{1,4}\s*|第[一二三四五六七八九十\d]+[章节]\s*|[一二三四五六七八九十\d]+[.、]\s*)([A-Za-z0-9\u4e00-\u9fa5][^\n]{1,24})$/);
+      if (heading) addCandidate(heading[1], context, documentMeta.title, 4);
+      const definition = line.match(/^([\u4e00-\u9fa5A-Za-z0-9 SQLER\-]{2,24})(?:是|指|表示|定义为|用于|包括|分为|由|称为)/);
+      if (definition) addCandidate(definition[1], context, documentMeta.title, 5);
+    });
+  });
+
+  getDomainConceptSeeds(cleanedDocuments).forEach((seed) => {
+    const sourceText = cleanedDocuments.map((documentMeta) => documentMeta.text).join("\n");
+    const snippet = getSourceSnippetForLabel(seed.id, sourceText);
+    addCandidate(seed.id, snippet || seed.summary, cleanedDocuments[0]?.title || "课程资料", snippet ? 6 : 3);
+    const current = candidateMap.get(seed.id);
+    if (current) {
+      current.seed = seed;
+      current.contexts.unshift(snippet || seed.summary);
+    }
+  });
+
+  let candidates = Array.from(candidateMap.values())
+    .filter((candidate) => candidate.score >= 3)
+    .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label, "zh-CN"))
+    .slice(0, GRAPH_NODE_LIMIT);
+
+  if (candidates.length < GRAPH_QUALITY_MIN_NODES) {
+    cleanedDocuments.forEach((documentMeta) => {
+      documentMeta.text.split("\n").forEach((line) => {
+        const label = normalizeStudyTextLine(line).replace(/^[#\d.、\s]+/, "").replace(/[：:。；;，,]+$/g, "");
+        if (candidateMap.has(label) || !isLikelyCourseConceptLabel(label, line)) return;
+        if (label.length > 18) return;
+        addCandidate(label, line, documentMeta.title, 3);
+      });
+    });
+    candidates = Array.from(candidateMap.values())
+      .filter((candidate) => candidate.score >= 3)
+      .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label, "zh-CN"))
+      .slice(0, GRAPH_NODE_LIMIT);
+  }
+
+  if (!candidates.length) {
+    return createEmptyStudyGraph({ documents: cleanedDocuments });
+  }
+
+  const nodes = candidates.map((candidate, index) => {
+    const seed = candidate.seed || {};
+    const snippet = candidate.contexts.find(Boolean) || seed.summary || "";
+    const summary = seed.summary || `${candidate.label} 是资料中需要掌握的课程概念，建议结合原文定义、作用和相关例题复习。`;
+    return {
+      id: candidate.label,
+      label: candidate.label,
+      summary,
+      chapter: candidate.source || cleanedDocuments[Math.min(cleanedDocuments.length - 1, Math.floor(index / 5))]?.title || "上传资料",
+      difficulty: index < 5 ? "基础" : index < 12 ? "中等" : "较难",
+      source: candidate.source || cleanedDocuments[0]?.title || "上传资料",
+      examples: [`在资料中定位“${candidate.label}”相关段落，理解定义、作用和应用场景。`],
+      keywords: Array.from(new Set([candidate.label, ...(seed.keywords || [])])).slice(0, 6),
+      sourceSnippets: snippet ? [snippet.slice(0, 180)] : [],
+      mastery: 48 + (index % 5) * 6,
+      x: 130 + (index % 5) * 180,
+      y: 110 + Math.floor(index / 5) * 150,
+    };
+  });
+
+  const root = nodes[0];
+  const edges = [];
+  nodes.slice(1).forEach((node, index) => {
+    const source = index < 4 && root ? root.id : nodes[Math.max(0, Math.floor((index + 1) / 2))]?.id || root?.id;
+    if (!source || source === node.id) return;
+    edges.push({
+      id: `edge-${index + 1}`,
+      source,
+      target: node.id,
+      relation: index < 4 ? "包含" : "相关",
+      weight: 0.62,
+    });
+  });
+
+  const graph = sanitizeStudyGraph({
     nodes,
     edges,
     meta: {
       generatedBy: "local-rules",
       generatedAt: Date.now(),
-      sourceDocuments: documents.map((documentMeta) => documentMeta.title),
+      sourceDocuments: cleanedDocuments.map((documentMeta) => documentMeta.title),
       fallbackUsed: true,
     },
-  }, documents, "local-rules");
+  });
+  return options.skipQualityCheck ? graph : ensureGraphQuality(graph, cleanedDocuments, "local-rules");
 }
 
-function createQuestionsFromGraph(graph, documents = [], engine = "local-rules") {
-  const fallback = createFallbackQuizQuestions(graph.nodes);
-  const generated = graph.nodes.slice(0, 8).flatMap((node, index) => {
-    const edge = graph.edges.find((item) => item.source === node.id || item.target === node.id);
-    const relatedId = edge ? edge.source === node.id ? edge.target : edge.source : graph.nodes[(index + 1) % graph.nodes.length]?.id;
-    const relatedNode = graph.nodes.find((item) => item.id === relatedId);
-    return [
-      normalizeStudyQuestion({
-        id: `auto-choice-${node.id}`,
-        topic: node.id,
-        type: "choice",
-        difficulty: node.difficulty,
-        prompt: `关于“${node.label}”，下列哪一项描述最准确？`,
-        options: [
-          node.summary,
-          "它只表示页面颜色搭配，与学习任务无关。",
-          "它是随机生成的装饰节点。",
-          "它只用于数据库性能调优。",
-        ],
-        answer: 0,
-        explanation: `“${node.label}”的核心解释来自 ${node.source}：${node.summary}`,
-        source: node.source,
-        sourceSnippet: (node.sourceSnippets || [])[0] || (node.examples || [])[0] || node.summary,
-      }, graph.nodes),
-      normalizeStudyQuestion({
-        id: `auto-judge-${node.id}`,
-        topic: node.id,
-        type: "judge",
-        difficulty: node.difficulty === "基础" ? "基础" : "中等",
-        prompt: `“${node.label}”可以和“${relatedNode?.label || "相关概念"}”一起复习，因为它们在资料中存在关联。`,
-        answer: Boolean(relatedNode),
-        explanation: relatedNode ? `图谱中二者通过“${edge?.relation || "相关"}”相连。` : "当前节点暂未发现明确关联。",
-        source: node.source,
-        sourceSnippet: (node.sourceSnippets || [])[0] || node.summary,
-      }, graph.nodes),
-    ];
+function extractMindmapLabelsFromText(text = "", limit = 18) {
+  const normalized = String(text || "").replace(/\r/g, "");
+  const headingLabels = Array.from(normalized.matchAll(/^(?:#{1,4}\s*|第[一二三四五六七八九十\d]+[章节]\s*|[一二三四五六七八九十\d]+[.、]\s*)([A-Za-z0-9\u4e00-\u9fa5][^\n]{1,26})$/gm))
+    .map((match) => match[1].replace(/[：:，,。；;、\-\s]+$/g, "").trim())
+    .filter((label) => label.length >= 2 && label.length <= 24);
+  const keywordLabels = Array.from(new Set((normalized.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9 ]{1,12}/g) || [])
+    .map((label) => label.trim())
+    .filter((label) => label.length >= 2 && label.length <= 14 && !/^(the|and|for|with|this|that)$/i.test(label))));
+  return Array.from(new Set([...headingLabels, ...keywordLabels])).slice(0, limit);
+}
+
+function createRuleBasedMindmapFromDocuments(documents = [], course = getActiveCourse()) {
+  if (!documents.length) return createEmptyMindmap(course);
+  const sourceDocuments = documents.map((documentMeta) => documentMeta.title || documentMeta.name).filter(Boolean);
+  const branches = [];
+
+  documents.slice(0, 6).forEach((documentMeta, documentIndex) => {
+    const labels = extractMindmapLabelsFromText(`${documentMeta.title}\n${documentMeta.text}`, 16);
+    const branchLabel = labels[0] || documentMeta.title || `资料 ${documentIndex + 1}`;
+    const childLabels = labels.slice(1, 7);
+    branches.push({
+      id: `mindmap-doc-${documentIndex + 1}`,
+      label: branchLabel,
+      summary: `来自 ${documentMeta.title || "课程资料"} 的独立导图分支。`,
+      source: documentMeta.title || "课程资料",
+      children: childLabels.map((label, childIndex) => ({
+        id: `mindmap-doc-${documentIndex + 1}-${childIndex + 1}`,
+        label,
+        summary: `围绕“${label}”整理定义、例子和复习提示。`,
+        source: documentMeta.title || "课程资料",
+      })),
+    });
   });
 
-  return [...generated, ...fallback].filter((question, index, list) =>
-    question && list.findIndex((item) => item.id === question.id) === index,
-  ).slice(0, 24).map((question) => ({ ...question, source: question.source || engine }));
-}
+  const allLabels = extractMindmapLabelsFromText(documents.map((documentMeta) => documentMeta.text).join("\n\n"), 32);
+  while (branches.length < 5 && allLabels.length) {
+    const branchIndex = branches.length;
+    const label = allLabels.shift();
+    branches.push({
+      id: `mindmap-auto-${branchIndex + 1}`,
+      label,
+      summary: "从资料关键词中整理出的复习主题。",
+      source: sourceDocuments[0] || "课程资料",
+      children: allLabels.splice(0, 3).map((childLabel, childIndex) => ({
+        id: `mindmap-auto-${branchIndex + 1}-${childIndex + 1}`,
+        label: childLabel,
+        summary: `补充理解“${childLabel}”的定义、场景和易错点。`,
+        source: sourceDocuments[0] || "课程资料",
+      })),
+    });
+  }
 
-function createDirectQuestionsForNode(node, preferredDifficulty = "") {
-  if (!node) return [];
-  const graphNodes = getStudyModule().graph.nodes;
-  const directDifficulty = preferredDifficulty && preferredDifficulty !== "all" ? preferredDifficulty : node.difficulty;
-  return [
-    normalizeStudyQuestion({
-      id: `direct-choice-${node.id}`,
-      topic: node.id,
-      type: "choice",
-      difficulty: directDifficulty,
-      prompt: `关于“${node.label}”，哪一项最符合资料中的解释？`,
-      options: [
-        node.summary,
-        "它只是界面装饰元素，不影响学习或交互。",
-        "它只与后端部署有关。",
-        "它是与课程内容无关的随机标签。",
-      ],
-      answer: 0,
-      explanation: `资料中对“${node.label}”的解释是：${node.summary}`,
-      source: node.source,
-      sourceSnippet: (node.sourceSnippets || [])[0] || (node.examples || [])[0] || node.summary,
-    }, graphNodes),
-    normalizeStudyQuestion({
-      id: `direct-judge-${node.id}`,
-      topic: node.id,
-      type: "judge",
-      difficulty: preferredDifficulty && preferredDifficulty !== "all" ? preferredDifficulty : node.difficulty === "较难" ? "中等" : "基础",
-      prompt: `复习“${node.label}”时，应结合定义、应用例子和相关概念一起理解。`,
-      answer: true,
-      explanation: `知识图谱会把“${node.label}”与相关节点、原文出处和例子一起呈现。`,
-      source: node.source,
-      sourceSnippet: (node.sourceSnippets || [])[0] || node.summary,
-    }, graphNodes),
-    normalizeStudyQuestion({
-      id: `direct-short-${node.id}`,
-      topic: node.id,
-      type: "short",
-      difficulty: directDifficulty,
-      prompt: `用自己的话解释“${node.label}”的核心含义。`,
-      keywords: node.keywords || [node.label],
-      sampleAnswer: node.summary,
-      explanation: `简答题重点看是否提到 ${[node.label, ...(node.keywords || [])].slice(0, 3).join("、")}。`,
-      source: node.source,
-      sourceSnippet: (node.sourceSnippets || [])[0] || node.summary,
-    }, graphNodes),
+  const fallbackBranches = [
+    ["核心概念", ["定义", "关键特征", "适用场景"]],
+    ["方法流程", ["步骤", "工具", "产出"]],
+    ["复习重点", ["易错点", "例题", "原文证据"]],
   ];
+  fallbackBranches.forEach(([label, children]) => {
+    if (branches.length >= 5) return;
+    const branchIndex = branches.length;
+    branches.push({
+      id: `mindmap-fallback-${branchIndex + 1}`,
+      label,
+      summary: "用于补齐导图层级的复习分支。",
+      source: sourceDocuments[0] || "课程资料",
+      children: children.map((childLabel, childIndex) => ({
+        id: `mindmap-fallback-${branchIndex + 1}-${childIndex + 1}`,
+        label: childLabel,
+        summary: `整理“${childLabel}”相关内容。`,
+        source: sourceDocuments[0] || "课程资料",
+      })),
+    });
+  });
+
+  return sanitizeMindmap({
+    id: "mindmap-root",
+    title: course.name || "课程思维导图",
+    summary: "根据导入资料独立生成的层级脑图。",
+    nodes: branches,
+    meta: {
+      generatedBy: "local-mindmap-rules",
+      generatedAt: Date.now(),
+      empty: false,
+      sourceDocuments,
+    },
+  }, course);
 }
 
 async function generateStudyModuleFromUploads() {
@@ -7965,6 +8532,7 @@ async function generateStudyModuleFromUploads() {
   const courseId = course.id;
   let documents = [];
   let graph = null;
+  let mindmap = null;
   let questions = [];
   let engine = "local-rules";
 
@@ -7990,6 +8558,8 @@ async function generateStudyModuleFromUploads() {
       ...documentMeta,
       text: String(documentMeta.text || "").slice(0, GRAPH_TEXT_LIMIT),
     }));
+    documents = cleanDocumentsForStudyGeneration(documents);
+    mindmap = createRuleBasedMindmapFromDocuments(documents, course);
 
     if (!graph && window.mindStudy?.graph?.generateFromDocuments) {
       studyModule.generation = { state: "ai", engine: "Qwen + Neo4j", message: "正在抽取知识点、写入 Neo4j 并生成可交互图谱。", updatedAt: Date.now() };
@@ -8074,8 +8644,11 @@ async function generateStudyModuleFromUploads() {
         studyModule.generation.message = `本地图谱已生成，但写入 Neo4j 失败：${getAiErrorMessage(error)}`;
       }
     }
-    if (!questions.length) questions = createQuestionsFromGraph(graph, documents, engine);
+    if (!questions.length) {
+      questions = createRuleBasedQuizQuestions(graph, documents).map((question) => ({ ...question, source: question.source || "local-quiz-rules" }));
+    }
     studyModule.graph = graph;
+    studyModule.mindmap = mindmap || createRuleBasedMindmapFromDocuments(documents, course);
     studyModule.quiz = sanitizeStudyQuiz({
       scope: graph.nodes[0]?.id || "all",
       difficulty: "all",
@@ -8085,12 +8658,15 @@ async function generateStudyModuleFromUploads() {
       source: engine,
     }, graph);
     studyModule.selectedNodeId = graph.nodes[0]?.id || studyModule.selectedNodeId;
+    studyModule.selectedMindmapNodeId = studyModule.mindmap.nodes[0]?.id || studyModule.mindmap.id || "";
+    studyModule.mindmapFocusId = "";
+    studyModule.mindmapCollapsed = [];
     studyModule.activeQuizTopic = studyModule.quiz.scope;
     studyModule.graphViewport = { ...GRAPH_DEFAULT_VIEWPORT };
     studyModule.generation = {
       state: graph.meta.fallbackUsed ? "fallback" : "done",
       engine,
-      message: `${graph.nodes.length} 个知识点，${graph.edges.length} 条关系，${studyModule.quiz.questions.length} 道题。`,
+      message: `${graph.nodes.length} 个知识点，${graph.edges.length} 条关系，独立导图 ${studyModule.mindmap.nodes.length} 个主分支，${studyModule.quiz.questions.length} 道题。`,
       updatedAt: Date.now(),
     };
     updateStudyRecommendations();
@@ -11063,6 +11639,14 @@ document.addEventListener("change", (event) => {
     renderKnowledgeModule();
   }
 
+  if (event.target.matches("#mindmap-group-select")) {
+    const studyModule = getStudyModule();
+    studyModule.mindmapMode = document.querySelector("#mindmap-group-select")?.value || "classic";
+    studyModule.mindmapCollapsed = [];
+    saveWorkspace();
+    renderMindmapModule();
+  }
+
   if (event.target.matches("#quiz-mode-select, #quiz-scope-select, #quiz-difficulty-select")) {
     const studyModule = getStudyModule();
     studyModule.quiz.mode = document.querySelector("#quiz-mode-select")?.value || "adaptive";
@@ -11250,6 +11834,9 @@ document.addEventListener("click", (event) => {
   const graphNodeButton = event.target.closest("[data-node]");
   const mapRelatedButton = event.target.closest("[data-map-related]");
   const mapActionButton = event.target.closest("[data-map-action]");
+  const mindmapActionButton = event.target.closest("[data-mindmap-action]");
+  const mindmapNodeButton = event.target.closest("[data-mindmap-node]");
+  const mindmapToggleButton = event.target.closest("[data-mindmap-toggle]");
   const quizAnswerButton = event.target.closest("[data-quiz-answer]");
   const quizMultiButton = event.target.closest("[data-quiz-multi]");
   const quizActionButton = event.target.closest("[data-quiz-action]");
@@ -11364,6 +11951,54 @@ document.addEventListener("click", (event) => {
 
   if (mapActionButton?.dataset.mapAction === "show-source") {
     showKnowledgeSource();
+    return;
+  }
+
+  if (mindmapToggleButton) {
+    const studyModule = getStudyModule();
+    const key = mindmapToggleButton.dataset.mindmapToggle;
+    const collapsed = new Set(studyModule.mindmapCollapsed || []);
+    if (collapsed.has(key)) collapsed.delete(key);
+    else collapsed.add(key);
+    studyModule.mindmapCollapsed = Array.from(collapsed);
+    saveWorkspace();
+    renderMindmapModule();
+    return;
+  }
+
+  if (mindmapNodeButton) {
+    const studyModule = getStudyModule();
+    studyModule.selectedMindmapNodeId = mindmapNodeButton.dataset.mindmapNode;
+    saveWorkspace();
+    renderMindmapModule();
+    return;
+  }
+
+  if (mindmapActionButton) {
+    const action = mindmapActionButton.dataset.mindmapAction;
+    const studyModule = getStudyModule();
+    if (action === "export") {
+      openMindmapExportDialog();
+      return;
+    }
+    if (action === "export-current") {
+      openMindmapExportDialog();
+      return;
+    }
+    if (action === "practice") {
+      const selectedMindmapNode = getMindmapNodeById(studyModule.selectedMindmapNodeId, studyModule.mindmap);
+      const matchedTopic = studyModule.graph.nodes.find((node) => node.label === selectedMindmapNode?.label || node.id === selectedMindmapNode?.label);
+      generateQuizForTopic(matchedTopic?.id || studyModule.selectedNodeId || "all");
+      return;
+    }
+    if (action === "expand-all") studyModule.mindmapCollapsed = [];
+    if (action === "collapse-all") studyModule.mindmapCollapsed = flattenMindmapNodes(studyModule.mindmap)
+      .filter((node) => node.children?.length)
+      .map((node) => node.id);
+    if (action === "focus") studyModule.mindmapFocusId = document.querySelector("#mindmap-focus-select")?.value || "";
+    if (action === "reset-focus") studyModule.mindmapFocusId = "";
+    saveWorkspace();
+    renderMindmapModule();
     return;
   }
 
