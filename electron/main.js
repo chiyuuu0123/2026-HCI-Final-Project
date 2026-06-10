@@ -127,6 +127,7 @@ let studyTimerLastSaveAt = 0;
 let longlongVoiceServiceProcess = null;
 let longlongVoiceServiceStartPromise = null;
 let longlongBondState = null;
+let longlongMemoryState = null;
 
 function getQwenConfigPath() {
   return path.join(app.getPath("userData"), "qwen-config.json");
@@ -827,6 +828,236 @@ function buyLonglongGift(giftId = "") {
   };
 }
 
+function getLonglongMemoryPath() {
+  return path.join(app.getPath("userData"), "longlong-memory.json");
+}
+
+function normalizeLonglongText(value = "", limit = 8000) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+function createLonglongId(prefix = "longlong") {
+  return `${prefix}-${Date.now().toString(36)}-${crypto.randomBytes(3).toString("hex")}`;
+}
+
+function normalizeLonglongChatMessage(message = {}) {
+  const role = ["user", "assistant"].includes(message.role) ? message.role : "";
+  const content = normalizeLonglongText(message.content, 8000);
+  if (!role || !content) return null;
+  return {
+    id: normalizeLonglongText(message.id, 80) || createLonglongId("chat"),
+    role,
+    content,
+    source: ["main", "pet", "system"].includes(message.source) ? message.source : "system",
+    createdAt: normalizeLonglongNumber(message.createdAt || Date.now()),
+    meta: message.meta && typeof message.meta === "object" ? message.meta : {},
+  };
+}
+
+function normalizeLonglongMemoryEntry(entry = {}) {
+  const text = normalizeLonglongText(entry.text, 500);
+  if (!text) return null;
+  return {
+    id: normalizeLonglongText(entry.id, 80) || createLonglongId("memory"),
+    text,
+    source: ["main", "pet", "system"].includes(entry.source) ? entry.source : "system",
+    createdAt: normalizeLonglongNumber(entry.createdAt || Date.now()),
+    updatedAt: normalizeLonglongNumber(entry.updatedAt || entry.createdAt || Date.now()),
+    count: normalizeLonglongNumber(entry.count || 1, 1),
+  };
+}
+
+function normalizeLonglongMemoryState(raw = {}) {
+  const history = (Array.isArray(raw.history) ? raw.history : [])
+    .map(normalizeLonglongChatMessage)
+    .filter(Boolean)
+    .slice(-40);
+  const memories = (Array.isArray(raw.memories) ? raw.memories : [])
+    .map(normalizeLonglongMemoryEntry)
+    .filter(Boolean)
+    .slice(-80);
+
+  return {
+    history,
+    memories,
+    updatedAt: normalizeLonglongNumber(raw.updatedAt),
+  };
+}
+
+function readLonglongMemoryState() {
+  try {
+    return normalizeLonglongMemoryState(JSON.parse(fsSync.readFileSync(getLonglongMemoryPath(), "utf8")));
+  } catch {
+    return normalizeLonglongMemoryState();
+  }
+}
+
+function writeLonglongMemoryState(state) {
+  const statePath = getLonglongMemoryPath();
+  fsSync.mkdirSync(path.dirname(statePath), { recursive: true });
+  fsSync.writeFileSync(statePath, JSON.stringify(normalizeLonglongMemoryState(state), null, 2), "utf8");
+}
+
+function ensureLonglongMemoryState() {
+  if (!longlongMemoryState) longlongMemoryState = readLonglongMemoryState();
+  return longlongMemoryState;
+}
+
+function getLonglongMemorySnapshot(state = ensureLonglongMemoryState()) {
+  const normalized = normalizeLonglongMemoryState(state);
+  return {
+    ...normalized,
+    memoryCount: normalized.memories.length,
+    historyCount: normalized.history.length,
+  };
+}
+
+function sendLonglongMemoryToWindow(targetWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  targetWindow.webContents.send("longlong-chat:update", getLonglongMemorySnapshot());
+}
+
+function broadcastLonglongMemory() {
+  sendLonglongMemoryToWindow(mainWindow);
+  sendLonglongMemoryToWindow(companionWindow);
+}
+
+function saveLonglongMemoryAndBroadcast() {
+  const state = ensureLonglongMemoryState();
+  state.updatedAt = Date.now();
+  writeLonglongMemoryState(state);
+  broadcastLonglongMemory();
+  return getLonglongMemorySnapshot(state);
+}
+
+function appendLonglongSharedMessage(role, content, source = "system", meta = {}) {
+  const state = ensureLonglongMemoryState();
+  const message = normalizeLonglongChatMessage({
+    role,
+    content,
+    source,
+    createdAt: Date.now(),
+    meta,
+  });
+  if (!message) return null;
+  state.history.push(message);
+  state.history = state.history.slice(-40);
+  saveLonglongMemoryAndBroadcast();
+  return message;
+}
+
+function normalizeLonglongMemoryComparable(text = "") {
+  return normalizeLonglongText(text, 500)
+    .toLowerCase()
+    .replace(/[，。！？、,.!?;；:：“”"'`~\s]/g, "");
+}
+
+function upsertLonglongMemory(text, source = "system") {
+  const normalizedText = normalizeLonglongText(text, 500);
+  if (!normalizedText) return null;
+  const state = ensureLonglongMemoryState();
+  const comparable = normalizeLonglongMemoryComparable(normalizedText);
+  const existing = state.memories.find((entry) => normalizeLonglongMemoryComparable(entry.text) === comparable);
+  if (existing) {
+    existing.text = normalizedText;
+    existing.source = source;
+    existing.updatedAt = Date.now();
+    existing.count = normalizeLonglongNumber(existing.count, 1) + 1;
+    saveLonglongMemoryAndBroadcast();
+    return existing;
+  }
+
+  const entry = normalizeLonglongMemoryEntry({
+    text: normalizedText,
+    source,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    count: 1,
+  });
+  state.memories.push(entry);
+  state.memories = state.memories.slice(-80);
+  saveLonglongMemoryAndBroadcast();
+  return entry;
+}
+
+function deleteLonglongMemory(memoryId = "") {
+  const state = ensureLonglongMemoryState();
+  const before = state.memories.length;
+  state.memories = state.memories.filter((entry) => entry.id !== String(memoryId));
+  if (state.memories.length !== before) saveLonglongMemoryAndBroadcast();
+  return getLonglongMemorySnapshot(state);
+}
+
+function clearLonglongChatHistory() {
+  const state = ensureLonglongMemoryState();
+  state.history = [];
+  return saveLonglongMemoryAndBroadcast();
+}
+
+function extractLonglongMemoryCandidates(message = "") {
+  const text = normalizeLonglongText(message, 1000);
+  if (!text) return [];
+  const candidates = [];
+  const explicitPatterns = [
+    /(?:请|帮我|替我|你要|龙龙)?(?:记住|记一下|记下来|记一笔|以后记得|以后要记得|加入记忆库)[:：,，\s]*(.+)$/i,
+    /(?:把|将)(.+?)(?:记住|记下来|加入记忆库)$/i,
+    /(?:remember|memorize|note)\s*[:：]?\s*(.+)$/i,
+  ];
+
+  for (const pattern of explicitPatterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) candidates.push(match[1]);
+  }
+
+  const nameMatch = text.match(/(?:我叫|我的名字是|你可以叫我|叫我)([\u4e00-\u9fa5A-Za-z0-9_-]{1,24})/);
+  if (nameMatch?.[1]) candidates.push(`用户的名字是 ${nameMatch[1]}`);
+
+  const preferenceMatch = text.match(/我(?:最)?(?:喜欢|偏好|爱|讨厌|不喜欢)(.{1,80})/);
+  if (preferenceMatch?.[0]) candidates.push(`用户${preferenceMatch[0]}`);
+
+  return [...new Set(candidates.map((item) => normalizeLonglongText(item, 500)).filter((item) => item.length >= 2))].slice(0, 4);
+}
+
+function rememberLonglongUserMessage(message = "", source = "system") {
+  const memories = extractLonglongMemoryCandidates(message).map((candidate) => upsertLonglongMemory(candidate, source)).filter(Boolean);
+  return memories;
+}
+
+function getLonglongRelevantMemories(query = "", limit = 8) {
+  const state = ensureLonglongMemoryState();
+  const normalizedQuery = normalizeLonglongMemoryComparable(query);
+  const scored = state.memories.map((entry, index) => {
+    const comparable = normalizeLonglongMemoryComparable(entry.text);
+    let score = index / 1000;
+    if (normalizedQuery && comparable && (normalizedQuery.includes(comparable) || comparable.includes(normalizedQuery))) score += 10;
+    for (const token of normalizedQuery.match(/[\u4e00-\u9fa5]{2,}|[a-z0-9]{2,}/gi) || []) {
+      if (comparable.includes(token)) score += 1;
+    }
+    score += Math.min(3, normalizeLonglongNumber(entry.count, 1) * 0.2);
+    return { entry, score };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score || b.entry.updatedAt - a.entry.updatedAt)
+    .slice(0, limit)
+    .map((item) => item.entry);
+}
+
+function getLonglongRecentChatHistory(limit = 12) {
+  return ensureLonglongMemoryState().history.slice(-limit).map(({ role, content }) => ({ role, content }));
+}
+
+function normalizeLonglongChatHistory(history = []) {
+  return (Array.isArray(history) ? history : [])
+    .filter((message) => message && ["user", "assistant"].includes(message.role))
+    .slice(-12)
+    .map((message) => ({
+      role: message.role,
+      content: String(message.content || "").slice(0, 2000),
+    }))
+    .filter((message) => message.content.trim());
+}
+
 function ensureStudyTimerState() {
   const now = Date.now();
   const today = getTodayStudyDateKey(new Date(now));
@@ -1148,34 +1379,10 @@ async function captureCurrentScreenForLonglong() {
   }
 }
 
-async function extractScreenTextForLonglong(screenCapture) {
-  const base64 = getBase64Payload(screenCapture);
-
-  if (!base64) {
-    throw new Error("屏幕截图没有可识别的图像数据。");
-  }
-
-  return recognizeImageTextFromBase64(base64, {
-    languages: ["eng", "chi_sim"],
-    textLimit: 8000,
-    cachePath: path.join(app.getPath("userData"), "ocr-cache"),
-  });
-}
-
-function normalizeLonglongChatHistory(history = []) {
-  return (Array.isArray(history) ? history : [])
-    .filter((message) => message && ["user", "assistant"].includes(message.role))
-    .slice(-8)
-    .map((message) => ({
-      role: message.role,
-      content: String(message.content || "").slice(0, 2000),
-    }))
-    .filter((message) => message.content.trim());
-}
-
 function buildLonglongChatMessages(request = {}, screenContext = null, screenError = "", screenCapture = null) {
   const message = String(request.message || request.question || "").trim().slice(0, 8000);
-  const history = normalizeLonglongChatHistory(request.history);
+  const history = normalizeLonglongChatHistory(getLonglongRecentChatHistory(12));
+  const memories = Array.isArray(request.memories) ? request.memories : getLonglongRelevantMemories(message, 8);
 
   if (!message) {
     throw new Error("请先告诉龙龙你想聊什么。");
@@ -1184,25 +1391,25 @@ function buildLonglongChatMessages(request = {}, screenContext = null, screenErr
   const system = [
     "你是 MindStudy 的桌宠 AI 助手龙龙。",
     "你必须自然自称“龙龙”，像一直陪在用户身边的学习搭子一样说话，亲和、简洁、有行动建议。",
-    "如果用户的问题和屏幕内容相关，请优先结合截图图像和本机 OCR 文字回答；看不清或无法判断时要坦诚说明。",
+    "你可以参考随消息提供的龙龙记忆库，但不要虚构记忆库里没有的信息；如果记忆可能过时，要轻轻确认。",
+    "如果用户的问题和屏幕内容相关，请直接观察随消息提供的屏幕截图图像回答；看不清或无法判断时要坦诚说明。",
     "不要声称你读取了用户没有提供的文件、后台窗口或隐私内容。",
     "请使用中文 Markdown 排版，标题和列表要清晰，回答不要过长。",
   ].join(" ");
-  const extractedText = String(screenContext?.text || "").trim();
-  const screenText = extractedText
+  const memoryText = memories.length
     ? [
-        "当前屏幕截图已经在本机通过 OCR 转成文字。请只根据下面能识别到的屏幕文字和用户问题回答。",
-        "如果 OCR 文本明显残缺、错字较多或缺少关键信息，请提醒用户截图文字不完整。",
-        "",
-        "屏幕 OCR 文字：",
-        extractedText,
+        "龙龙记忆库里和这次对话可能相关的信息：",
+        ...memories.map((entry, index) => `${index + 1}. ${entry.text}`),
       ].join("\n")
-    : screenContext?.captured
-      ? `这次已捕获屏幕，但 OCR 没有提取到可靠文字${screenContext.ocrError ? `，原因：${screenContext.ocrError}` : ""}。请基于用户文字继续帮助，并说明龙龙暂时看不清屏幕细节。`
-      : screenError
-        ? `这次没有成功读取屏幕，原因：${screenError}。请基于用户文字继续帮助，并说明龙龙暂时看不到屏幕细节。`
-        : "这次没有读取屏幕内容，请基于用户文字回答。";
+    : "龙龙记忆库暂时没有和这次对话直接相关的信息。";
+  const screenText = screenContext?.captured
+    ? "这次已附上当前屏幕截图。请把截图当作主要视觉上下文，直接识别界面、图片、公式、代码结构或可见文字。"
+    : screenError
+      ? `这次没有成功截图，原因：${screenError}。请基于用户文字继续帮助，并说明龙龙暂时看不到屏幕细节。`
+      : "这次没有读取屏幕内容，请基于用户文字回答。";
   const userText = [
+    memoryText,
+    "",
     screenText,
     "",
     `用户对龙龙说：${message}`,
@@ -1224,64 +1431,66 @@ function buildLonglongChatMessages(request = {}, screenContext = null, screenErr
 async function askLonglongCompanion(request = {}) {
   const options = request.options || {};
   const includeScreen = request.includeScreen !== false;
+  const message = String(request.message || request.question || "").trim().slice(0, 8000);
+  const source = ["main", "pet"].includes(request.source) ? request.source : "system";
   const client = createCurrentQwenClient();
   let screenCapture = null;
   let screenContext = null;
   let screenError = "";
 
+  if (!message) {
+    throw new Error("请先告诉龙龙你想聊什么。");
+  }
+
+  const remembered = rememberLonglongUserMessage(message, source);
+  const relevantMemories = getLonglongRelevantMemories(message, 8);
+
   if (includeScreen) {
     try {
       screenCapture = await captureCurrentScreenForLonglong();
-      try {
-        const ocr = await extractScreenTextForLonglong(screenCapture);
-        screenContext = {
-          captured: true,
-          capturedAt: screenCapture.capturedAt,
-          display: screenCapture.display,
-          text: String(ocr.text || "").slice(0, 8000),
-          confidence: ocr.confidence,
-          language: ocr.language,
-          warning: ocr.warning,
-        };
-      } catch (error) {
-        screenContext = {
-          captured: true,
-          capturedAt: screenCapture.capturedAt,
-          display: screenCapture.display,
-          text: "",
-          ocrError: error.message || String(error),
-        };
-      }
+      screenContext = {
+        captured: true,
+        capturedAt: screenCapture.capturedAt,
+        display: screenCapture.display,
+      };
     } catch (error) {
       screenError = error.message || String(error);
     }
   }
 
   const response = await client.chat({
-    messages: buildLonglongChatMessages(request, screenContext, screenError, screenCapture),
+    messages: buildLonglongChatMessages({ ...request, message, memories: relevantMemories }, screenContext, screenError, screenCapture),
     multimodal: Boolean(screenCapture?.dataUrl),
     temperature: options.temperature != null ? options.temperature : 0.28,
     maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
     model: options.model,
+  });
+  const screenResult = screenContext
+    ? {
+        captured: true,
+        imageUsed: Boolean(screenCapture?.dataUrl),
+        capturedAt: screenContext.capturedAt,
+        display: screenContext.display,
+        error: "",
+      }
+    : { captured: false, imageUsed: false, error: screenError };
+
+  appendLonglongSharedMessage("user", message, source, {
+    remembered: remembered.map((entry) => entry.id),
+    includeScreen,
+  });
+  appendLonglongSharedMessage("assistant", response.content, source, {
+    model: response.model,
+    screen: screenResult,
   });
 
   return {
     answer: response.content,
     model: response.model,
     usage: response.usage,
-    screen: screenContext
-      ? {
-          captured: true,
-          ocrUsed: true,
-          textExtracted: Boolean(screenContext.text),
-          textLength: String(screenContext.text || "").length,
-          confidence: screenContext.confidence,
-          language: screenContext.language,
-          capturedAt: screenContext.capturedAt,
-          display: screenContext.display,
-          error: screenContext.ocrError || screenContext.warning || "",
-        }
-      : { captured: false, ocrUsed: false, textExtracted: false, error: screenError },
+    screen: screenResult,
+    remembered,
+    chat: getLonglongMemorySnapshot(),
   };
 }
 
@@ -1587,6 +1796,7 @@ function createMainWindow() {
   mainWindow.loadFile(path.join(__dirname, "..", "frontend", "index.html"));
   mainWindow.webContents.once("did-finish-load", () => {
     sendStudyTimerToWindow(mainWindow);
+    sendLonglongMemoryToWindow(mainWindow);
   });
 
   mainWindow.once("ready-to-show", () => {
@@ -1777,6 +1987,7 @@ function createCompanionWindow() {
   companionWindow.webContents.once("did-finish-load", () => {
     companionWindow?.webContents.send("companion:snapshot", companionSnapshot);
     sendStudyTimerToWindow(companionWindow);
+    sendLonglongMemoryToWindow(companionWindow);
     if (companionShouldShow) {
       revealCompanionWindow();
     }
@@ -2012,6 +2223,26 @@ ipcMain.handle("b:ai:ask-coding", async (event, request) => {
 
 ipcMain.handle("companion:ask-longlong", async (event, request) => {
   return askLonglongCompanion(request);
+});
+
+ipcMain.handle("longlong-chat:get", () => {
+  return getLonglongMemorySnapshot();
+});
+
+ipcMain.handle("longlong-chat:clear", () => {
+  return clearLonglongChatHistory();
+});
+
+ipcMain.handle("longlong-memory:add", (event, text) => {
+  const entry = upsertLonglongMemory(text, "system");
+  return {
+    entry,
+    snapshot: getLonglongMemorySnapshot(),
+  };
+});
+
+ipcMain.handle("longlong-memory:delete", (event, memoryId) => {
+  return deleteLonglongMemory(memoryId);
 });
 
 ipcMain.handle("longlong-bond:get", () => {

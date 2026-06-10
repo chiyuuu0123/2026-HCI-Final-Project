@@ -38,6 +38,10 @@
             <i data-lucide="code-2"></i>
             <span>阿龙在 Coding</span>
           </button>
+          <button class="nav-item" data-view="calculator">
+            <i data-lucide="calculator"></i>
+            <span>科学计算器</span>
+          </button>
           <button class="nav-item" data-view="planner">
             <i data-lucide="list-todo"></i>
             <span>TodoList</span>
@@ -478,6 +482,103 @@
                 <span>空间复杂度</span>
                 <span>边界情况</span>
                 <span>优化建议</span>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="calculator">
+          <div class="calculator-page">
+            <section class="calculator-device" aria-label="卡西欧标准科学计算器">
+              <div class="calculator-top">
+                <div>
+                  <strong>CASIO</strong>
+                  <span>fx-991MS</span>
+                </div>
+                <div class="calculator-solar" aria-hidden="true">
+                  <span></span><span></span><span></span><span></span>
+                </div>
+              </div>
+              <div class="calculator-model-row">
+                <span>SCIENTIFIC CALCULATOR</span>
+                <span>TWO WAY POWER</span>
+              </div>
+              <div class="calculator-screen" aria-live="polite">
+                <div class="calculator-indicators">
+                  <span id="calculator-angle-mode">DEG</span>
+                  <span id="calculator-memory-indicator"></span>
+                </div>
+                <div class="calculator-expression" id="calculator-expression">0</div>
+                <div class="calculator-result" id="calculator-result">0</div>
+              </div>
+              <div class="calculator-soft-row">
+                <button type="button" data-calculator-key="shift">SHIFT</button>
+                <button type="button" data-calculator-key="alpha">ALPHA</button>
+                <button type="button" data-calculator-key="mode">MODE</button>
+                <button type="button" data-calculator-key="clear-entry">DEL</button>
+                <button type="button" data-calculator-key="all-clear">AC</button>
+              </div>
+              <div class="calculator-keypad">
+                <button type="button" class="fn-key" data-calculator-key="sin">sin</button>
+                <button type="button" class="fn-key" data-calculator-key="cos">cos</button>
+                <button type="button" class="fn-key" data-calculator-key="tan">tan</button>
+                <button type="button" class="fn-key" data-calculator-key="log">log</button>
+                <button type="button" class="fn-key" data-calculator-key="ln">ln</button>
+                <button type="button" class="fn-key" data-calculator-key="sqrt">√</button>
+
+                <button type="button" class="fn-key" data-calculator-key="square">x²</button>
+                <button type="button" class="fn-key" data-calculator-key="power">xʸ</button>
+                <button type="button" class="fn-key" data-calculator-key="factorial">x!</button>
+                <button type="button" class="fn-key" data-calculator-key="pi">π</button>
+                <button type="button" class="fn-key" data-calculator-key="e">e</button>
+                <button type="button" class="fn-key" data-calculator-key="ans">Ans</button>
+
+                <button type="button" class="num-key" data-calculator-key="7">7</button>
+                <button type="button" class="num-key" data-calculator-key="8">8</button>
+                <button type="button" class="num-key" data-calculator-key="9">9</button>
+                <button type="button" class="op-key" data-calculator-key="divide">÷</button>
+                <button type="button" class="op-key" data-calculator-key="left-paren">(</button>
+                <button type="button" class="op-key" data-calculator-key="right-paren">)</button>
+
+                <button type="button" class="num-key" data-calculator-key="4">4</button>
+                <button type="button" class="num-key" data-calculator-key="5">5</button>
+                <button type="button" class="num-key" data-calculator-key="6">6</button>
+                <button type="button" class="op-key" data-calculator-key="multiply">×</button>
+                <button type="button" class="op-key" data-calculator-key="percent">%</button>
+                <button type="button" class="op-key" data-calculator-key="reciprocal">1/x</button>
+
+                <button type="button" class="num-key" data-calculator-key="1">1</button>
+                <button type="button" class="num-key" data-calculator-key="2">2</button>
+                <button type="button" class="num-key" data-calculator-key="3">3</button>
+                <button type="button" class="op-key" data-calculator-key="minus">−</button>
+                <button type="button" class="op-key" data-calculator-key="exp">EXP</button>
+                <button type="button" class="op-key" data-calculator-key="negate">(−)</button>
+
+                <button type="button" class="num-key" data-calculator-key="0">0</button>
+                <button type="button" class="num-key" data-calculator-key="decimal">.</button>
+                <button type="button" class="num-key" data-calculator-key="double-zero">00</button>
+                <button type="button" class="op-key" data-calculator-key="plus">+</button>
+                <button type="button" class="equals-key" data-calculator-key="equals">=</button>
+              </div>
+            </section>
+
+            <aside class="panel calculator-side-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="tag muted">Calculator</span>
+                  <h3>课堂速算</h3>
+                </div>
+                <span class="progress-badge" id="calculator-mode-badge">DEG</span>
+              </div>
+              <div class="calculator-memory-box">
+                <span>Ans</span>
+                <strong id="calculator-ans-value">0</strong>
+              </div>
+              <div class="calculator-reference">
+                <strong>常用输入</strong>
+                <span>sin / cos / tan 跟随 DEG/RAD 模式</span>
+                <span>EXP 输入科学计数法，例如 6.02 EXP 23</span>
+                <span>xʸ、√、log、ln、阶乘可直接组合表达式</span>
               </div>
             </aside>
           </div>
@@ -933,6 +1034,13 @@
               <div>龙龙在这里。可以直接和龙龙说话，不会关联 RAG、日程或音乐。</div>
             </article>
           </div>
+          <details class="longlong-memory-panel">
+            <summary>
+              <span>记忆库</span>
+              <strong id="longlong-memory-count">0 条</strong>
+            </summary>
+            <div class="longlong-memory-list" id="longlong-memory-list"></div>
+          </details>
           <form class="longlong-chat-form" id="longlong-chat-form">
             <textarea id="longlong-chat-input" rows="3" placeholder="和龙龙说点什么..."></textarea>
             <div class="longlong-chat-actions">

@@ -91,22 +91,29 @@
           <article class="pet-chat-message assistant">
             <img src="./assets/longlong-guide.gif" alt="" draggable="false" />
             <div>
-              <p>龙龙在这里。你可以问我当前屏幕上的代码、PDF、网页或报错，我会先读取屏幕文字再帮你分析。</p>
+              <p>龙龙在这里。你可以问我当前屏幕上的代码、PDF、网页或报错，我会直接看屏幕截图再帮你分析。</p>
             </div>
           </article>
         </div>
+        <details class="pet-memory-panel">
+          <summary>
+            <span>记忆库</span>
+            <strong id="pet-memory-count">0 条</strong>
+          </summary>
+          <div class="pet-memory-list" id="pet-memory-list"></div>
+        </details>
         <form class="pet-chat-form" id="pet-chat-form">
           <div class="pet-chat-options">
             <label class="pet-toggle">
               <input id="pet-screen-toggle" type="checkbox" checked />
-              <span>读取屏幕文字</span>
+              <span>识别屏幕截图</span>
             </label>
             <label class="pet-toggle">
               <input id="pet-voice-toggle" type="checkbox" checked />
               <span>龙龙语音</span>
             </label>
           </div>
-          <textarea id="pet-chat-input" rows="3" placeholder="问龙龙：帮我看看屏幕文字里的代码哪里可以优化？"></textarea>
+          <textarea id="pet-chat-input" rows="3" placeholder="问龙龙：帮我看看屏幕里的代码、图片或题目哪里需要注意？"></textarea>
           <div class="pet-chat-actions">
             <button type="button" data-pet-action="pet">回到桌宠</button>
             <button type="submit">发送</button>
@@ -124,6 +131,8 @@
       const chatList = document.querySelector("#pet-chat-list");
       const chatForm = document.querySelector("#pet-chat-form");
       const chatInput = document.querySelector("#pet-chat-input");
+      const memoryCount = document.querySelector("#pet-memory-count");
+      const memoryList = document.querySelector("#pet-memory-list");
       const screenToggle = document.querySelector("#pet-screen-toggle");
       const voiceToggle = document.querySelector("#pet-voice-toggle");
       const voiceAction = document.querySelector("#pet-voice-action");
@@ -244,7 +253,7 @@
       const idleTips = [
         "点击我可以直接聊天",
         "按住我可以拖到桌面任意位置",
-        "龙龙可以读取屏幕文字陪你分析",
+        "龙龙可以看屏幕截图陪你分析",
         "先做最重要的一小步",
         "久坐了就站起来伸展一下",
       ];
@@ -299,7 +308,8 @@
       let petGiftOpen = false;
       let currentPetSpriteState = "default";
       let companionMode = "pet";
-      let chatHistory = [];
+      let longlongChatSnapshot = { history: [], memories: [], memoryCount: 0, historyCount: 0 };
+      let longlongChatRequestInFlight = false;
       let voiceState = loadVoiceState();
       let voiceRequestId = 0;
       let currentVoiceAudio = null;
@@ -390,6 +400,109 @@
         const text = String(content || "龙龙没有收到有效回答。").trim();
         if (text.startsWith(LONGLONG_ANSWER_LINE)) return text;
         return `${LONGLONG_ANSWER_LINE}\n\n${text}`;
+      }
+
+      function createLonglongClientId(prefix) {
+        return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      }
+
+      function normalizeLonglongChatSnapshot(snapshot = {}) {
+        const history = Array.isArray(snapshot.history)
+          ? snapshot.history
+              .filter((message) => message && ["user", "assistant"].includes(message.role) && String(message.content || "").trim())
+              .map((message) => ({
+                id: String(message.id || createLonglongClientId("chat")),
+                role: message.role,
+                content: String(message.content || ""),
+                source: ["main", "pet", "system"].includes(message.source) ? message.source : "system",
+                createdAt: Number(message.createdAt) || Date.now(),
+                meta: message.meta && typeof message.meta === "object" ? message.meta : {},
+              }))
+          : [];
+        const memories = Array.isArray(snapshot.memories)
+          ? snapshot.memories
+              .filter((entry) => entry && String(entry.text || "").trim())
+              .map((entry) => ({
+                id: String(entry.id || createLonglongClientId("memory")),
+                text: String(entry.text || ""),
+                source: ["main", "pet", "system"].includes(entry.source) ? entry.source : "system",
+                updatedAt: Number(entry.updatedAt || entry.createdAt) || Date.now(),
+                count: Math.max(1, Math.floor(Number(entry.count) || 1)),
+              }))
+          : [];
+
+        return {
+          history,
+          memories,
+          memoryCount: Number(snapshot.memoryCount) || memories.length,
+          historyCount: Number(snapshot.historyCount) || history.length,
+          updatedAt: Number(snapshot.updatedAt) || Date.now(),
+        };
+      }
+
+      function getPetChatMeta(message = {}) {
+        if (message.role !== "assistant") return "";
+        const screen = message.meta?.screen;
+        if (screen?.captured && screen.imageUsed) return "已识别屏幕截图";
+        if (screen?.captured) return "已尝试读取屏幕";
+        return "";
+      }
+
+      function renderPetSharedChat() {
+        if (!chatList) return;
+        chatList.innerHTML = "";
+
+        if (!longlongChatSnapshot.history.length) {
+          addChatMessage("assistant", "龙龙在这里。桌宠和主窗口会共用同一段聊天，也会共用记忆库。");
+          return;
+        }
+
+        longlongChatSnapshot.history.forEach((message) => {
+          const content = message.role === "assistant" ? withLonglongAnswerLine(message.content) : message.content;
+          addChatMessage(message.role, content, { meta: getPetChatMeta(message) });
+        });
+      }
+
+      function renderPetMemoryList() {
+        if (memoryCount) {
+          memoryCount.textContent = `${longlongChatSnapshot.memoryCount || longlongChatSnapshot.memories.length} 条`;
+        }
+        if (!memoryList) return;
+
+        const memories = [...longlongChatSnapshot.memories]
+          .sort((a, b) => b.updatedAt - a.updatedAt)
+          .slice(0, 8);
+        memoryList.innerHTML = memories.length
+          ? memories
+              .map((entry) => `
+                <article class="pet-memory-item">
+                  <span>${escapeHtml(entry.text)}</span>
+                  <small>${entry.count > 1 ? `记了 ${entry.count} 次` : "长期记忆"}</small>
+                </article>
+              `)
+              .join("")
+          : `<div class="pet-memory-empty">还没有记忆。对龙龙说“记住……”，龙龙就会收进记忆库。</div>`;
+      }
+
+      function setLonglongChatSnapshot(snapshot, options = {}) {
+        longlongChatSnapshot = normalizeLonglongChatSnapshot(snapshot);
+        renderPetMemoryList();
+        if (options.renderChat !== false && !longlongChatRequestInFlight) {
+          renderPetSharedChat();
+        }
+      }
+
+      async function initLonglongChatState() {
+        try {
+          const snapshot = await window.mindStudy?.getLonglongChatState?.();
+          if (snapshot) setLonglongChatSnapshot(snapshot);
+        } catch {
+          renderPetMemoryList();
+        }
+
+        window.mindStudy?.onLonglongChatUpdate?.((snapshot) => {
+          setLonglongChatSnapshot(snapshot, { renderChat: !longlongChatRequestInFlight });
+        });
       }
 
       function formatStudyDuration(totalSeconds) {
@@ -992,7 +1105,7 @@
 
         chatInput.value = "";
         addChatMessage("user", text);
-        chatHistory.push({ role: "user", content: text });
+        longlongChatRequestInFlight = true;
         window.mindStudy?.addLonglongAffection?.({ amount: 2, reason: "chat" }).catch(() => {});
         const thinking = addChatMessage("assistant", LONGLONG_THINKING_LINE);
         setTip(LONGLONG_THINKING_LINE, { temporary: true, motion: "thinking" });
@@ -1002,7 +1115,7 @@
           const response = await window.mindStudy?.askLonglongCompanion?.({
             message: text,
             includeScreen: screenToggle.checked,
-            history: chatHistory.slice(0, -1),
+            source: "pet",
             options: {
               maxTokens: 1200,
               temperature: 0.28,
@@ -1011,17 +1124,18 @@
           const rawAnswer = response?.answer || "龙龙没有收到有效回答。";
           const answer = withLonglongAnswerLine(rawAnswer);
           const screenMeta = response?.screen?.captured
-            ? response.screen.textExtracted
-              ? `已读取屏幕文字${response.screen.textLength ? ` · ${response.screen.textLength} 字` : ""}`
-              : "已截图，但没有识别到可靠文字"
+            ? response.screen.imageUsed
+              ? "已识别屏幕截图"
+              : "已截图，但视觉上下文未发送"
             : screenToggle.checked
-              ? "未能读取屏幕文字"
+              ? "未能截图"
               : "";
           updateChatMessage(thinking, answer, { meta: screenMeta });
           speakLonglong(LONGLONG_ANSWER_LINE, { maxLength: 80 });
-          chatHistory.push({ role: "assistant", content: rawAnswer });
-          chatHistory = chatHistory.slice(-10);
+          longlongChatRequestInFlight = false;
+          if (response?.chat) setLonglongChatSnapshot(response.chat);
         } catch (error) {
+          longlongChatRequestInFlight = false;
           const errorText = `龙龙这次没连上：${error.message || String(error)}`;
           updateChatMessage(thinking, errorText);
         }
@@ -1112,6 +1226,7 @@
       syncVoiceControls();
       initPetActionHover();
       initPetBond();
+      initLonglongChatState();
       if (document.readyState === "loading") {
         window.addEventListener("DOMContentLoaded", renderPetIcons, { once: true });
       } else {

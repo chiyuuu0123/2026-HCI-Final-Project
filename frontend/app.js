@@ -84,6 +84,7 @@ const viewTitles = {
   reader: "资料阅读",
   rag: "RAG 知识问答",
   coding: "阿龙在 Coding",
+  calculator: "科学计算器",
   planner: "TodoList",
   map: "知识图谱",
   quiz: "自动测验",
@@ -369,7 +370,8 @@ let longlongBondNoticeTimer = null;
 let longlongCoinSyncKey = "";
 let longlongBubbleTimer = null;
 let longlongActionsHideTimer = null;
-let longlongMainChatHistory = [];
+let longlongChatSnapshot = { history: [], memories: [], memoryCount: 0, historyCount: 0 };
+let longlongChatRequestInFlight = false;
 const longlongDragState = {
   active: false,
   moved: false,
@@ -405,6 +407,15 @@ const voiceCommandState = {
   cancelCurrentRecording: false,
   lastExecutedTranscript: "",
   lastExecutedAt: 0,
+};
+const calculatorState = {
+  expression: "",
+  result: "0",
+  ans: 0,
+  angleMode: "DEG",
+  shifted: false,
+  alpha: false,
+  justEvaluated: false,
 };
 const graphPanState = {
   active: false,
@@ -549,6 +560,8 @@ function getLonglongElements() {
     chatPopover: document.querySelector("#longlong-chat-popover"),
     chatList: document.querySelector("#longlong-chat-list"),
     chatInput: document.querySelector("#longlong-chat-input"),
+    memoryCount: document.querySelector("#longlong-memory-count"),
+    memoryList: document.querySelector("#longlong-memory-list"),
     giftPopover: document.querySelector("#longlong-gift-popover"),
     bondLevel: document.querySelector("#longlong-bond-level"),
     bondDetail: document.querySelector("#longlong-bond-detail"),
@@ -695,6 +708,107 @@ function updateLonglongChatMessage(message, content, options = {}) {
     ${options.meta ? `<small>${escapeHtml(options.meta)}</small>` : ""}
   `;
   if (elements.chatList) elements.chatList.scrollTop = elements.chatList.scrollHeight;
+}
+
+function normalizeLonglongChatSnapshot(snapshot = {}) {
+  const history = Array.isArray(snapshot.history)
+    ? snapshot.history
+        .filter((message) => message && ["user", "assistant"].includes(message.role) && String(message.content || "").trim())
+        .map((message) => ({
+          id: String(message.id || createId("chat")),
+          role: message.role,
+          content: String(message.content || ""),
+          source: ["main", "pet", "system"].includes(message.source) ? message.source : "system",
+          createdAt: Number(message.createdAt) || Date.now(),
+          meta: message.meta && typeof message.meta === "object" ? message.meta : {},
+        }))
+    : [];
+  const memories = Array.isArray(snapshot.memories)
+    ? snapshot.memories
+        .filter((entry) => entry && String(entry.text || "").trim())
+        .map((entry) => ({
+          id: String(entry.id || createId("memory")),
+          text: String(entry.text || ""),
+          source: ["main", "pet", "system"].includes(entry.source) ? entry.source : "system",
+          updatedAt: Number(entry.updatedAt || entry.createdAt) || Date.now(),
+          count: Math.max(1, Math.floor(Number(entry.count) || 1)),
+        }))
+    : [];
+
+  return {
+    history,
+    memories,
+    memoryCount: Number(snapshot.memoryCount) || memories.length,
+    historyCount: Number(snapshot.historyCount) || history.length,
+    updatedAt: Number(snapshot.updatedAt) || Date.now(),
+  };
+}
+
+function getLonglongChatMeta(message = {}) {
+  if (message.role !== "assistant") return "";
+  const screen = message.meta?.screen;
+  if (screen?.captured && screen.imageUsed) return "已识别屏幕截图";
+  if (screen?.captured) return "已尝试读取屏幕";
+  return "";
+}
+
+function renderLonglongSharedChat() {
+  const elements = getLonglongElements();
+  if (!elements.chatList) return;
+  elements.chatList.innerHTML = "";
+
+  if (!longlongChatSnapshot.history.length) {
+    addLonglongChatMessage("assistant", "龙龙在这里。主窗口和桌宠会共用同一段聊天，也会共用记忆库。");
+    return;
+  }
+
+  longlongChatSnapshot.history.forEach((message) => {
+    const content = message.role === "assistant" ? withLonglongAnswerLine(message.content) : message.content;
+    addLonglongChatMessage(message.role, content, { meta: getLonglongChatMeta(message) });
+  });
+}
+
+function renderLonglongMemoryList() {
+  const elements = getLonglongElements();
+  if (elements.memoryCount) {
+    elements.memoryCount.textContent = `${longlongChatSnapshot.memoryCount || longlongChatSnapshot.memories.length} 条`;
+  }
+  if (!elements.memoryList) return;
+
+  const memories = [...longlongChatSnapshot.memories]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 8);
+  elements.memoryList.innerHTML = memories.length
+    ? memories
+        .map((entry) => `
+          <article class="longlong-memory-item">
+            <span>${escapeHtml(entry.text)}</span>
+            <small>${entry.count > 1 ? `记了 ${entry.count} 次` : "长期记忆"}</small>
+          </article>
+        `)
+        .join("")
+    : `<div class="longlong-memory-empty">还没有记忆。对龙龙说“记住……”，龙龙就会收进记忆库。</div>`;
+}
+
+function setLonglongChatSnapshot(snapshot, options = {}) {
+  longlongChatSnapshot = normalizeLonglongChatSnapshot(snapshot);
+  renderLonglongMemoryList();
+  if (options.renderChat !== false && !longlongChatRequestInFlight) {
+    renderLonglongSharedChat();
+  }
+}
+
+async function initLonglongChatState() {
+  try {
+    const snapshot = await window.mindStudy?.getLonglongChatState?.();
+    if (snapshot) setLonglongChatSnapshot(snapshot);
+  } catch {
+    renderLonglongMemoryList();
+  }
+
+  window.mindStudy?.onLonglongChatUpdate?.((snapshot) => {
+    setLonglongChatSnapshot(snapshot, { renderChat: !longlongChatRequestInFlight });
+  });
 }
 
 function formatStudyDuration(totalSeconds) {
@@ -1344,7 +1458,7 @@ async function submitLonglongChat(event) {
 
   elements.chatInput.value = "";
   addLonglongChatMessage("user", text);
-  longlongMainChatHistory.push({ role: "user", content: text });
+  longlongChatRequestInFlight = true;
   const thinking = addLonglongChatMessage("assistant", LONGLONG_THINKING_LINE);
   setLonglongBubbleText(LONGLONG_THINKING_LINE);
   playLonglongThinkingLine();
@@ -1353,7 +1467,7 @@ async function submitLonglongChat(event) {
     const response = await window.mindStudy?.askLonglongCompanion?.({
       message: text,
       includeScreen: false,
-      history: longlongMainChatHistory.slice(0, -1),
+      source: "main",
       options: {
         maxTokens: 900,
         temperature: 0.32,
@@ -1365,9 +1479,10 @@ async function submitLonglongChat(event) {
     setLonglongBubbleText(LONGLONG_ANSWER_LINE);
     playLonglongAnswerLine();
     addLonglongChatAffection();
-    longlongMainChatHistory.push({ role: "assistant", content: rawAnswer });
-    longlongMainChatHistory = longlongMainChatHistory.slice(-10);
+    longlongChatRequestInFlight = false;
+    if (response?.chat) setLonglongChatSnapshot(response.chat);
   } catch (error) {
+    longlongChatRequestInFlight = false;
     const errorText = `龙龙这次没连上：${getAiErrorMessage(error)}`;
     updateLonglongChatMessage(thinking, errorText);
     setLonglongBubbleText("龙龙这次没连上，等一下再试。");
@@ -5244,6 +5359,338 @@ function getPdfExtractionStatus(doc) {
   };
 }
 
+function getCalculatorElements() {
+  return {
+    expression: document.querySelector("#calculator-expression"),
+    result: document.querySelector("#calculator-result"),
+    angleMode: document.querySelector("#calculator-angle-mode"),
+    memory: document.querySelector("#calculator-memory-indicator"),
+    modeBadge: document.querySelector("#calculator-mode-badge"),
+    ans: document.querySelector("#calculator-ans-value"),
+    keys: document.querySelectorAll("[data-calculator-key]"),
+  };
+}
+
+function formatCalculatorNumber(value) {
+  if (!Number.isFinite(value)) return "Math ERROR";
+  if (Object.is(value, -0)) return "0";
+  const absolute = Math.abs(value);
+  if (absolute !== 0 && (absolute >= 1e12 || absolute < 1e-9)) {
+    return value.toExponential(10).replace(/\.?0+e/, "e");
+  }
+  return Number(value.toPrecision(12)).toString();
+}
+
+function getBalancedCalculatorExpression(expression) {
+  let openCount = 0;
+  for (const char of expression) {
+    if (char === "(") openCount += 1;
+    if (char === ")") openCount = Math.max(0, openCount - 1);
+  }
+  return expression + ")".repeat(openCount);
+}
+
+function findCalculatorOperandStart(source, endIndex) {
+  const left = source.slice(0, endIndex + 1);
+  const simpleMatch = left.match(/(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$|(?:PI|E_CONST|ANS)$/);
+  if (simpleMatch) return left.length - simpleMatch[0].length;
+
+  let index = endIndex;
+  while (index >= 0 && /\s/.test(source[index])) index -= 1;
+  if (index < 0) return -1;
+
+  if (source[index] === ")") {
+    let depth = 0;
+    for (let cursor = index; cursor >= 0; cursor -= 1) {
+      if (source[cursor] === ")") depth += 1;
+      if (source[cursor] === "(") {
+        depth -= 1;
+        if (depth === 0) {
+          let functionStart = cursor - 1;
+          while (functionStart >= 0 && /[A-Za-z_]/.test(source[functionStart])) functionStart -= 1;
+          return functionStart + 1;
+        }
+      }
+    }
+  }
+
+  if (/[A-Za-z_]/.test(source[index])) {
+    while (index >= 0 && /[A-Za-z_]/.test(source[index])) index -= 1;
+    return index + 1;
+  }
+
+  return -1;
+}
+
+function replaceCalculatorPostfix(source, symbol, wrapperName) {
+  let output = source;
+  let index = output.indexOf(symbol);
+  while (index >= 0) {
+    const start = findCalculatorOperandStart(output, index - 1);
+    if (start < 0) throw new Error("表达式不完整");
+    const operand = output.slice(start, index);
+    output = `${output.slice(0, start)}${wrapperName}(${operand})${output.slice(index + 1)}`;
+    index = output.indexOf(symbol, start + wrapperName.length + operand.length + 2);
+  }
+  return output;
+}
+
+function normalizeCalculatorExpression(expression) {
+  let source = getBalancedCalculatorExpression(expression)
+    .replace(/Ans/g, "ANS")
+    .replace(/π/g, "PI")
+    .replace(/\be\b/g, "E_CONST")
+    .replace(/√\(/g, "sqrt(")
+    .replace(/×/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/−/g, "-");
+
+  source = replaceCalculatorPostfix(source, "!", "factorial");
+  source = replaceCalculatorPostfix(source, "%", "percent");
+  source = source.replace(/\^/g, "**");
+
+  if (!/^[0-9+\-*/().,\sA-Za-z_*]+$/.test(source)) {
+    throw new Error("表达式包含无法计算的字符");
+  }
+
+  return source;
+}
+
+function getCalculatorAngleValue(value) {
+  return calculatorState.angleMode === "DEG" ? (value * Math.PI) / 180 : value;
+}
+
+function getCalculatorInverseAngleValue(value) {
+  return calculatorState.angleMode === "DEG" ? (value * 180) / Math.PI : value;
+}
+
+function calculateFactorial(value) {
+  if (!Number.isInteger(value) || value < 0 || value > 170) {
+    throw new Error("阶乘只支持 0 到 170 的整数");
+  }
+  let result = 1;
+  for (let index = 2; index <= value; index += 1) result *= index;
+  return result;
+}
+
+function evaluateCalculatorExpression(expression) {
+  if (!expression.trim()) return 0;
+  const source = normalizeCalculatorExpression(expression);
+  const evaluate = Function(
+    "sin",
+    "cos",
+    "tan",
+    "asin",
+    "acos",
+    "atan",
+    "log",
+    "ln",
+    "sqrt",
+    "cbrt",
+    "factorial",
+    "percent",
+    "PI",
+    "E_CONST",
+    "ANS",
+    `"use strict"; return (${source});`,
+  );
+
+  return evaluate(
+    (value) => Math.sin(getCalculatorAngleValue(value)),
+    (value) => Math.cos(getCalculatorAngleValue(value)),
+    (value) => Math.tan(getCalculatorAngleValue(value)),
+    (value) => getCalculatorInverseAngleValue(Math.asin(value)),
+    (value) => getCalculatorInverseAngleValue(Math.acos(value)),
+    (value) => getCalculatorInverseAngleValue(Math.atan(value)),
+    (value) => Math.log10(value),
+    (value) => Math.log(value),
+    (value) => Math.sqrt(value),
+    (value) => Math.cbrt(value),
+    calculateFactorial,
+    (value) => value / 100,
+    Math.PI,
+    Math.E,
+    calculatorState.ans,
+  );
+}
+
+function deleteCalculatorToken() {
+  const tokens = ["10^(", "cbrt(", "asin(", "acos(", "atan(", "sin(", "cos(", "tan(", "log(", "ln(", "√(", "Ans", "π", "E", "^2"];
+  const match = tokens.find((token) => calculatorState.expression.endsWith(token));
+  if (match) {
+    calculatorState.expression = calculatorState.expression.slice(0, -match.length);
+    return;
+  }
+  calculatorState.expression = calculatorState.expression.slice(0, -1);
+}
+
+function prepareCalculatorAppend(kind) {
+  if (!calculatorState.justEvaluated) return;
+  calculatorState.expression = kind === "operator" ? calculatorState.result : "";
+  calculatorState.justEvaluated = false;
+}
+
+function appendCalculatorExpression(value, kind = "value") {
+  prepareCalculatorAppend(kind);
+  calculatorState.expression += value;
+}
+
+function clearCalculatorShiftState() {
+  calculatorState.shifted = false;
+  calculatorState.alpha = false;
+}
+
+function evaluateCalculator() {
+  try {
+    const value = evaluateCalculatorExpression(calculatorState.expression);
+    if (!Number.isFinite(value)) throw new Error("计算结果超出范围");
+    calculatorState.ans = value;
+    calculatorState.result = formatCalculatorNumber(value);
+    calculatorState.expression = getBalancedCalculatorExpression(calculatorState.expression);
+    calculatorState.justEvaluated = true;
+    clearCalculatorShiftState();
+  } catch {
+    calculatorState.result = "Math ERROR";
+    calculatorState.justEvaluated = false;
+    clearCalculatorShiftState();
+  }
+}
+
+function handleCalculatorKey(key) {
+  if (!key) return;
+
+  if (/^\d$/.test(key)) {
+    appendCalculatorExpression(key);
+  } else if (key === "double-zero") {
+    appendCalculatorExpression("00");
+  } else if (key === "decimal") {
+    appendCalculatorExpression(".");
+  } else if (key === "plus") {
+    appendCalculatorExpression("+", "operator");
+  } else if (key === "minus") {
+    appendCalculatorExpression("−", "operator");
+  } else if (key === "multiply") {
+    appendCalculatorExpression("×", "operator");
+  } else if (key === "divide") {
+    appendCalculatorExpression("÷", "operator");
+  } else if (key === "left-paren") {
+    appendCalculatorExpression("(");
+  } else if (key === "right-paren") {
+    appendCalculatorExpression(")");
+  } else if (key === "sin") {
+    appendCalculatorExpression(calculatorState.shifted ? "asin(" : "sin(");
+    clearCalculatorShiftState();
+  } else if (key === "cos") {
+    appendCalculatorExpression(calculatorState.shifted ? "acos(" : "cos(");
+    clearCalculatorShiftState();
+  } else if (key === "tan") {
+    appendCalculatorExpression(calculatorState.shifted ? "atan(" : "tan(");
+    clearCalculatorShiftState();
+  } else if (key === "log") {
+    appendCalculatorExpression(calculatorState.shifted ? "10^(" : "log(");
+    clearCalculatorShiftState();
+  } else if (key === "ln") {
+    appendCalculatorExpression(calculatorState.shifted ? "e^(" : "ln(");
+    clearCalculatorShiftState();
+  } else if (key === "sqrt") {
+    appendCalculatorExpression(calculatorState.shifted ? "cbrt(" : "√(");
+    clearCalculatorShiftState();
+  } else if (key === "square") {
+    appendCalculatorExpression("^2", "operator");
+  } else if (key === "power") {
+    appendCalculatorExpression("^", "operator");
+  } else if (key === "factorial") {
+    appendCalculatorExpression("!", "operator");
+  } else if (key === "percent") {
+    appendCalculatorExpression("%", "operator");
+  } else if (key === "reciprocal") {
+    const base = calculatorState.expression || calculatorState.result || "0";
+    calculatorState.expression = `1÷(${base})`;
+    calculatorState.justEvaluated = false;
+  } else if (key === "pi") {
+    appendCalculatorExpression("π");
+  } else if (key === "e") {
+    appendCalculatorExpression("e");
+  } else if (key === "ans") {
+    appendCalculatorExpression("Ans");
+  } else if (key === "exp") {
+    appendCalculatorExpression("E", "operator");
+  } else if (key === "negate") {
+    appendCalculatorExpression("−");
+  } else if (key === "clear-entry") {
+    deleteCalculatorToken();
+    calculatorState.justEvaluated = false;
+  } else if (key === "all-clear") {
+    calculatorState.expression = "";
+    calculatorState.result = "0";
+    calculatorState.justEvaluated = false;
+    clearCalculatorShiftState();
+  } else if (key === "mode") {
+    calculatorState.angleMode = calculatorState.angleMode === "DEG" ? "RAD" : "DEG";
+  } else if (key === "shift") {
+    calculatorState.shifted = !calculatorState.shifted;
+    calculatorState.alpha = false;
+  } else if (key === "alpha") {
+    calculatorState.alpha = !calculatorState.alpha;
+    calculatorState.shifted = false;
+  } else if (key === "equals") {
+    evaluateCalculator();
+  }
+
+  renderCalculator();
+}
+
+function renderCalculator() {
+  const elements = getCalculatorElements();
+  const expression = calculatorState.expression || "0";
+  if (elements.expression) elements.expression.textContent = expression;
+  if (elements.result) elements.result.textContent = calculatorState.result;
+  if (elements.angleMode) elements.angleMode.textContent = calculatorState.angleMode;
+  if (elements.modeBadge) elements.modeBadge.textContent = calculatorState.angleMode;
+  if (elements.ans) elements.ans.textContent = formatCalculatorNumber(calculatorState.ans);
+  if (elements.memory) {
+    elements.memory.textContent = calculatorState.shifted ? "SHIFT" : calculatorState.alpha ? "ALPHA" : "";
+  }
+  elements.keys.forEach((button) => {
+    button.classList.toggle("active", button.dataset.calculatorKey === "shift" && calculatorState.shifted);
+    button.classList.toggle("alpha-active", button.dataset.calculatorKey === "alpha" && calculatorState.alpha);
+  });
+}
+
+function isCalculatorViewActive() {
+  return document.querySelector("[data-view-panel='calculator']")?.classList.contains("active");
+}
+
+function handleCalculatorKeyboard(event) {
+  if (!isCalculatorViewActive()) return false;
+
+  const keyMap = {
+    Enter: "equals",
+    "=": "equals",
+    Backspace: "clear-entry",
+    Delete: "all-clear",
+    Escape: "all-clear",
+    "+": "plus",
+    "-": "minus",
+    "*": "multiply",
+    "/": "divide",
+    "(": "left-paren",
+    ")": "right-paren",
+    ".": "decimal",
+    "^": "power",
+    "%": "percent",
+    "!": "factorial",
+    p: "pi",
+    e: "e",
+  };
+
+  const mappedKey = /^\d$/.test(event.key) ? event.key : keyMap[event.key];
+  if (!mappedKey) return false;
+  event.preventDefault();
+  handleCalculatorKey(mappedKey);
+  return true;
+}
+
 function showView(viewName) {
   navItems.forEach((item) => {
     item.classList.toggle("active", item.dataset.view === viewName);
@@ -5281,6 +5728,10 @@ function showView(viewName) {
 
   if (viewName === "report") {
     renderReportModule();
+  }
+
+  if (viewName === "calculator") {
+    renderCalculator();
   }
 }
 
@@ -5792,6 +6243,7 @@ function resolveVoiceView(normalizedText) {
     { view: "reader", patterns: ["资料阅读", "阅读区", "资料区", "文档区"] },
     { view: "rag", patterns: ["知识库", "问答", "rag"] },
     { view: "coding", patterns: ["coding", "代码", "编程"] },
+    { view: "calculator", patterns: ["科学计算器", "计算器", "卡西欧", "函数计算"] },
     { view: "planner", patterns: ["todo", "待办", "计划", "日程"] },
     { view: "map", patterns: ["知识图谱", "图谱", "知识图"] },
     { view: "quiz", patterns: ["测验", "测试", "刷题", "题目"] },
@@ -10707,6 +11159,9 @@ document.addEventListener("keydown", (event) => {
     searchGraphNode();
     return;
   }
+  if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey && handleCalculatorKeyboard(event)) {
+    return;
+  }
   if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "x") {
     toggleVisionLandmarks();
     return;
@@ -10787,6 +11242,7 @@ document.addEventListener("click", (event) => {
   const plannerEventDeleteButton = event.target.closest("[data-planner-event-delete]");
   const ragActionButton = event.target.closest("[data-rag-action]");
   const codingActionButton = event.target.closest("[data-coding-action]");
+  const calculatorButton = event.target.closest("[data-calculator-key]");
   const longlongToggleButton = event.target.closest("[data-longlong-toggle]");
   const longlongActionButton = event.target.closest("[data-longlong-action]");
   const longlongGiftButton = event.target.closest("[data-longlong-gift]");
@@ -10803,6 +11259,11 @@ document.addEventListener("click", (event) => {
   const graphZoomButton = event.target.closest("[data-graph-zoom]");
   const mistakeReviewButton = event.target.closest("[data-mistake-review]");
   const actionButton = event.target.closest("button");
+
+  if (calculatorButton) {
+    handleCalculatorKey(calculatorButton.dataset.calculatorKey);
+    return;
+  }
 
   if (voiceControlToggleButton) {
     if (voiceCommandState.open || voiceCommandState.listening) {
@@ -11093,6 +11554,7 @@ window.addEventListener("DOMContentLoaded", () => {
   applyAppZoom();
   initStudyTimer();
   initLonglongBond();
+  initLonglongChatState();
   initLonglongActionHover();
   applyLonglongPosition();
   renderAllCourseViews();

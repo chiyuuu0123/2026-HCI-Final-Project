@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld("mindStudy", {
   getCompanionBounds: () => ipcRenderer.invoke("companion:get-bounds"),
   moveCompanionTo: (bounds) => ipcRenderer.send("companion:move-to", bounds),
   askLonglongCompanion: (request) => ipcRenderer.invoke("companion:ask-longlong", request),
+  getLonglongChatState: () => ipcRenderer.invoke("longlong-chat:get"),
+  clearLonglongChat: () => ipcRenderer.invoke("longlong-chat:clear"),
+  addLonglongMemory: (text) => ipcRenderer.invoke("longlong-memory:add", text),
+  deleteLonglongMemory: (memoryId) => ipcRenderer.invoke("longlong-memory:delete", memoryId),
   getLonglongBond: () => ipcRenderer.invoke("longlong-bond:get"),
   addLonglongAffection: (request) => ipcRenderer.invoke("longlong-bond:add-affection", request),
   claimLonglongStudyCoins: (request) => ipcRenderer.invoke("longlong-bond:claim-study-coins", request),
@@ -39,6 +43,11 @@ contextBridge.exposeInMainWorld("mindStudy", {
     const listener = (event, snapshot) => callback(snapshot);
     ipcRenderer.on("longlong-bond:update", listener);
     return () => ipcRenderer.removeListener("longlong-bond:update", listener);
+  },
+  onLonglongChatUpdate: (callback) => {
+    const listener = (event, snapshot) => callback(snapshot);
+    ipcRenderer.on("longlong-chat:update", listener);
+    return () => ipcRenderer.removeListener("longlong-chat:update", listener);
   },
   getZoomFactor: () => webFrame.getZoomFactor(),
   setZoomFactor: (factor) => {
