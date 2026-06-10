@@ -366,6 +366,12 @@ h3 {
   color: #fff;
 }
 
+.primary-action.is-stop {
+  border-color: #b42318;
+  background: #b42318;
+  color: #fff;
+}
+
 .ghost-action {
   background: transparent;
 }
