@@ -20,6 +20,41 @@ function asText(value, fallback = "") {
   return String(value == null ? fallback : value).trim();
 }
 
+const NOISE_CONCEPT_PATTERN = /(ISBN|CIP|copyright|all rights reserved|edition|出版社|出版|印刷|责任编辑|责任编|版权所有|盗版|防伪|校区|大学|学院|图书在版|编目|定价|开本|印张|字数|书名|作者|译者|封面|封底|library of congress|pearson|mcgraw|press|\.pdf$)/i;
+const CONCEPT_SIGNAL_PATTERN = /(是|指|表示|定义|概念|包括|分为|组成|用于|作用|特点|模型|算法|方法|系统|结构|过程|关系|约束|查询|事务|索引|范式|模式|实体|属性|完整性|并发|恢复|SQL|ER|database|relation|transaction|query|index|schema)/i;
+
+function isLikelyConceptLabel(label = "", context = "") {
+  const normalized = asText(label);
+  if (!normalized || normalized.length < 2 || normalized.length > 32) return false;
+  if (NOISE_CONCEPT_PATTERN.test(normalized)) return false;
+  if (/^[\d\s\-–—_.:：@〇○oO\[\]()/\\]+$/.test(normalized)) return false;
+  const digitRatio = (normalized.match(/\d/g) || []).length / Math.max(1, normalized.length);
+  if (digitRatio > 0.35) return false;
+  return CONCEPT_SIGNAL_PATTERN.test(`${normalized}\n${context}`) || /[\u4e00-\u9fa5]/.test(normalized) || /^[A-Z]{2,8}$/.test(normalized);
+}
+
+function isNoiseTextLine(line = "") {
+  const normalized = asText(line).replace(/\s+/g, " ");
+  if (!normalized) return true;
+  if (NOISE_CONCEPT_PATTERN.test(normalized)) return true;
+  if (/^\s*(第\s*)?\d+\s*(页|page)?\s*$/i.test(normalized)) return true;
+  if (/^[\d\s\-–—_.:：@〇○oO\[\]()/\\]+$/.test(normalized)) return true;
+  const digitRatio = (normalized.match(/\d/g) || []).length / Math.max(1, normalized.length);
+  return digitRatio > 0.55 && !CONCEPT_SIGNAL_PATTERN.test(normalized);
+}
+
+function cleanTextForPrompt(text = "") {
+  const kept = [];
+  String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .forEach((line) => {
+      if (!line || isNoiseTextLine(line)) return;
+      kept.push(line.replace(/\s{2,}/g, " "));
+    });
+  return kept.join("\n").slice(0, GRAPH_TEXT_LIMIT);
+}
+
 function scopedId(courseId, localId) {
   return `${courseId}::${localId}`;
 }
@@ -57,7 +92,7 @@ function normalizeDocuments(documents = []) {
     .map((documentMeta, index) => ({
       id: asText(documentMeta.id, `doc-${index + 1}`),
       title: asText(documentMeta.title || documentMeta.name, `Document ${index + 1}`),
-      text: asText(documentMeta.text || documentMeta.content, "").slice(0, GRAPH_TEXT_LIMIT),
+      text: cleanTextForPrompt(documentMeta.text || documentMeta.content),
       mimeType: asText(documentMeta.mimeType, "text/plain"),
       extension: asText(documentMeta.extension, "TXT"),
     }))
@@ -93,7 +128,7 @@ function normalizeGraphPayload(payload = {}, documents = [], engine = "qwen") {
       x: Number.isFinite(Number(node.x)) ? Number(node.x) : 130 + (index % 5) * 180,
       y: Number.isFinite(Number(node.y)) ? Number(node.y) : 110 + Math.floor(index / 5) * 150,
     };
-  });
+  }).filter((node) => isLikelyConceptLabel(node.label || node.id, `${node.summary}\n${(node.keywords || []).join(" ")}`));
   const nodeIds = new Set(nodes.map((node) => node.id));
   const edges = rawEdges
     .map((edge, index) => ({
@@ -125,16 +160,19 @@ function buildGraphPrompt(course, documents) {
     "你是 MindStudy 的课程知识图谱抽取器。",
     "请基于课程资料抽取真实可学习的概念节点和概念关系。",
     "必须返回严格 JSON，不要 Markdown，不要解释。",
+    "只抽取正文里的课程概念、原理、方法、模型、术语、流程和约束。",
+    "禁止把 PDF 文件名、书名、作者、学校、学院、出版社、版次、ISBN、CIP、版权声明、页码、目录项、封面/封底信息、人名、机构名当作知识点。",
     "JSON 结构如下：",
     "{",
     '  "graph": {',
     '    "nodes": [{"id":"知识点唯一中文名","label":"显示名","summary":"80字内解释","chapter":"章节","difficulty":"基础|中等|较难","source":"资料标题或页码","sourceSnippets":["原文片段"],"examples":["例子"],"keywords":["关键词"],"mastery":50}],',
     '    "edges": [{"source":"节点id","target":"节点id","relation":"前置|包含|应用|对比|评价|相关","weight":0.6}]',
     "  },",
-    '  "quiz": {"questions": [{"id":"q1","topic":"节点id","type":"choice|multi|judge|short|match","difficulty":"基础|中等|较难","prompt":"题干","options":["A","B"],"answer":0,"keywords":["关键词"],"sampleAnswer":"参考答案","explanation":"解析","source":"资料出处"}]},',
+    '  "quiz": {"questions": [{"id":"q1","topic":"节点id","type":"choice|multi|judge|short|match","difficulty":"基础|中等|较难","prompt":"题干","options":["A","B"],"answer":0,"keywords":["关键词"],"sampleAnswer":"参考答案","explanation":"解析","source":"资料出处","sourceSnippet":"原文证据片段"}]},',
     '  "recommendations": [{"topic":"节点id","title":"复习建议标题","detail":"具体建议"}]',
     "}",
-    "质量要求：8-16 个节点，边不少于 6 条，覆盖定义、方法、指标、应用场景；每个节点尽量带原文片段。",
+    "质量要求：8-16 个节点，边不少于 6 条，覆盖定义、方法、模型、约束、流程和应用场景；每个节点必须能在正文中找到证据。",
+    "题目要求：生成 8-12 道题；topic 必须等于某个 graph.nodes[].id；每道题必须直接来自资料正文并带 sourceSnippet。",
     `课程：${course.name}`,
     "",
     "课程资料：",

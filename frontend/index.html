@@ -46,6 +46,10 @@
             <i data-lucide="network"></i>
             <span>知识图谱</span>
           </button>
+          <button class="nav-item" data-view="mindmap">
+            <i data-lucide="git-fork"></i>
+            <span>思维导图</span>
+          </button>
           <button class="nav-item" data-view="quiz">
             <i data-lucide="clipboard-check"></i>
             <span>自动测验</span>
@@ -674,6 +678,75 @@
                 <i data-lucide="book-marked"></i>
                 <span>查看原文片段</span>
               </button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="mindmap">
+          <div class="mindmap-page">
+            <section class="panel mindmap-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="tag muted">Mind Map</span>
+                  <h3 id="mindmap-title">当前课程思维导图</h3>
+                </div>
+                <div class="graph-actions">
+                  <button class="ghost-action compact" data-mindmap-action="expand-all">
+                    <i data-lucide="square-plus"></i>
+                    <span>全部展开</span>
+                  </button>
+                  <button class="ghost-action compact" data-mindmap-action="collapse-all">
+                    <i data-lucide="square-minus"></i>
+                    <span>收起分支</span>
+                  </button>
+                  <button class="primary-action compact" data-mindmap-action="export">
+                    <i data-lucide="file-code-2"></i>
+                    <span>导出 Mindmap</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="mindmap-toolbar">
+                <select id="mindmap-group-select" aria-label="思维导图组织方式">
+                  <option value="classic">彩色分支</option>
+                  <option value="compact">紧凑层级</option>
+                </select>
+                <select id="mindmap-focus-select" aria-label="聚焦导图主题"></select>
+                <button class="ghost-action compact" data-mindmap-action="focus">
+                  <i data-lucide="locate-fixed"></i>
+                  <span>聚焦</span>
+                </button>
+                <button class="ghost-action compact" data-mindmap-action="reset-focus">
+                  <i data-lucide="rotate-cw"></i>
+                  <span>显示全部</span>
+                </button>
+              </div>
+
+              <div class="mindmap-stage" id="mindmap-stage">
+                <div class="mindmap-tree" id="mindmap-tree"></div>
+                <div class="graph-empty-state" id="mindmap-empty-state">
+                  <i data-lucide="git-fork"></i>
+                  <strong>还没有可用的思维导图</strong>
+                  <span>请先导入资料并生成学习内容，系统会独立整理为层级式思维导图。</span>
+                </div>
+              </div>
+            </section>
+
+            <aside class="panel mindmap-detail">
+              <span class="tag">导图节点</span>
+              <h3 id="mindmap-node-title">主题详情</h3>
+              <p id="mindmap-node-desc">点击导图节点查看该主题的复习提示。</p>
+              <div class="node-meta" id="mindmap-node-meta"></div>
+              <div class="mindmap-node-actions">
+                <button class="primary-action full" data-mindmap-action="export-current">
+                  <i data-lucide="file-code-2"></i>
+                  <span>导出导图文本</span>
+                </button>
+                <button class="ghost-action full" data-mindmap-action="practice">
+                  <i data-lucide="clipboard-list"></i>
+                  <span>练习该主题</span>
+                </button>
+              </div>
             </aside>
           </div>
         </section>
