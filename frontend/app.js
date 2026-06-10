@@ -316,6 +316,11 @@ const cameraState = {
 const gestureRuntimeConfig = {
   visionFrameIntervalMs: 180,
   showVisionLandmarks: false,
+  pointerScale: 1,
+  pointerXMin: 0,
+  pointerXMax: 1,
+  pointerYMin: 0,
+  pointerYMax: 1,
 };
 const pdfInkState = {
   enabled: false,
@@ -3964,6 +3969,12 @@ function readEnvNumber(env, key, fallback, min, max) {
   return Math.max(min, Math.min(max, Math.round(value)));
 }
 
+function readEnvFloat(env, key, fallback, min, max) {
+  const value = Number(env?.[key]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
 function readEnvBoolean(env, key, fallback) {
   const value = String(env?.[key] ?? "").trim().toLowerCase();
   if (!value) return fallback;
@@ -3972,11 +3983,29 @@ function readEnvBoolean(env, key, fallback) {
   return fallback;
 }
 
+function readPointerRange(env, minKey, maxKey, fallbackMin, fallbackMax) {
+  const minValue = readEnvFloat(env, minKey, fallbackMin, 0, 1);
+  const maxValue = readEnvFloat(env, maxKey, fallbackMax, 0, 1);
+  if (maxValue - minValue < 0.05) {
+    return [fallbackMin, fallbackMax];
+  }
+  return [minValue, maxValue];
+}
+
 async function loadGestureRuntimeConfig() {
   try {
     const env = await window.mindStudy?.getFrontendEnv?.();
     gestureRuntimeConfig.visionFrameIntervalMs = readEnvNumber(env, "VISION_FRAME_INTERVAL_MS", 180, 60, 2000);
     gestureRuntimeConfig.showVisionLandmarks = readEnvBoolean(env, "SHOW_VISION_LANDMARKS", false);
+    gestureRuntimeConfig.pointerScale = readEnvFloat(env, "GESTURE_POINTER_SCALE", 1, 0.2, 3);
+    [
+      gestureRuntimeConfig.pointerXMin,
+      gestureRuntimeConfig.pointerXMax,
+    ] = readPointerRange(env, "GESTURE_POINTER_X_MIN", "GESTURE_POINTER_X_MAX", 0, 1);
+    [
+      gestureRuntimeConfig.pointerYMin,
+      gestureRuntimeConfig.pointerYMax,
+    ] = readPointerRange(env, "GESTURE_POINTER_Y_MIN", "GESTURE_POINTER_Y_MAX", 0, 1);
     window.MindStudyVision?.configure?.({
       frameIntervalMs: gestureRuntimeConfig.visionFrameIntervalMs,
     });
@@ -3986,6 +4015,12 @@ async function loadGestureRuntimeConfig() {
 
   syncVisionLandmarkToggle();
   return { ...gestureRuntimeConfig };
+}
+
+function normalizeGesturePointerAxis(value, min, max) {
+  const numericValue = Number(value) || 0;
+  const range = Math.max(0.05, max - min);
+  return Math.max(0, Math.min(1, (numericValue - min) / range));
 }
 
 function syncVisionLandmarkToggle() {
@@ -4102,7 +4137,20 @@ function moveGestureMouseTo(x, y) {
 
 function moveGestureMouseFromPoint(point) {
   if (!point) return;
-  moveGestureMouseTo((1 - Number(point.x || 0)) * window.innerWidth, Number(point.y || 0) * window.innerHeight);
+  const normalizedX = normalizeGesturePointerAxis(
+    point.x,
+    gestureRuntimeConfig.pointerXMin,
+    gestureRuntimeConfig.pointerXMax,
+  );
+  const normalizedY = normalizeGesturePointerAxis(
+    point.y,
+    gestureRuntimeConfig.pointerYMin,
+    gestureRuntimeConfig.pointerYMax,
+  );
+  moveGestureMouseTo(
+    (1 - normalizedX) * window.innerWidth * gestureRuntimeConfig.pointerScale,
+    normalizedY * window.innerHeight * gestureRuntimeConfig.pointerScale,
+  );
 }
 
 function clickGestureMouseTarget() {

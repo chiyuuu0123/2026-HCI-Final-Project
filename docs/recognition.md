@@ -43,12 +43,22 @@ frontend/.env
 ```env
 VISION_FRAME_INTERVAL_MS=20
 SHOW_VISION_LANDMARKS=false
+GESTURE_POINTER_SCALE=1
+GESTURE_POINTER_X_MIN=0.5
+GESTURE_POINTER_X_MAX=1
+GESTURE_POINTER_Y_MIN=0.2
+GESTURE_POINTER_Y_MAX=0.8
 ```
 
 | 参数 | 默认值 | 应用限制范围 | 作用 |
 | --- | --- | --- | --- |
 | `VISION_FRAME_INTERVAL_MS` | `180` | `60` 到 `2000` 毫秒 | 摄像头采样和 MediaPipe 视频帧分析间隔。数值越小越灵敏，但 CPU 占用越高。 |
 | `SHOW_VISION_LANDMARKS` | `false` | `true` / `false` | 是否在摄像头预览中叠加显示检测到的手部和脸部关键点。 |
+| `GESTURE_POINTER_SCALE` | `1` | `0.2` 到 `3` | 虚拟指针映射缩放系数，对应 `screenX = (1 - point.x) * 窗口宽度 * k`，`screenY = point.y * 窗口高度 * k`。 |
+| `GESTURE_POINTER_X_MIN` | `0` | `0` 到 `1` | 摄像头横向映射区域左边界。 |
+| `GESTURE_POINTER_X_MAX` | `1` | `0` 到 `1` | 摄像头横向映射区域右边界。 |
+| `GESTURE_POINTER_Y_MIN` | `0` | `0` 到 `1` | 摄像头纵向映射区域上边界。 |
+| `GESTURE_POINTER_Y_MAX` | `1` | `0` 到 `1` | 摄像头纵向映射区域下边界。 |
 
 修改 `frontend/.env` 后，需要重启 Electron 应用才会生效。
 
