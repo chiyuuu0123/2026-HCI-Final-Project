@@ -7,8 +7,20 @@ const { QwenClient } = require("./qwenClient");
 const DEFAULT_NEO4J_URI = "bolt://localhost:7687";
 const DEFAULT_NEO4J_USERNAME = "neo4j";
 const DEFAULT_NEO4J_PASSWORD = "mindstudy-local-neo4j";
-const GRAPH_TEXT_LIMIT = 28000;
-const GRAPH_NODE_LIMIT = 18;
+const GRAPH_TEXT_LIMIT = 60000;
+const GRAPH_NODE_LIMIT = 64;
+const RELATION_TYPE_MAP = {
+  "前置": "PREREQUISITE_OF",
+  "包含": "PART_OF",
+  "应用": "APPLIES_TO",
+  "对比": "CONTRASTS_WITH",
+  "因果": "CAUSES",
+  "证据": "SUPPORTED_BY",
+  "示例": "EXAMPLE_OF",
+  "评价": "EVALUATES",
+  "相关": "RELATED_TO",
+};
+const RELATION_TYPES = Array.from(new Set(Object.values(RELATION_TYPE_MAP)));
 
 function asNumber(value, fallback = 0) {
   if (neo4j.isInt(value)) return value.toNumber();
@@ -18,6 +30,83 @@ function asNumber(value, fallback = 0) {
 
 function asText(value, fallback = "") {
   return String(value == null ? fallback : value).trim();
+}
+
+function sampleTextWithinLimit(text = "", limit = GRAPH_TEXT_LIMIT) {
+  const raw = String(text || "");
+  const maxLength = Math.max(0, Number(limit) || 0);
+  if (!maxLength || raw.length <= maxLength) return raw;
+  const partLength = Math.floor(maxLength / 3);
+  const middleStart = Math.max(0, Math.floor((raw.length - partLength) / 2));
+  return [
+    raw.slice(0, partLength),
+    raw.slice(middleStart, middleStart + partLength),
+    raw.slice(-partLength),
+  ].join("\n\n[...]\n\n").slice(0, maxLength);
+}
+
+function getRelationType(relation = "相关") {
+  const text = asText(relation, "相关");
+  return RELATION_TYPE_MAP[text] || RELATION_TYPE_MAP[Object.keys(RELATION_TYPE_MAP).find((key) => text.includes(key))] || "RELATED_TO";
+}
+
+const NOISE_CONCEPT_PATTERN = /(ISBN|CIP|copyright|all rights reserved|edition|出版社|出版|印刷|责任编辑|责任编|版权所有|盗版|防伪|校区|大学|学院|图书在版|编目|定价|开本|印张|字数|书名|作者|译者|封面|封底|library of congress|pearson|mcgraw|press|本书|本章|本节|本页|本版|英文版|中文版|网站|网址|第\s*\d+\s*版|第[一二三四五六七八九十]+版|pdf|\.pdf|http|www\.|目录|前言|致谢|参考文献|附录|练习题|习题|图\s*\d+|表\s*\d+|例\s*\d+|教材|课件|文档|新课程|知识文档)/i;
+const CONCEPT_SIGNAL_PATTERN = /(是|指|表示|定义|概念|包括|分为|组成|用于|作用|特点|模型|算法|方法|系统|结构|过程|关系|约束|查询|事务|索引|范式|模式|实体|属性|完整性|并发|恢复|SQL|ER|database|relation|transaction|query|index|schema)/i;
+const FRAGMENT_CONCEPT_PATTERN = /^(的|了|和|或|与|及|以及|并|对|由|在|从|给|为|把|将|其|这|该|这些|那些|一个|一种|本|第)|(\b(the|and|or|with|this|that|these|those)\b)$/i;
+const SENTENCE_CONCEPT_PATTERN = /(为什么|怎么样|如何|说明|建议|给予|提出|讨论|研究领域|工作|内容|方面|来说|结论|要求|如下|如下所示|可以看到|本书中)/;
+const GENERIC_NOISE_LABELS = new Set(["本书", "本章", "本节", "本书中", "方面", "方面由", "其内容", "内容", "工作", "结论", "要求", "目前", "研究领域", "网址"]);
+
+function isLikelyConceptLabel(label = "", context = "") {
+  const normalized = asText(label);
+  if (!normalized || normalized.length < 2 || normalized.length > 32) return false;
+  if (GENERIC_NOISE_LABELS.has(normalized)) return false;
+  if (NOISE_CONCEPT_PATTERN.test(normalized)) return false;
+  if (FRAGMENT_CONCEPT_PATTERN.test(normalized)) return false;
+  if (SENTENCE_CONCEPT_PATTERN.test(normalized) && normalized.length > 6) return false;
+  if (/[。！？；;]$/.test(normalized)) return false;
+  if (/^[\d\s\-–—_.:：@〇○oO\[\]()/\\]+$/.test(normalized)) return false;
+  const digitRatio = (normalized.match(/\d/g) || []).length / Math.max(1, normalized.length);
+  if (digitRatio > 0.35) return false;
+  return CONCEPT_SIGNAL_PATTERN.test(`${normalized}\n${context}`) || /[\u4e00-\u9fa5]/.test(normalized) || /^[A-Z]{2,8}$/.test(normalized);
+}
+
+function normalizeComparableText(value = "") {
+  return String(value || "").toLowerCase().replace(/[^\u4e00-\u9fa5a-z0-9]+/g, "");
+}
+
+function isConceptSupportedByDocuments(node, documents = []) {
+  if (!documents.length) return true;
+  const label = asText(node.label || node.id);
+  if (!isLikelyConceptLabel(label, `${node.summary || ""}\n${(node.keywords || []).join(" ")}`)) return false;
+  const snippets = (node.sourceSnippets || []).join("\n");
+  if (snippets && !NOISE_CONCEPT_PATTERN.test(snippets)) return true;
+  const comparableLabel = normalizeComparableText(label);
+  if (!comparableLabel) return false;
+  const docs = normalizeComparableText(documents.map((documentMeta) => documentMeta.text || "").join("\n"));
+  const evidence = normalizeComparableText(`${snippets}\n${node.summary || ""}\n${(node.keywords || []).join(" ")}`);
+  return docs.includes(comparableLabel) || (evidence.includes(comparableLabel) && !NOISE_CONCEPT_PATTERN.test(evidence));
+}
+
+function isNoiseTextLine(line = "") {
+  const normalized = asText(line).replace(/\s+/g, " ");
+  if (!normalized) return true;
+  if (NOISE_CONCEPT_PATTERN.test(normalized)) return true;
+  if (/^\s*(第\s*)?\d+\s*(页|page)?\s*$/i.test(normalized)) return true;
+  if (/^[\d\s\-–—_.:：@〇○oO\[\]()/\\]+$/.test(normalized)) return true;
+  const digitRatio = (normalized.match(/\d/g) || []).length / Math.max(1, normalized.length);
+  return digitRatio > 0.55 && !CONCEPT_SIGNAL_PATTERN.test(normalized);
+}
+
+function cleanTextForPrompt(text = "") {
+  const kept = [];
+  String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .forEach((line) => {
+      if (!line || isNoiseTextLine(line)) return;
+      kept.push(line.replace(/\s{2,}/g, " "));
+    });
+  return sampleTextWithinLimit(kept.join("\n"), GRAPH_TEXT_LIMIT);
 }
 
 function scopedId(courseId, localId) {
@@ -57,7 +146,7 @@ function normalizeDocuments(documents = []) {
     .map((documentMeta, index) => ({
       id: asText(documentMeta.id, `doc-${index + 1}`),
       title: asText(documentMeta.title || documentMeta.name, `Document ${index + 1}`),
-      text: asText(documentMeta.text || documentMeta.content, "").slice(0, GRAPH_TEXT_LIMIT),
+      text: cleanTextForPrompt(documentMeta.text || documentMeta.content),
       mimeType: asText(documentMeta.mimeType, "text/plain"),
       extension: asText(documentMeta.extension, "TXT"),
     }))
@@ -93,14 +182,29 @@ function normalizeGraphPayload(payload = {}, documents = [], engine = "qwen") {
       x: Number.isFinite(Number(node.x)) ? Number(node.x) : 130 + (index % 5) * 180,
       y: Number.isFinite(Number(node.y)) ? Number(node.y) : 110 + Math.floor(index / 5) * 150,
     };
-  });
+  }).filter((node) =>
+    isLikelyConceptLabel(node.label || node.id, `${node.summary}\n${(node.keywords || []).join(" ")}`)
+    && isConceptSupportedByDocuments(node, documents));
   const nodeIds = new Set(nodes.map((node) => node.id));
+  const resolveEndpoint = (value) => {
+    const raw = asText(value);
+    if (nodeIds.has(raw)) return raw;
+    const comparable = raw.toLowerCase().replace(/[^\u4e00-\u9fa5a-z0-9]+/g, "");
+    const matched = nodes.find((node) => {
+      const id = node.id.toLowerCase().replace(/[^\u4e00-\u9fa5a-z0-9]+/g, "");
+      const label = node.label.toLowerCase().replace(/[^\u4e00-\u9fa5a-z0-9]+/g, "");
+      return id === comparable || label === comparable;
+    });
+    return matched?.id || raw;
+  };
   const edges = rawEdges
     .map((edge, index) => ({
       id: asText(edge.id, `edge-${index + 1}`),
-      source: asText(edge.source || edge.from || edge.sourceId || edge.start),
-      target: asText(edge.target || edge.to || edge.targetId || edge.end),
+      source: resolveEndpoint(edge.source || edge.from || edge.sourceId || edge.start),
+      target: resolveEndpoint(edge.target || edge.to || edge.targetId || edge.end),
       relation: asText(edge.relation || edge.label || edge.type, "相关"),
+      relationType: getRelationType(edge.relation || edge.label || edge.type),
+      explanation: asText(edge.explanation || edge.reason, ""),
       weight: Math.min(1, Math.max(0.1, asNumber(edge.weight, 0.6))),
     }))
     .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target) && edge.source !== edge.target);
@@ -125,16 +229,21 @@ function buildGraphPrompt(course, documents) {
     "你是 MindStudy 的课程知识图谱抽取器。",
     "请基于课程资料抽取真实可学习的概念节点和概念关系。",
     "必须返回严格 JSON，不要 Markdown，不要解释。",
+    "只抽取正文里的课程概念、原理、方法、模型、术语、流程和约束。",
+    "禁止把 PDF 文件名、书名、作者、学校、学院、出版社、版次、ISBN、CIP、版权声明、页码、目录项、封面/封底信息、人名、机构名、本书说明、网址、参考文献、习题说明当作知识点。",
+    "负例：不要输出“本书”“本书中”“本书英文版网站的网址”“第7版是”“方面由”“目前的研究领域”“表和例子来说明为什么结论”“的工作提出建议或给予了”这类节点。",
+    "节点必须是可考试、可复习的短概念或短主题，例如“事务”“并发控制”“关系模型”“SQL”“完整性约束”。",
     "JSON 结构如下：",
     "{",
     '  "graph": {',
     '    "nodes": [{"id":"知识点唯一中文名","label":"显示名","summary":"80字内解释","chapter":"章节","difficulty":"基础|中等|较难","source":"资料标题或页码","sourceSnippets":["原文片段"],"examples":["例子"],"keywords":["关键词"],"mastery":50}],',
-    '    "edges": [{"source":"节点id","target":"节点id","relation":"前置|包含|应用|对比|评价|相关","weight":0.6}]',
+    '    "edges": [{"source":"节点id","target":"节点id","relation":"前置|包含|应用|对比|因果|证据|示例|评价|相关","weight":0.6,"explanation":"为什么成立"}]',
     "  },",
-    '  "quiz": {"questions": [{"id":"q1","topic":"节点id","type":"choice|multi|judge|short|match","difficulty":"基础|中等|较难","prompt":"题干","options":["A","B"],"answer":0,"keywords":["关键词"],"sampleAnswer":"参考答案","explanation":"解析","source":"资料出处"}]},',
+    '  "quiz": {"questions": [{"id":"q1","topic":"节点id","type":"choice|multi|judge|short|match","difficulty":"基础|中等|较难","prompt":"题干","options":["A","B"],"answer":0,"keywords":["关键词"],"sampleAnswer":"参考答案","explanation":"解析","source":"资料出处","sourceSnippet":"原文证据片段"}]},',
     '  "recommendations": [{"topic":"节点id","title":"复习建议标题","detail":"具体建议"}]',
     "}",
-    "质量要求：8-16 个节点，边不少于 6 条，覆盖定义、方法、指标、应用场景；每个节点尽量带原文片段。",
+    "质量要求：优先生成 24-64 个节点，边数不少于节点数的 1.2 倍；覆盖章节层级、核心概念、方法/模型、约束、流程、应用和对比关系；每个核心节点必须能在正文中找到证据。",
+    "题目要求：生成 12-20 道题；topic 必须等于某个 graph.nodes[].id；每道题必须直接来自资料正文并带 sourceSnippet；解析要说明正确依据和错选项为什么不合适。",
     `课程：${course.name}`,
     "",
     "课程资料：",
@@ -167,6 +276,8 @@ function edgeToGraphEdge(recordRelation) {
     source: asText(properties.sourceLocalId),
     target: asText(properties.targetLocalId),
     relation: asText(properties.relation, "相关"),
+    relationType: recordRelation.type || getRelationType(properties.relation),
+    explanation: asText(properties.explanation, ""),
     weight: asNumber(properties.weight, 0.6),
   };
 }
@@ -406,28 +517,37 @@ class KnowledgeGraphService {
       }
 
       if (graph.edges.length) {
-        await session.run(
-          `
-          UNWIND $edges AS edge
-          MATCH (source:Concept {id: edge.sourceScopedId})
-          MATCH (target:Concept {id: edge.targetScopedId})
-          MERGE (source)-[rel:RELATED_TO {localId: edge.id}]->(target)
-          SET rel.courseId = $courseId,
-              rel.sourceLocalId = edge.source,
-              rel.targetLocalId = edge.target,
-              rel.relation = edge.relation,
-              rel.weight = edge.weight,
-              rel.updatedAt = timestamp()
-          `,
-          {
-            courseId: course.id,
-            edges: graph.edges.map((edge) => ({
-              ...edge,
-              sourceScopedId: scopedId(course.id, edge.source),
-              targetScopedId: scopedId(course.id, edge.target),
-            })),
-          },
-        );
+        const groupedEdges = new Map();
+        graph.edges.forEach((edge) => {
+          const relationType = RELATION_TYPES.includes(edge.relationType) ? edge.relationType : getRelationType(edge.relation);
+          const list = groupedEdges.get(relationType) || [];
+          list.push({
+            ...edge,
+            relationType,
+            sourceScopedId: scopedId(course.id, edge.source),
+            targetScopedId: scopedId(course.id, edge.target),
+          });
+          groupedEdges.set(relationType, list);
+        });
+        for (const [relationType, edges] of groupedEdges.entries()) {
+          await session.run(
+            `
+            UNWIND $edges AS edge
+            MATCH (source:Concept {id: edge.sourceScopedId})
+            MATCH (target:Concept {id: edge.targetScopedId})
+            MERGE (source)-[rel:${relationType} {localId: edge.id}]->(target)
+            SET rel.courseId = $courseId,
+                rel.sourceLocalId = edge.source,
+                rel.targetLocalId = edge.target,
+                rel.relation = edge.relation,
+                rel.relationType = edge.relationType,
+                rel.explanation = edge.explanation,
+                rel.weight = edge.weight,
+                rel.updatedAt = timestamp()
+            `,
+            { courseId: course.id, edges },
+          );
+        }
       }
     });
 
@@ -445,7 +565,8 @@ class KnowledgeGraphService {
       session.run(
         `
         MATCH (:Course {id: $courseId})-[:HAS_CONCEPT]->(node:Concept)
-        OPTIONAL MATCH (node)-[rel:RELATED_TO]->(target:Concept {courseId: $courseId})
+        OPTIONAL MATCH (node)-[rel]->(target:Concept {courseId: $courseId})
+        WHERE rel IS NULL OR rel.courseId = $courseId
         RETURN collect(DISTINCT node) AS nodes, collect(DISTINCT rel) AS edges
         `,
         { courseId },
@@ -476,7 +597,8 @@ class KnowledgeGraphService {
       session.run(
         `
         MATCH (center:Concept {id: $scopedNodeId})
-        OPTIONAL MATCH (center)-[rel:RELATED_TO]-(neighbor:Concept {courseId: $courseId})
+        OPTIONAL MATCH (center)-[rel]-(neighbor:Concept {courseId: $courseId})
+        WHERE rel IS NULL OR rel.courseId = $courseId
         RETURN collect(DISTINCT center) + collect(DISTINCT neighbor)[0..$limit] AS nodes,
                collect(DISTINCT rel) AS edges
         `,
@@ -522,7 +644,7 @@ class KnowledgeGraphService {
       session.run(
         `
         MATCH (source:Concept {id: $sourceScopedId}), (target:Concept {id: $targetScopedId})
-        MATCH path = shortestPath((source)-[:RELATED_TO*..4]-(target))
+        MATCH path = shortestPath((source)-[:PREREQUISITE_OF|PART_OF|APPLIES_TO|CONTRASTS_WITH|CAUSES|SUPPORTED_BY|EXAMPLE_OF|EVALUATES|RELATED_TO*..4]-(target))
         RETURN nodes(path) AS nodes, relationships(path) AS edges
         LIMIT 1
         `,

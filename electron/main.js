@@ -118,6 +118,7 @@ let companionWindow = null;
 let companionSnapshot = null;
 let companionShouldShow = false;
 let companionMode = "pet";
+const ragAbortControllers = new Map();
 let lastMainWindowBounds = null;
 let companionCustomBounds = null;
 let companionLastMotionBounds = null;
@@ -1572,25 +1573,25 @@ function getAudioTranscriptionOptions(payload) {
   };
 }
 
+function addWebSearchResult(results, maxResults, title, snippet, url) {
+  const nextSnippet = String(snippet || "").trim();
+  const nextTitle = String(title || "").trim() || nextSnippet.slice(0, 80);
+  const nextUrl = String(url || "").trim();
+
+  if (!nextSnippet || results.length >= maxResults) return;
+  if (results.some((result) => result.snippet === nextSnippet || (nextUrl && result.url === nextUrl))) return;
+
+  results.push({
+    title: nextTitle,
+    snippet: nextSnippet,
+    url: nextUrl,
+  });
+}
+
 function collectWebSearchResults(data, maxResults) {
   const results = [];
 
-  function addResult(title, snippet, url) {
-    const nextSnippet = String(snippet || "").trim();
-    const nextTitle = String(title || "").trim() || nextSnippet.slice(0, 80);
-    const nextUrl = String(url || "").trim();
-
-    if (!nextSnippet || results.length >= maxResults) return;
-    if (results.some((result) => result.snippet === nextSnippet || (nextUrl && result.url === nextUrl))) return;
-
-    results.push({
-      title: nextTitle,
-      snippet: nextSnippet,
-      url: nextUrl,
-    });
-  }
-
-  addResult(data?.Heading, data?.AbstractText, data?.AbstractURL);
+  addWebSearchResult(results, maxResults, data?.Heading, data?.AbstractText, data?.AbstractURL);
 
   function visitTopics(topics) {
     for (const topic of topics || []) {
@@ -1601,7 +1602,7 @@ function collectWebSearchResults(data, maxResults) {
         continue;
       }
 
-      addResult(topic.Text, topic.Text, topic.FirstURL);
+      addWebSearchResult(results, maxResults, topic.Text, topic.Text, topic.FirstURL);
     }
   }
 
@@ -1609,21 +1610,91 @@ function collectWebSearchResults(data, maxResults) {
   return results;
 }
 
-async function searchWebKnowledge(request = {}) {
-  const query = String(request.query || "").trim();
+function decodeHtmlEntities(value = "") {
+  const namedEntities = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+    nbsp: " ",
+    ensp: " ",
+    emsp: " ",
+    middot: "·",
+  };
 
-  if (!query) {
-    throw new Error("Web search requires a non-empty query.");
-  }
+  return String(value).replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (entity, code) => {
+    const normalized = code.toLowerCase();
 
-  if (typeof fetch !== "function") {
-    throw new Error("Global fetch is not available for web search.");
-  }
+    if (normalized.startsWith("#x")) {
+      const point = Number.parseInt(normalized.slice(2), 16);
+      return Number.isFinite(point) ? String.fromCodePoint(point) : entity;
+    }
 
-  const maxResults = Math.min(8, Math.max(1, Number(request.maxResults) || 5));
-  const timeoutMs = Math.min(15000, Math.max(1500, Number(request.timeoutMs) || 8000));
+    if (normalized.startsWith("#")) {
+      const point = Number.parseInt(normalized.slice(1), 10);
+      return Number.isFinite(point) ? String.fromCodePoint(point) : entity;
+    }
+
+    return Object.prototype.hasOwnProperty.call(namedEntities, normalized) ? namedEntities[normalized] : entity;
+  });
+}
+
+function stripSearchHtml(value = "") {
+  return decodeHtmlEntities(
+    String(value)
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+function createAbortableTimeout(timeoutMs, parentSignal) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let cleanupParent = null;
+
+  if (parentSignal) {
+    if (parentSignal.aborted) {
+      controller.abort();
+    } else {
+      const abortFromParent = () => controller.abort();
+      parentSignal.addEventListener("abort", abortFromParent, { once: true });
+      cleanupParent = () => parentSignal.removeEventListener("abort", abortFromParent);
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timeout);
+      cleanupParent?.();
+    },
+  };
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) {
+    const error = new Error("RAG request was canceled.");
+    error.name = "AbortError";
+    throw error;
+  }
+}
+
+function getSearchErrorMessage(error) {
+  const message = error?.message || String(error || "unknown error");
+
+  if (error?.name === "AbortError" || message.includes("aborted")) {
+    return "request timed out or was aborted";
+  }
+
+  return message;
+}
+
+async function searchDuckDuckGoKnowledge(query, maxResults, timeoutMs, signal) {
+  const abortable = createAbortableTimeout(timeoutMs, signal);
   const params = new URLSearchParams({
     q: query,
     format: "json",
@@ -1633,7 +1704,7 @@ async function searchWebKnowledge(request = {}) {
 
   try {
     const response = await fetch(`https://api.duckduckgo.com/?${params.toString()}`, {
-      signal: controller.signal,
+      signal: abortable.signal,
       headers: {
         Accept: "application/json",
       },
@@ -1650,8 +1721,100 @@ async function searchWebKnowledge(request = {}) {
       results: collectWebSearchResults(data, maxResults),
     };
   } finally {
-    clearTimeout(timeout);
+    abortable.cleanup();
   }
+}
+
+function collectBingSearchResults(html, maxResults) {
+  const results = [];
+  const blocks = String(html || "").match(/<li class="b_algo"[\s\S]*?(?=<li class="b_algo"|<li class="b_ans"|<\/ol>)/g) || [];
+
+  for (const block of blocks) {
+    if (results.length >= maxResults) break;
+
+    const heading = block.match(/<h2[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/h2>/i);
+    const paragraph = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+    const title = stripSearchHtml(heading?.[2] || "");
+    const snippet = stripSearchHtml(paragraph?.[1] || title);
+    const url = decodeHtmlEntities(heading?.[1] || "");
+
+    addWebSearchResult(results, maxResults, title, snippet, url);
+  }
+
+  return results;
+}
+
+async function searchBingKnowledge(query, maxResults, timeoutMs, signal) {
+  const abortable = createAbortableTimeout(timeoutMs, signal);
+  const params = new URLSearchParams({
+    q: query,
+    count: String(Math.max(maxResults, 5)),
+  });
+
+  try {
+    const response = await fetch(`https://www.bing.com/search?${params.toString()}`, {
+      signal: abortable.signal,
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "Mozilla/5.0 MindStudy/0.1",
+      },
+    });
+    const html = await response.text();
+
+    if (!response.ok) {
+      throw new Error(`Bing search failed with status ${response.status}.`);
+    }
+
+    return {
+      query,
+      provider: "bing-web",
+      results: collectBingSearchResults(html, maxResults),
+    };
+  } finally {
+    abortable.cleanup();
+  }
+}
+
+async function searchWebKnowledge(request = {}) {
+  const query = String(request.query || "").trim();
+
+  if (!query) {
+    throw new Error("Web search requires a non-empty query.");
+  }
+
+  if (typeof fetch !== "function") {
+    throw new Error("Global fetch is not available for web search.");
+  }
+
+  const maxResults = Math.min(8, Math.max(1, Number(request.maxResults) || 5));
+  const timeoutMs = Math.min(15000, Math.max(1500, Number(request.timeoutMs) || 5000));
+  const errors = [];
+  const providers = [
+    () => searchDuckDuckGoKnowledge(query, maxResults, timeoutMs, request.signal),
+    () => searchBingKnowledge(query, maxResults, timeoutMs, request.signal),
+  ];
+
+  for (const searchProvider of providers) {
+    throwIfAborted(request.signal);
+
+    try {
+      const webSearch = await searchProvider();
+      if (webSearch.results.length) {
+        return errors.length ? { ...webSearch, fallbackErrors: errors } : webSearch;
+      }
+      errors.push(`${webSearch.provider}: no results`);
+    } catch (error) {
+      throwIfAborted(request.signal);
+      errors.push(getSearchErrorMessage(error));
+    }
+  }
+
+  return {
+    query,
+    provider: "duckduckgo-instant-answer+bing-web",
+    error: errors.join("; "),
+    results: [],
+  };
 }
 
 function buildWebSearchDocuments(webSearch) {
@@ -1669,6 +1832,7 @@ async function answerRagLibrary(request = {}) {
   const question = String(request.question || "").trim();
   const documents = Array.isArray(request.documents) ? request.documents : [];
   const options = request && typeof request.options === "object" ? request.options : {};
+  const signal = options.signal || request.signal;
 
   if (!question) {
     throw new Error("RAG library question cannot be empty.");
@@ -1680,16 +1844,20 @@ async function answerRagLibrary(request = {}) {
       webSearch = await searchWebKnowledge({
         query: question,
         maxResults: options.webResults || 4,
+        signal,
       });
     } catch (error) {
+      throwIfAborted(signal);
       webSearch = {
         query: question,
-        provider: "duckduckgo-instant-answer",
+        provider: "duckduckgo-instant-answer+bing-web",
         error: error.message || String(error),
         results: [],
       };
     }
   }
+
+  throwIfAborted(signal);
 
   const allDocuments = [
     ...documents.map((documentMeta, index) => ({
@@ -1721,6 +1889,7 @@ async function answerRagLibrary(request = {}) {
       maxContextChars: options.maxContextChars,
       maxTokens: options.maxTokens || 1100,
       temperature: options.temperature ?? 0.2,
+      signal,
     },
   });
 
@@ -2304,24 +2473,46 @@ ipcMain.handle("b:ai:transcribe-audio", async (event, payload) => {
   return createCurrentQwenClient().transcribeAudio(options);
 });
 
-ipcMain.handle("b:rag:ask-library", async (event, request) => {
-  const question = String(request?.question || "").trim();
-  const documents = Array.isArray(request?.documents) ? request.documents : [];
-  return answerRagLibrary(request);
-  const textChunks = documents.filter((documentMeta) => String(documentMeta.text || "").trim()).length;
+ipcMain.handle("b:rag:ask-library", async (event, request = {}) => {
+  const requestId = String(request?.requestId || "").trim();
+  const controller = requestId ? new AbortController() : null;
 
-  return {
-    mode: "placeholder",
-    answer:
-      `龙龙已收到你的问题：${question || "未输入问题"}\n\n` +
-      `RAG 向量库接口已预留。本次请求传入 ${documents.length} 份资料，其中 ${textChunks} 份已有可检索文本。` +
-      "后续接入向量化和召回逻辑后，龙龙会优先用当前课程资料库回答。",
-    sources: documents.slice(0, 4).map((documentMeta) => ({
-      id: documentMeta.id,
-      name: documentMeta.name,
-      extension: documentMeta.extension,
-    })),
-  };
+  if (requestId) {
+    ragAbortControllers.get(requestId)?.abort();
+    ragAbortControllers.set(requestId, controller);
+  }
+
+  try {
+    return await answerRagLibrary({
+      ...request,
+      signal: controller?.signal,
+      options: {
+        ...(request?.options || {}),
+        signal: controller?.signal,
+      },
+    });
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      throw new Error("RAG request was canceled.");
+    }
+    throw error;
+  } finally {
+    if (requestId && ragAbortControllers.get(requestId) === controller) {
+      ragAbortControllers.delete(requestId);
+    }
+  }
+});
+
+ipcMain.handle("b:rag:cancel-ask", async (event, requestId) => {
+  const id = String(requestId || "").trim();
+  const controller = id ? ragAbortControllers.get(id) : null;
+
+  if (!controller) {
+    return { canceled: false };
+  }
+
+  controller.abort();
+  return { canceled: true };
 });
 
 ipcMain.handle("graph:get-status", async () => {
