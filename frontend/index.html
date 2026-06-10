@@ -691,6 +691,10 @@
                   <h3 id="mindmap-title">当前课程思维导图</h3>
                 </div>
                 <div class="graph-actions">
+                  <button class="ghost-action compact" data-mindmap-action="regenerate">
+                    <i data-lucide="refresh-cw"></i>
+                    <span>重新生成</span>
+                  </button>
                   <button class="ghost-action compact" data-mindmap-action="expand-all">
                     <i data-lucide="square-plus"></i>
                     <span>全部展开</span>
@@ -720,6 +724,11 @@
                   <i data-lucide="rotate-cw"></i>
                   <span>显示全部</span>
                 </button>
+                <div class="mindmap-zoom-tools" aria-label="思维导图缩放">
+                  <button class="icon-button" data-mindmap-zoom="-0.1" title="缩小"><i data-lucide="zoom-out"></i></button>
+                  <button class="icon-button" data-mindmap-zoom="0.1" title="放大"><i data-lucide="zoom-in"></i></button>
+                  <button class="mini-button" data-mindmap-zoom="reset">100%</button>
+                </div>
               </div>
 
               <div class="mindmap-stage" id="mindmap-stage">
@@ -738,6 +747,18 @@
               <p id="mindmap-node-desc">点击导图节点查看该主题的复习提示。</p>
               <div class="node-meta" id="mindmap-node-meta"></div>
               <div class="mindmap-node-actions">
+                <button class="primary-action full" data-mindmap-action="add-child">
+                  <i data-lucide="plus"></i>
+                  <span>添加子主题</span>
+                </button>
+                <button class="ghost-action full" data-mindmap-action="edit-node">
+                  <i data-lucide="pencil"></i>
+                  <span>编辑选中节点</span>
+                </button>
+                <button class="ghost-action full" data-mindmap-action="delete-node">
+                  <i data-lucide="trash-2"></i>
+                  <span>删除选中节点</span>
+                </button>
                 <button class="primary-action full" data-mindmap-action="export-current">
                   <i data-lucide="file-code-2"></i>
                   <span>导出导图文本</span>

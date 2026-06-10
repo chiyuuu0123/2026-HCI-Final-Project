@@ -216,13 +216,19 @@ const quizBank = [
 const STUDY_MODULE_VERSION = 2;
 const GRAPH_QUALITY_MIN_NODES = 8;
 const GRAPH_QUALITY_MIN_EDGES = 5;
-const GRAPH_TEXT_LIMIT = 28000;
-const GRAPH_NODE_LIMIT = 18;
+const GRAPH_TEXT_LIMIT = 60000;
+const GRAPH_NODE_LIMIT = 64;
+const GRAPH_MINDMAP_BRANCH_LIMIT = 10;
+const GRAPH_MINDMAP_CHILD_LIMIT = 8;
 const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
 const GRAPH_GENERATION_TIMEOUT_MS = 120000;
 const GRAPH_SECONDARY_AI_TIMEOUT_MS = 90000;
 const GRAPH_NOISE_LINE_PATTERN = /(ISBN|CIP|copyright|all rights reserved|seventh edition|edition|机械工业出版社|出版社|出版|印刷|版次|责任编辑|责任编|版权所有|盗版|防伪|校区|大学|学院|图书在版|编目|定价|开本|印张|字数|书名|作者|译者|封面|封底|library of congress|pearson|mcgraw|press)/i;
 const GRAPH_CONCEPT_SIGNAL_PATTERN = /(是|指|表示|定义|概念|包括|分为|组成|用于|作用|特点|模型|算法|方法|系统|结构|过程|关系|约束|查询|事务|索引|范式|模式|实体|属性|完整性|并发|恢复|SQL|ER|database|relation|transaction|query|index|schema)/i;
+const GRAPH_LABEL_HARD_NOISE_PATTERN = /(本书|本章|本节|本页|本版|英文版|中文版|网站|网址|第\s*\d+\s*版|第[一二三四五六七八九十]+版|pdf|\.pdf|http|www\.|目录|前言|致谢|参考文献|附录|练习题|习题|图\s*\d+|表\s*\d+|例\s*\d+|版权|出版社|作者|译者|教材|课件|文档|新课程|知识文档)/i;
+const GRAPH_LABEL_FRAGMENT_PATTERN = /^(的|了|和|或|与|及|以及|并|对|由|在|从|给|为|把|将|其|这|该|这些|那些|一个|一种|本|第)\b|^(的|了|和|或|与|及|以及|并|对|由|在|从|给|为|把|将|其|这|该)|(\b(the|and|or|with|for|this|that|these|those)\b)$/i;
+const GRAPH_SENTENCE_LABEL_PATTERN = /(为什么|怎么样|如何|说明|建议|给予|提出|讨论|研究领域|工作|内容|方面|来说|结论|要求|如下|如下所示|可以看到|本书中)/;
+const GRAPH_GENERIC_NOISE_LABELS = new Set(["本书", "本章", "本节", "本书中", "方面", "方面由", "其内容", "内容", "工作", "结论", "要求", "目前", "研究领域", "网址"]);
 const GRAPH_GENERATION_STEPS = {
   idle: { title: "等待生成", detail: "导入资料后可用 Qwen / 本地规则生成课程图谱和题目。", progress: 0 },
   extracting: { title: "正在整理资料", detail: "提取 PDF / Markdown 文本，准备生成课程知识结构。", progress: 18 },
@@ -1632,6 +1638,7 @@ function createDefaultStudyModule(options = {}) {
     quizCursor: 0,
     mapMode: "mastery",
     mindmapMode: "classic",
+    mindmapZoom: 1,
     mindmapCollapsed: [],
     mindmapFocusId: "",
     graphFilters: {
@@ -1973,6 +1980,7 @@ function sanitizeStudyModule(studyModule = {}) {
     activeQuizTopic,
     mapMode: ["mastery", "chapter", "difficulty"].includes(studyModule.mapMode) ? studyModule.mapMode : defaults.mapMode,
     mindmapMode: ["classic", "compact", "chapter", "difficulty"].includes(studyModule.mindmapMode) ? studyModule.mindmapMode : defaults.mindmapMode,
+    mindmapZoom: Math.min(1.8, Math.max(0.55, Number(studyModule.mindmapZoom) || defaults.mindmapZoom || 1)),
     mindmapCollapsed: Array.isArray(studyModule.mindmapCollapsed) ? studyModule.mindmapCollapsed.map(String).slice(0, 24) : [],
     mindmapFocusId: mindmapIds.has(studyModule.mindmapFocusId) ? studyModule.mindmapFocusId : "",
     graphFilters: {
@@ -6092,7 +6100,7 @@ function createStudyNode(topic, index = 0, overrides = {}) {
   const label = overrides.label || topic.label || topic.id;
 
   return {
-    id: topic.id,
+    id: overrides.id || topic.id,
     label,
     summary: overrides.summary || nodeContent[topic.id] || topic.source || "该知识点来自当前课程资料，可继续生成解释、例题和复习题。",
     chapter: topic.chapter || "课程资料",
@@ -6179,6 +6187,19 @@ function normalizeComparableText(value = "") {
     .replace(/[^\u4e00-\u9fa5a-z0-9]+/g, "");
 }
 
+function sampleTextWithinLimit(text = "", limit = GRAPH_TEXT_LIMIT) {
+  const raw = String(text || "");
+  const maxLength = Math.max(0, Number(limit) || 0);
+  if (!maxLength || raw.length <= maxLength) return raw;
+  const partLength = Math.floor(maxLength / 3);
+  const middleStart = Math.max(0, Math.floor((raw.length - partLength) / 2));
+  return [
+    raw.slice(0, partLength),
+    raw.slice(middleStart, middleStart + partLength),
+    raw.slice(-partLength),
+  ].join("\n\n[...]\n\n").slice(0, maxLength);
+}
+
 function resolveQuestionTopic(rawTopic, nodes = []) {
   const topicText = String(rawTopic || "").trim();
   if (!topicText || !nodes.length) return null;
@@ -6216,45 +6237,62 @@ function rotateOptions(options = [], answerIndex = 0) {
   return { options: arranged, answer: targetIndex };
 }
 
+function getNodeEvidenceText(node, documentText = "") {
+  return String(
+    (node.sourceSnippets || []).find(Boolean)
+      || getSourceSnippetForLabel(node.label || node.id, documentText)
+      || (node.examples || []).find(Boolean)
+      || node.summary
+      || "",
+  ).trim();
+}
+
+function getNodeKeywords(node) {
+  return Array.from(new Set([node.label, ...(node.keywords || [])]
+    .map((keyword) => String(keyword || "").trim())
+    .filter((keyword) => keyword && keyword.length <= 24)));
+}
+
 function createRuleBasedQuizQuestions(graph = getStudyModule().graph, documents = []) {
   const nodes = (graph.nodes || []).filter((node) => isLikelyCourseConceptLabel(node.label || node.id, node.summary || ""));
   if (!nodes.length) return [];
   const documentText = documents.map((documentMeta) => documentMeta.text).join("\n");
   const questions = [];
 
-  nodes.slice(0, 12).forEach((node, index) => {
-    const snippet = (node.sourceSnippets || [])[0] || getSourceSnippetForLabel(node.label, documentText) || node.summary;
+  nodes.slice(0, 18).forEach((node, index) => {
+    const snippet = getNodeEvidenceText(node, documentText);
     const otherNodes = nodes.filter((item) => item.id !== node.id);
-    const distractors = otherNodes
-      .map((item) => item.summary || `${item.label} 的相关概念。`)
-      .filter((summary) => summary && summary !== node.summary)
+    const evidenceDistractors = otherNodes
+      .map((item) => getNodeEvidenceText(item, documentText) || item.summary)
+      .filter((summary) => summary && summary !== snippet)
       .slice(0, 3);
     const source = node.source || documents[0]?.title || "课程资料";
 
     if (index % 3 === 0) {
       const arrangement = rotateOptions([
-        node.summary || `${node.label} 是资料中的核心概念。`,
-        ...distractors,
+        snippet || node.summary || `${node.label} 是资料中的核心概念。`,
+        ...evidenceDistractors,
       ], index % 4);
       questions.push(normalizeStudyQuestion({
         id: `rq-${normalizeComparableText(node.id)}-choice`,
         topic: node.id,
         type: "choice",
         difficulty: node.difficulty || "中等",
-        prompt: `下列哪一项最符合“${node.label}”的含义？`,
+        prompt: `根据资料，哪一项最能支持你理解“${node.label}”？`,
         options: arrangement.options,
         answer: arrangement.answer,
-        explanation: `“${node.label}”应结合资料中的定义、作用和上下文理解。`,
+        explanation: `正确选项来自“${node.label}”对应的资料证据；其他选项来自相邻概念，容易混淆但不直接说明该知识点。`,
         source,
         sourceSnippet: snippet,
-        keywords: node.keywords || [node.label],
+        keywords: getNodeKeywords(node),
       }, nodes));
       return;
     }
 
-    if (index % 3 === 1 && (node.keywords || []).length >= 2) {
-      const correctKeywords = (node.keywords || []).filter((keyword) => keyword !== node.label).slice(0, 3);
-      const wrongKeywords = otherNodes.flatMap((item) => item.keywords || [item.label]).filter((keyword) => !correctKeywords.includes(keyword)).slice(0, 3);
+    const keywords = getNodeKeywords(node);
+    if (index % 3 === 1 && keywords.length >= 2) {
+      const correctKeywords = keywords.filter((keyword) => keyword !== node.label).slice(0, 3);
+      const wrongKeywords = otherNodes.flatMap(getNodeKeywords).filter((keyword) => !correctKeywords.includes(keyword)).slice(0, 3);
       const options = Array.from(new Set([...correctKeywords, ...wrongKeywords])).slice(0, 4);
       questions.push(normalizeStudyQuestion({
         id: `rq-${normalizeComparableText(node.id)}-multi`,
@@ -6282,9 +6320,30 @@ function createRuleBasedQuizQuestions(graph = getStudyModule().graph, documents 
       explanation: `回答时应说明“${node.label}”的定义、作用，并尽量结合资料中的具体语境。`,
       source,
       sourceSnippet: snippet,
-      keywords: (node.keywords || [node.label]).slice(0, 5),
+      keywords: getNodeKeywords(node).slice(0, 5),
     }, nodes));
   });
+
+  (graph.edges || [])
+    .filter((edge) => nodes.some((node) => node.id === edge.source) && nodes.some((node) => node.id === edge.target))
+    .slice(0, 8)
+    .forEach((edge, index) => {
+      const sourceNode = nodes.find((node) => node.id === edge.source);
+      const targetNode = nodes.find((node) => node.id === edge.target);
+      if (!sourceNode || !targetNode) return;
+      questions.push(normalizeStudyQuestion({
+        id: `rq-rel-${normalizeComparableText(edge.source)}-${normalizeComparableText(edge.target)}-${index}`,
+        topic: sourceNode.id,
+        type: "judge",
+        difficulty: edge.relation === "前置" || edge.relation === "对比" ? "较难" : "中等",
+        prompt: `资料图谱中，“${sourceNode.label}”与“${targetNode.label}”的关系可理解为“${edge.relation || "相关"}”。`,
+        answer: true,
+        explanation: `该判断来自知识图谱关系：${sourceNode.label} --${edge.relation || "相关"}--> ${targetNode.label}。复习时要能说明这条关系成立的原因。`,
+        source: sourceNode.source || targetNode.source || documents[0]?.title || "课程资料",
+        sourceSnippet: [getNodeEvidenceText(sourceNode, documentText), getNodeEvidenceText(targetNode, documentText)].filter(Boolean).join(" "),
+        keywords: [sourceNode.label, targetNode.label, edge.relation || "相关"],
+      }, nodes));
+    });
 
   if (nodes.length >= 3) {
     questions.push(normalizeStudyQuestion({
@@ -6326,14 +6385,14 @@ function sanitizeStudyGraph(graph = {}) {
       },
     };
   }
-  const fallback = createFallbackStudyGraph([]);
-  const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : fallback.nodes;
+  const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
   const nodes = rawNodes
     .slice(0, GRAPH_NODE_LIMIT)
     .map((node, index) => {
       const label = String(node.label || node.name || node.title || node.id || `知识点 ${index + 1}`).trim();
-      const baseTopic = knowledgeTopics.find((topic) => topic.id === label) || {
-        id: label,
+      const localId = String(node.id || node.localId || label).trim();
+      const baseTopic = knowledgeTopics.find((topic) => topic.id === localId || topic.id === label) || {
+        id: localId,
         chapter: node.chapter || "课程资料",
         difficulty: node.difficulty || "中等",
         baseMastery: Number(node.mastery) || 55,
@@ -6342,6 +6401,8 @@ function sanitizeStudyGraph(graph = {}) {
       };
       return createStudyNode(baseTopic, index, {
         ...node,
+        id: localId,
+        label,
         mastery: node.mastery,
         examples: Array.isArray(node.examples) ? node.examples : node.example ? [node.example] : undefined,
         keywords: Array.isArray(node.keywords) ? node.keywords : undefined,
@@ -6351,12 +6412,22 @@ function sanitizeStudyGraph(graph = {}) {
   const conceptNodes = nodes.filter((node) => isLikelyCourseConceptLabel(node.label || node.id, `${node.summary || ""}\n${(node.keywords || []).join(" ")}`));
   const usableNodes = conceptNodes;
   const nodeIds = new Set(usableNodes.map((node) => node.id));
-  const edges = (Array.isArray(graph.edges) ? graph.edges : fallback.edges)
+  const resolveGraphEndpoint = (value) => {
+    const raw = String(value || "").trim();
+    if (nodeIds.has(raw)) return raw;
+    const comparable = normalizeComparableText(raw);
+    const matched = usableNodes.find((node) =>
+      normalizeComparableText(node.id) === comparable || normalizeComparableText(node.label) === comparable);
+    return matched?.id || raw;
+  };
+  const edges = (Array.isArray(graph.edges) ? graph.edges : [])
     .map((edge, index) => ({
       id: edge.id || `edge-${index + 1}`,
-      source: edge.source || edge.from,
-      target: edge.target || edge.to,
+      source: resolveGraphEndpoint(edge.source || edge.from),
+      target: resolveGraphEndpoint(edge.target || edge.to),
       relation: edge.relation || edge.label || "相关",
+      relationType: edge.relationType || edge.type || "",
+      explanation: edge.explanation || edge.reason || "",
       weight: Math.min(1, Math.max(0.1, Number(edge.weight) || 0.55)),
     }))
     .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target) && edge.source !== edge.target);
@@ -6365,7 +6436,7 @@ function sanitizeStudyGraph(graph = {}) {
     nodes: usableNodes,
     edges,
     meta: {
-      generatedBy: graph.meta?.generatedBy || graph.generatedBy || "local-fallback",
+      generatedBy: graph.meta?.generatedBy || graph.generatedBy || (usableNodes.length ? "unknown" : "empty"),
       generatedAt: Number(graph.meta?.generatedAt || graph.generatedAt) || Date.now(),
       qualityScore: clampPercent(
         usableNodes.length === nodes.length
@@ -6373,6 +6444,7 @@ function sanitizeStudyGraph(graph = {}) {
           : estimateGraphQuality({ nodes: usableNodes, edges }),
       ),
       fallbackUsed: Boolean(graph.meta?.fallbackUsed ?? graph.fallbackUsed),
+      empty: !usableNodes.length,
       sourceDocuments: Array.isArray(graph.meta?.sourceDocuments) ? graph.meta.sourceDocuments : [],
     },
   };
@@ -6390,17 +6462,34 @@ function flattenMindmapNodes(mindmapOrNodes = []) {
   return result;
 }
 
-function sanitizeMindmapNode(node = {}, index = 0, prefix = "mindmap", depth = 1) {
+function createStableMindmapNodeId(label = "", prefix = "mindmap", index = 0, usedIds = new Set()) {
+  const comparable = normalizeComparableText(label).slice(0, 28);
+  const base = `${prefix}-${comparable || index + 1}`;
+  let id = base;
+  let suffix = 2;
+  while (usedIds.has(id)) {
+    id = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+function sanitizeMindmapNode(node = {}, index = 0, prefix = "mindmap", depth = 1, usedIds = new Set()) {
   const label = String(node.label || node.title || node.name || `主题 ${index + 1}`).trim().slice(0, 36);
-  const id = String(node.id || `${prefix}-${index + 1}`).trim();
+  const rawId = String(node.id || "").trim();
+  const id = rawId && !usedIds.has(rawId)
+    ? (usedIds.add(rawId), rawId)
+    : createStableMindmapNodeId(node.topicId || label, prefix, index, usedIds);
   const children = Array.isArray(node.children)
-    ? node.children.slice(0, 8).map((child, childIndex) => sanitizeMindmapNode(child, childIndex, id, depth + 1)).filter(Boolean)
+    ? node.children.slice(0, GRAPH_MINDMAP_CHILD_LIMIT).map((child, childIndex) => sanitizeMindmapNode(child, childIndex, id, depth + 1, usedIds)).filter(Boolean)
     : [];
   return {
     id,
     label,
     summary: String(node.summary || node.description || node.text || "").trim().slice(0, 120),
     source: String(node.source || "").trim().slice(0, 60),
+    topicId: String(node.topicId || node.knowledgeId || node.nodeId || "").trim(),
     children: depth >= 4 ? [] : children,
   };
 }
@@ -6409,12 +6498,12 @@ function sanitizeMindmap(mindmap = {}, course = {}) {
   if (mindmap?.meta?.empty || mindmap?.empty || mindmap?.meta?.generatedBy === "empty") {
     return createEmptyMindmap(course);
   }
-  const fallback = createFallbackMindmap(course);
-  const rawNodes = Array.isArray(mindmap.nodes) && mindmap.nodes.length ? mindmap.nodes : fallback.nodes;
-  const nodes = rawNodes.slice(0, 8).map((node, index) => sanitizeMindmapNode(node, index)).filter(Boolean);
+  const rawNodes = Array.isArray(mindmap.nodes) && mindmap.nodes.length ? mindmap.nodes : [];
+  const usedIds = new Set([String(mindmap.id || "mindmap-root")]);
+  const nodes = rawNodes.slice(0, GRAPH_MINDMAP_BRANCH_LIMIT).map((node, index) => sanitizeMindmapNode(node, index, "mindmap", 1, usedIds)).filter(Boolean);
   return {
     id: String(mindmap.id || "mindmap-root"),
-    title: String(mindmap.title || course.name || fallback.title || "课程思维导图").trim(),
+    title: String(mindmap.title || course.name || "课程思维导图").trim(),
     summary: String(mindmap.summary || "独立生成的层级复习导图。").trim().slice(0, 140),
     nodes,
     meta: {
@@ -6451,17 +6540,51 @@ function normalizeStudyQuestion(question, nodes = getStudyModule().graph.nodes) 
   if (normalized.type === "judge" && typeof normalized.answer !== "boolean") {
     normalized.answer = String(normalized.answer).includes("true") || String(normalized.answer).includes("正确");
   }
+  if (normalized.type === "choice") {
+    normalized.options = normalized.options.filter(Boolean).slice(0, 4);
+    const answerIndex = Number(normalized.answer);
+    normalized.answer = Number.isInteger(answerIndex) && answerIndex >= 0 && answerIndex < normalized.options.length ? answerIndex : 0;
+    if (normalized.options.length < 2) return null;
+  }
   if (normalized.type === "multi" && !Array.isArray(normalized.answer)) {
     normalized.answer = String(normalized.answer || "")
       .split(/[,，、\s]+/)
       .map((value) => Number(value))
       .filter((value) => Number.isFinite(value));
   }
+  if (normalized.type === "multi") {
+    normalized.options = normalized.options.filter(Boolean).slice(0, 6);
+    normalized.answer = (normalized.answer || []).map(Number).filter((value) => value >= 0 && value < normalized.options.length);
+    if (normalized.options.length < 3 || !normalized.answer.length) return null;
+  }
   if (normalized.type === "match" && !normalized.pairs.length) {
     normalized.pairs = (node?.keywords || []).slice(0, 3).map((keyword) => [keyword, `${keyword} 与 ${node.label} 的理解相关。`]);
   }
+  if (normalized.type === "match") {
+    normalized.pairs = normalized.pairs.filter((pair) => Array.isArray(pair) && pair[0] && pair[1]).slice(0, 5);
+    if (normalized.pairs.length < 2) return null;
+  }
 
   return normalized;
+}
+
+function normalizeGeneratedQuestionWithTopic(question, graph, documents = []) {
+  const nodes = graph.nodes || [];
+  const direct = normalizeStudyQuestion(question, nodes);
+  if (direct) return direct;
+  const rawTopic = String(question?.topic || question?.knowledgePoint || question?.nodeId || "").trim();
+  const label = rawTopic || String(question?.keywords?.[0] || "").trim() || "资料主题";
+  if (!isLikelyCourseConceptLabel(label, `${question?.prompt || ""}\n${question?.sourceSnippet || ""}`)) return null;
+  const fallbackNode = {
+    id: label,
+    label,
+    summary: question?.sampleAnswer || question?.explanation || `${label} 是资料中的测验主题。`,
+    difficulty: question?.difficulty || "中等",
+    source: question?.source || documents[0]?.title || "课程资料",
+    keywords: Array.isArray(question?.keywords) ? question.keywords : [label],
+    sourceSnippets: question?.sourceSnippet ? [question.sourceSnippet] : [],
+  };
+  return normalizeStudyQuestion(question, [fallbackNode]);
 }
 
 function sanitizeStudyQuiz(quiz = {}, graph = createFallbackStudyGraph([])) {
@@ -6478,7 +6601,7 @@ function sanitizeStudyQuiz(quiz = {}, graph = createFallbackStudyGraph([])) {
   }
   const fallbackQuestions = createRuleBasedQuizQuestions(graph);
   const questions = (Array.isArray(quiz?.questions) && quiz.questions.length ? quiz.questions : fallbackQuestions)
-    .map((question) => normalizeStudyQuestion(question, graph.nodes))
+    .map((question) => normalizeGeneratedQuestionWithTopic(question, graph))
     .filter(Boolean);
 
   return {
@@ -6615,7 +6738,7 @@ function cleanCourseTextForStudyGeneration(text = "") {
     seen.set(key, count + 1);
     if (count < 2) deduped.push(line);
   });
-  return deduped.join("\n").slice(0, GRAPH_TEXT_LIMIT);
+  return sampleTextWithinLimit(deduped.join("\n"), GRAPH_TEXT_LIMIT);
 }
 
 function cleanDocumentsForStudyGeneration(documents = []) {
@@ -6634,6 +6757,12 @@ function cleanDocumentsForStudyGeneration(documents = []) {
 function isLikelyNoiseConceptLabel(label = "") {
   const normalized = normalizeStudyTextLine(label);
   if (!normalized || normalized.length < 2 || normalized.length > 32) return true;
+  if (GRAPH_GENERIC_NOISE_LABELS.has(normalized)) return true;
+  if (GRAPH_LABEL_HARD_NOISE_PATTERN.test(normalized)) return true;
+  if (GRAPH_LABEL_FRAGMENT_PATTERN.test(normalized)) return true;
+  if (GRAPH_SENTENCE_LABEL_PATTERN.test(normalized) && normalized.length > 6) return true;
+  if (/^[第\d一二三四五六七八九十]+[章节篇部分]/.test(normalized)) return true;
+  if (/[。！？；;]$/.test(normalized)) return true;
   if (/\.pdf$/i.test(normalized) || GRAPH_NOISE_LINE_PATTERN.test(normalized)) return true;
   if (/^[\d\s\-–—_.:：@〇○oO\[\]()/\\]+$/.test(normalized)) return true;
   if (/^\d+%/.test(normalized) || /\[[A-Z]{1,3}\s*\[/.test(normalized)) return true;
@@ -6645,9 +6774,27 @@ function isLikelyNoiseConceptLabel(label = "") {
 function isLikelyCourseConceptLabel(label = "", context = "") {
   const normalized = normalizeStudyTextLine(label);
   if (isLikelyNoiseConceptLabel(normalized)) return false;
+  if (GRAPH_LABEL_HARD_NOISE_PATTERN.test(context) && !GRAPH_CONCEPT_SIGNAL_PATTERN.test(normalized)) return false;
   if (GRAPH_CONCEPT_SIGNAL_PATTERN.test(`${normalized}\n${context}`)) return true;
   if (/^[A-Z]{2,8}$/.test(normalized)) return true;
   return normalized.length >= 3 && normalized.length <= 18 && /[\u4e00-\u9fa5]/.test(normalized);
+}
+
+function isGraphNodeSupportedByDocuments(node, documents = []) {
+  if (!documents.length) return true;
+  const label = normalizeStudyTextLine(node.label || node.id);
+  if (!label || isLikelyNoiseConceptLabel(label)) return false;
+  const snippets = (node.sourceSnippets || []).join("\n");
+  const evidenceText = `${snippets}\n${node.summary || ""}\n${(node.keywords || []).join(" ")}`;
+  if (snippets && !GRAPH_LABEL_HARD_NOISE_PATTERN.test(snippets)) return true;
+  const comparableLabel = normalizeComparableText(label);
+  if (!comparableLabel || comparableLabel.length < 2) return false;
+  const documentText = documents.map((documentMeta) => documentMeta.text || "").join("\n");
+  const comparableDocs = normalizeComparableText(documentText);
+  const comparableEvidence = normalizeComparableText(evidenceText);
+  if (comparableDocs.includes(comparableLabel)) return true;
+  if (comparableEvidence.includes(comparableLabel) && !GRAPH_LABEL_HARD_NOISE_PATTERN.test(evidenceText)) return true;
+  return /^[A-Z]{2,8}$/.test(label) && comparableDocs.includes(label.toLowerCase());
 }
 
 function getSourceSnippetForLabel(label, text = "") {
@@ -7093,6 +7240,254 @@ function getMindmapNodeById(nodeId, mindmap = getStudyModule().mindmap) {
   return flattenMindmapNodes(mindmap).find((node) => node.id === nodeId) || null;
 }
 
+function visitMindmapNodes(nodes = [], visitor, parent = null) {
+  for (const node of nodes) {
+    const result = visitor(node, parent);
+    if (result === false) return false;
+    if (visitMindmapNodes(node.children || [], visitor, node) === false) return false;
+  }
+  return true;
+}
+
+function createMindmapManualNode(label, summary = "", source = "手动编辑") {
+  const cleanLabel = String(label || "").trim().slice(0, 36);
+  if (!cleanLabel) return null;
+  return {
+    id: createId("mindmap-manual"),
+    label: cleanLabel,
+    summary: String(summary || `围绕“${cleanLabel}”整理复习内容。`).trim().slice(0, 120),
+    source,
+    children: [],
+  };
+}
+
+function addMindmapChildNode(targetId, childNode, studyModule = getStudyModule()) {
+  if (!childNode) return false;
+  const mindmap = studyModule.mindmap;
+  if (!targetId || targetId === mindmap.id) {
+    mindmap.nodes = mindmap.nodes || [];
+    mindmap.nodes.push(childNode);
+    studyModule.selectedMindmapNodeId = childNode.id;
+    return true;
+  }
+  let added = false;
+  visitMindmapNodes(mindmap.nodes || [], (node) => {
+    if (node.id !== targetId) return true;
+    node.children = Array.isArray(node.children) ? node.children : [];
+    node.children.push(childNode);
+    added = true;
+    return false;
+  });
+  if (added) studyModule.selectedMindmapNodeId = childNode.id;
+  return added;
+}
+
+function updateMindmapNode(targetId, updates = {}, studyModule = getStudyModule()) {
+  const mindmap = studyModule.mindmap;
+  if (!targetId) return false;
+  if (targetId === mindmap.id) {
+    mindmap.title = updates.label || updates.title || mindmap.title;
+    mindmap.summary = updates.summary || mindmap.summary;
+    return true;
+  }
+  let updated = false;
+  visitMindmapNodes(mindmap.nodes || [], (node) => {
+    if (node.id !== targetId) return true;
+    node.label = updates.label || node.label;
+    node.summary = updates.summary || node.summary;
+    node.source = updates.source || node.source;
+    updated = true;
+    return false;
+  });
+  return updated;
+}
+
+function deleteMindmapNode(targetId, studyModule = getStudyModule()) {
+  const mindmap = studyModule.mindmap;
+  if (!targetId || targetId === mindmap.id) return false;
+  const removeFrom = (nodes = []) => {
+    const index = nodes.findIndex((node) => node.id === targetId);
+    if (index >= 0) {
+      nodes.splice(index, 1);
+      return true;
+    }
+    return nodes.some((node) => removeFrom(node.children || []));
+  };
+  const removed = removeFrom(mindmap.nodes || []);
+  if (removed) {
+    studyModule.selectedMindmapNodeId = mindmap.nodes?.[0]?.id || mindmap.id || "";
+    if (studyModule.mindmapFocusId === targetId) studyModule.mindmapFocusId = "";
+    studyModule.mindmapCollapsed = (studyModule.mindmapCollapsed || []).filter((id) => id !== targetId);
+  }
+  return removed;
+}
+
+async function regenerateMindmapFromUploads() {
+  const course = getActiveCourse();
+  const studyModule = getStudyModule(course);
+  if (["extracting", "ai", "validating"].includes(studyModule.generation?.state)) return;
+  try {
+    studyModule.generation = { state: "extracting", engine: "mindmap", message: "正在读取资料，准备重新生成思维导图。", updatedAt: Date.now() };
+    saveWorkspace();
+    renderStudyModuleViews();
+    let documents = await withTimeout(buildStudyAiDocumentsForCourse({
+      requireCompletePdfOcr: true,
+      textLimit: GRAPH_TEXT_LIMIT,
+    }), 60000, "思维导图资料读取");
+    documents = cleanDocumentsForStudyGeneration(documents.map((documentMeta) => ({
+      ...documentMeta,
+      text: sampleTextWithinLimit(documentMeta.text || "", GRAPH_TEXT_LIMIT),
+    })));
+    if (!documents.length) throw new Error("没有可用于生成思维导图的资料文本。");
+    studyModule.generation = { state: "ai", engine: "Qwen Mindmap", message: "正在根据资料大纲重新生成思维导图。", updatedAt: Date.now() };
+    saveWorkspace();
+    renderStudyModuleViews();
+    let mindmap = null;
+    try {
+      mindmap = await generateMindmapFromDocumentsWithAi(documents, course);
+    } catch {
+      mindmap = null;
+    }
+    studyModule.mindmap = mindmap || createRuleBasedMindmapFromDocuments(documents, course);
+    studyModule.selectedMindmapNodeId = studyModule.mindmap.nodes[0]?.id || studyModule.mindmap.id || "";
+    studyModule.mindmapFocusId = "";
+    studyModule.mindmapCollapsed = [];
+    studyModule.generation = {
+      state: "done",
+      engine: mindmap ? "qwen-mindmap" : "local-mindmap-rules",
+      message: `思维导图已重新生成：${studyModule.mindmap.nodes.length} 个主分支。`,
+      updatedAt: Date.now(),
+    };
+    saveWorkspace();
+    renderStudyModuleViews();
+    showView("mindmap");
+  } catch (error) {
+    studyModule.generation = { state: "error", engine: "mindmap", message: getAiErrorMessage(error), updatedAt: Date.now() };
+    saveWorkspace();
+    renderStudyModuleViews();
+  }
+}
+
+function addMindmapChildFromPrompt() {
+  const studyModule = getStudyModule();
+  const selectedNode = getMindmapNodeById(studyModule.selectedMindmapNodeId, studyModule.mindmap);
+  const label = window.prompt("请输入新子主题名称", "");
+  if (!label?.trim()) return;
+  const summary = window.prompt("请输入复习提示", `围绕“${label.trim()}”整理定义、例子和易错点。`) || "";
+  const childNode = createMindmapManualNode(label, summary);
+  const targetId = selectedNode?.id || studyModule.mindmap.id;
+  if (!addMindmapChildNode(targetId, childNode, studyModule)) return;
+  saveWorkspace();
+  renderMindmapModule();
+}
+
+function editSelectedMindmapNodeFromPrompt() {
+  const studyModule = getStudyModule();
+  const selectedNode = getMindmapNodeById(studyModule.selectedMindmapNodeId, studyModule.mindmap);
+  if (!selectedNode) return;
+  const label = window.prompt("编辑节点名称", selectedNode.label || selectedNode.title || "");
+  if (!label?.trim()) return;
+  const summary = window.prompt("编辑复习提示", selectedNode.summary || "") || "";
+  updateMindmapNode(selectedNode.id, { label: label.trim(), summary: summary.trim() }, studyModule);
+  saveWorkspace();
+  renderMindmapModule();
+}
+
+function deleteSelectedMindmapNodeFromPrompt() {
+  const studyModule = getStudyModule();
+  const selectedNode = getMindmapNodeById(studyModule.selectedMindmapNodeId, studyModule.mindmap);
+  if (!selectedNode || selectedNode.isRoot) return;
+  if (!window.confirm(`删除“${selectedNode.label}”及其所有子主题？`)) return;
+  deleteMindmapNode(selectedNode.id, studyModule);
+  saveWorkspace();
+  renderMindmapModule();
+}
+
+function openMindmapNodeEditor(mode = "add") {
+  const studyModule = getStudyModule();
+  const mindmap = studyModule.mindmap || createEmptyMindmap(getActiveCourse());
+  const selectedNode = getMindmapNodeById(studyModule.selectedMindmapNodeId, mindmap) || getMindmapNodeById(mindmap.id, mindmap);
+  const isEdit = mode === "edit";
+  const targetNode = selectedNode || getMindmapNodeById(mindmap.id, mindmap);
+  const targetId = targetNode?.id || mindmap.id;
+  const label = isEdit ? targetNode?.label || targetNode?.title || "" : "";
+  const summary = isEdit ? targetNode?.summary || "" : "";
+  const title = isEdit ? "编辑导图节点" : "添加子主题";
+  const submitText = isEdit ? "保存节点" : "添加节点";
+  const parentLabel = targetNode?.label || targetNode?.title || mindmap.title || "当前导图";
+
+  closeModal();
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    `
+      <div class="modal-backdrop" data-modal="mindmap-node">
+        <section class="course-modal mindmap-node-modal" role="dialog" aria-modal="true" aria-labelledby="mindmap-node-modal-title">
+          <div class="modal-heading">
+            <div>
+              <span class="tag muted">${isEdit ? "Mind Map Node" : `父主题：${escapeHtml(parentLabel)}`}</span>
+              <h2 id="mindmap-node-modal-title">${title}</h2>
+            </div>
+            <button class="icon-button light" data-modal-action="close" title="关闭">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <form class="course-form" id="mindmap-node-form" data-mindmap-node-mode="${mode}" data-mindmap-node-target="${escapeHtml(targetId)}">
+            <label>
+              <span>节点名称</span>
+              <input id="mindmap-node-label-input" name="label" type="text" value="${escapeHtml(label)}" maxlength="36" required />
+            </label>
+            <label>
+              <span>复习提示</span>
+              <textarea id="mindmap-node-summary-input" name="summary" rows="4" maxlength="120">${escapeHtml(summary)}</textarea>
+            </label>
+            <div class="modal-actions">
+              <button type="button" class="ghost-action compact" data-modal-action="close">取消</button>
+              <button type="submit" class="primary-action compact">${submitText}</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    `,
+  );
+  window.lucide?.createIcons();
+  document.querySelector("#mindmap-node-label-input")?.focus();
+}
+
+function submitMindmapNodeForm(event) {
+  event.preventDefault();
+  const form = event.target;
+  const studyModule = getStudyModule();
+  const mode = form.dataset.mindmapNodeMode;
+  const targetId = form.dataset.mindmapNodeTarget || studyModule.mindmap?.id;
+  const labelInput = form.elements.label;
+  const summaryInput = form.elements.summary;
+  const label = labelInput.value.trim();
+  const summary = summaryInput.value.trim();
+
+  if (!label) {
+    labelInput.focus();
+    return;
+  }
+
+  const ok = mode === "edit"
+    ? updateMindmapNode(targetId, { label, summary }, studyModule)
+    : addMindmapChildNode(targetId, createMindmapManualNode(label, summary), studyModule);
+  if (!ok) return;
+  saveWorkspace();
+  closeModal();
+  renderMindmapModule();
+}
+
+function zoomMindmap(value = 0) {
+  const studyModule = getStudyModule();
+  const current = Number(studyModule.mindmapZoom) || 1;
+  studyModule.mindmapZoom = value === "reset"
+    ? 1
+    : Math.min(1.8, Math.max(0.55, current + (Number(value) || 0)));
+  saveWorkspace();
+  renderMindmapModule();
+}
+
 function getFocusedMindmapRoot(studyModule = getStudyModule()) {
   const mindmap = studyModule.mindmap || createEmptyMindmap(getActiveCourse());
   const focused = getMindmapNodeById(studyModule.mindmapFocusId, mindmap);
@@ -7104,6 +7499,235 @@ function getFocusedMindmapRoot(studyModule = getStudyModule()) {
     nodes: focused.children || [],
     meta: mindmap.meta,
   };
+}
+
+const MINDMAP_BRANCH_COLORS = ["#ff6b6b", "#4dabf7", "#ffc247", "#ef8ed5", "#58c4dc", "#7fc97f", "#9b8cff", "#ff9f43"];
+
+function splitMindmapLabel(label = "主题", maxChars = 10, maxLines = 2) {
+  const clean = String(label || "主题").replace(/\s+/g, " ").trim();
+  if (!clean) return ["主题"];
+  const lines = [];
+  let cursor = 0;
+  while (cursor < clean.length && lines.length < maxLines) {
+    lines.push(clean.slice(cursor, cursor + maxChars));
+    cursor += maxChars;
+  }
+  if (cursor < clean.length && lines.length) {
+    lines[lines.length - 1] = `${lines[lines.length - 1].slice(0, Math.max(1, maxChars - 1))}…`;
+  }
+  return lines;
+}
+
+function estimateMindmapTextWidth(lines = [], fontSize = 22) {
+  return Math.max(44, ...lines.map((line) => {
+    const wideChars = (String(line).match(/[\u4e00-\u9fa5]/g) || []).length;
+    const narrowChars = Math.max(0, String(line).length - wideChars);
+    return wideChars * fontSize + narrowChars * fontSize * 0.58;
+  }));
+}
+
+function buildMindmapSvgLayout(root, selectedId = "", collapsed = new Set(), options = {}) {
+  const compact = Boolean(options.compact);
+  const sizes = compact
+    ? { rootWidth: 210, rootFont: 30, branchFont: 23, nodeFont: 19, lineHeight: 28, leafHeight: 68, childGap: 22, branchGap: 30, levelGap: 300 }
+    : { rootWidth: 260, rootFont: 36, branchFont: 28, nodeFont: 22, lineHeight: 34, leafHeight: 86, childGap: 28, branchGap: 42, levelGap: 370 };
+  const rootNode = {
+    id: root.id || "mindmap-root",
+    label: root.title || root.label || "思维导图",
+    summary: root.summary,
+    children: root.nodes || root.children || [],
+    isRoot: true,
+  };
+  const rootX = 190;
+  const topPadding = 80;
+  const bottomPadding = 80;
+
+  const prepare = (node, depth = 0, color = MINDMAP_BRANCH_COLORS[0], branchIndex = 0) => {
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    const visibleChildren = hasChildren && !collapsed.has(node.id) ? node.children : [];
+    const fontSize = depth === 0 ? sizes.rootFont : depth === 1 ? sizes.branchFont : sizes.nodeFont;
+    const maxChars = depth === 0 ? 5 : depth === 1 ? 8 : 11;
+    const lines = splitMindmapLabel(node.label || node.title, maxChars, depth === 0 ? 2 : 2);
+    const textWidth = estimateMindmapTextWidth(lines, fontSize);
+    const children = visibleChildren.map((child, index) =>
+      prepare(child, depth + 1, depth === 0 ? MINDMAP_BRANCH_COLORS[index % MINDMAP_BRANCH_COLORS.length] : color, index));
+    const ownHeight = Math.max(sizes.leafHeight, lines.length * sizes.lineHeight + 34);
+    const childGap = depth === 0
+      ? sizes.branchGap
+      : sizes.childGap + Math.max(0, visibleChildren.length - 3) * 10;
+    const childrenHeight = children.reduce((sum, child) => sum + child.height, 0) + Math.max(0, children.length - 1) * childGap;
+    return {
+      node,
+      depth,
+      color,
+      branchIndex,
+      lines,
+      fontSize,
+      textWidth,
+      ownHeight,
+      childGap,
+      children,
+      hasChildren,
+      collapsed: hasChildren && collapsed.has(node.id),
+      height: Math.max(ownHeight, childrenHeight),
+    };
+  };
+
+  const layout = prepare(rootNode);
+  const contentHeight = Math.max(520, layout.height);
+  const svgHeight = Math.ceil(contentHeight + topPadding + bottomPadding);
+  const rootY = svgHeight / 2;
+
+  const assign = (item, x, topY) => {
+    item.x = x;
+    if (item.depth === 0) {
+      item.y = rootY;
+    } else if (item.children.length) {
+      let childTop = topY + Math.max(0, (item.height - (item.children.reduce((sum, child) => sum + child.height, 0) + (item.children.length - 1) * item.childGap)) / 2);
+      item.children.forEach((child) => {
+        const parentTextExtra = item.depth > 0 ? Math.max(0, item.textWidth - (item.depth === 1 ? 140 : 110)) : 0;
+        const denseBranchExtra = item.depth > 0 ? Math.max(0, item.children.length - 3) * 18 : 0;
+        assign(child, x + sizes.levelGap + parentTextExtra + denseBranchExtra, childTop);
+        childTop += child.height + item.childGap;
+      });
+      item.y = (item.children[0].y + item.children[item.children.length - 1].y) / 2;
+    } else {
+      item.y = topY + item.height / 2;
+    }
+    if (item.depth > 0) {
+      const textPadding = item.depth === 1 ? 18 : 12;
+      item.textX = x;
+      item.textY = item.y - ((item.lines.length - 1) * sizes.lineHeight) / 2 - 10;
+      item.lineY = item.y + (item.lines.length * sizes.lineHeight) / 2 + 6;
+      item.lineStart = x - (item.depth === 1 ? 110 : 74);
+      item.lineEnd = x + Math.max(item.textWidth, item.depth === 1 ? 150 : 128) + textPadding;
+      item.foldX = item.lineStart - 28;
+      item.foldY = item.lineY - 1;
+    }
+  };
+
+  let childTop = topPadding + Math.max(0, (contentHeight - layout.height) / 2);
+  layout.children.forEach((child) => {
+    assign(child, rootX + sizes.levelGap + 90, childTop);
+    childTop += child.height + layout.childGap;
+  });
+  layout.x = rootX;
+  layout.y = rootY;
+  layout.rootWidth = sizes.rootWidth;
+  layout.rootHeight = Math.max(94, layout.lines.length * sizes.lineHeight + 46);
+  const maxX = Math.max(...flattenMindmapNodes(rootNode.children).map(() => 0), ...(() => {
+    const values = [];
+    const collect = (item) => {
+      values.push(item.depth === 0 ? item.x + item.rootWidth / 2 : item.lineEnd);
+      item.children.forEach(collect);
+    };
+    collect(layout);
+    return values;
+  })());
+  return {
+    layout,
+    width: Math.ceil(Math.max(1060, maxX + 96)),
+    height: svgHeight,
+    lineHeight: sizes.lineHeight,
+  };
+}
+
+function renderMindmapSvgNode(item, selectedId, lineHeight) {
+  const selected = item.node.id === selectedId ? " selected" : "";
+  if (item.depth === 0) {
+    const rectX = item.x - item.rootWidth / 2;
+    const rectY = item.y - item.rootHeight / 2;
+    const textStartY = item.y - ((item.lines.length - 1) * lineHeight) / 2 + 10;
+    return `
+      <g class="mindmap-svg-root${selected}" data-mindmap-node="${escapeHtml(item.node.id)}">
+        <rect x="${rectX}" y="${rectY}" width="${item.rootWidth}" height="${item.rootHeight}" rx="36"></rect>
+        <text x="${item.x}" y="${textStartY}" text-anchor="middle" style="font-size: ${item.fontSize}px">
+          ${item.lines.map((line, index) => `<tspan x="${item.x}" dy="${index ? lineHeight : 0}">${escapeHtml(line)}</tspan>`).join("")}
+        </text>
+      </g>
+    `;
+  }
+  return `
+    <g class="mindmap-svg-topic${selected}" data-mindmap-node="${escapeHtml(item.node.id)}" style="--branch-color: ${item.color}">
+      <title>${escapeHtml(item.node.label || item.node.title || "主题")}</title>
+      <text x="${item.textX}" y="${item.textY}" style="font-size: ${item.fontSize}px">
+        ${item.lines.map((line, index) => `<tspan x="${item.textX}" dy="${index ? lineHeight : 0}">${escapeHtml(line)}</tspan>`).join("")}
+      </text>
+    </g>
+  `;
+}
+
+function renderMindmapSvgLinks(item) {
+  const links = [];
+  const visit = (parent) => {
+    if (parent.depth > 0 && parent.children.length > 1) {
+      const startX = parent.lineEnd;
+      const startY = parent.lineY;
+      const firstChild = parent.children[0];
+      const trunkX = Math.max(startX + 64, Math.min(startX + 150, firstChild.lineStart - 56));
+      const curveX = startX + Math.max(48, (trunkX - startX) * 0.65);
+      links.push(`<path class="mindmap-svg-link" style="--branch-color: ${parent.color}" d="M ${startX} ${startY} C ${curveX} ${startY}, ${curveX} ${startY}, ${trunkX} ${startY}"></path>`);
+      parent.children.forEach((child) => {
+        const childCurveLimit = child.lineStart - 46;
+        const childCurveX = childCurveLimit <= trunkX + 58
+          ? (trunkX + child.lineStart) / 2
+          : Math.min(childCurveLimit, trunkX + 116);
+        const d = `M ${trunkX} ${startY} C ${childCurveX} ${startY}, ${childCurveX} ${child.lineY}, ${child.lineStart} ${child.lineY} L ${child.lineEnd} ${child.lineY}`;
+        links.push(`<path class="mindmap-svg-link" style="--branch-color: ${child.color}" d="${d}"></path>`);
+        visit(child);
+      });
+      return;
+    }
+    parent.children.forEach((child) => {
+      const startX = parent.depth === 0 ? parent.x + parent.rootWidth / 2 - 4 : parent.lineEnd;
+      const startY = parent.depth === 0 ? parent.y : parent.lineY;
+      const endX = child.lineStart;
+      const endY = child.lineY;
+      const curveX = startX + Math.max(92, (endX - startX) * 0.5);
+      const d = `M ${startX} ${startY} C ${curveX} ${startY}, ${curveX} ${endY}, ${endX} ${endY} L ${child.lineEnd} ${endY}`;
+      links.push(`<path class="mindmap-svg-link" style="--branch-color: ${child.color}" d="${d}"></path>`);
+      visit(child);
+    });
+  };
+  visit(item);
+  return links.join("");
+}
+
+function renderMindmapSvgFolds(item, collapsed = new Set()) {
+  const folds = [];
+  const visit = (nodeLayout) => {
+    if (nodeLayout.depth > 0 && nodeLayout.hasChildren) {
+      const isCollapsed = collapsed.has(nodeLayout.node.id);
+      folds.push(`
+        <g class="mindmap-svg-fold" data-mindmap-toggle="${escapeHtml(nodeLayout.node.id)}" style="--branch-color: ${nodeLayout.color}">
+          <circle cx="${nodeLayout.foldX}" cy="${nodeLayout.foldY}" r="13"></circle>
+          <line x1="${nodeLayout.foldX - 6}" y1="${nodeLayout.foldY}" x2="${nodeLayout.foldX + 6}" y2="${nodeLayout.foldY}"></line>
+          ${isCollapsed ? `<line x1="${nodeLayout.foldX}" y1="${nodeLayout.foldY - 6}" x2="${nodeLayout.foldX}" y2="${nodeLayout.foldY + 6}"></line>` : ""}
+        </g>
+      `);
+    }
+    nodeLayout.children.forEach(visit);
+  };
+  visit(item);
+  return folds.join("");
+}
+
+function renderMindmapSvg(mindmapRoot, selectedId = "", collapsed = new Set(), options = {}) {
+  const { layout, width, height, lineHeight } = buildMindmapSvgLayout(mindmapRoot, selectedId, collapsed, options);
+  const zoom = Math.min(1.8, Math.max(0.55, Number(options.zoom) || 1));
+  const nodes = [];
+  const collectNodes = (item) => {
+    nodes.push(renderMindmapSvgNode(item, selectedId, lineHeight));
+    item.children.forEach(collectNodes);
+  };
+  collectNodes(layout);
+  return `
+    <svg class="mindmap-svg" viewBox="0 0 ${width} ${height}" width="${Math.ceil(width * zoom)}" height="${Math.ceil(height * zoom)}" role="img" aria-label="${escapeHtml(mindmapRoot.title || "思维导图")}">
+      <g class="mindmap-svg-links">${renderMindmapSvgLinks(layout)}</g>
+      <g class="mindmap-svg-nodes">${nodes.join("")}</g>
+      <g class="mindmap-svg-folds">${renderMindmapSvgFolds(layout, collapsed)}</g>
+    </svg>
+  `;
 }
 
 function renderMindmapChildNodes(nodes = [], selectedId = "", collapsed = new Set(), branchIndex = 0, depth = 2) {
@@ -7160,47 +7784,29 @@ function renderMindmapModule() {
   if (tree) {
     tree.classList.toggle("compact", studyModule.mindmapMode === "compact");
     tree.innerHTML = mindmap.nodes.length
-      ? `
-        <div class="mindmap-canvas">
-          <button class="mindmap-root ${selectedNode?.id === focusedMindmap.id ? "selected" : ""}" data-mindmap-node="${escapeHtml(focusedMindmap.id)}">
-            ${escapeHtml(focusedMindmap.title || mindmap.title || course.name || "课程思维导图")}
-          </button>
-          <div class="mindmap-branches">
-          ${focusedMindmap.nodes.map((branch, branchIndex) => {
-            const isCollapsed = collapsed.has(branch.id);
-            const branchColor = ["#ff6b6b", "#4dabf7", "#ffc247", "#ef8ed5", "#58c4dc", "#7fc97f"][branchIndex % 6];
-            return `
-              <section class="mindmap-branch ${isCollapsed ? "collapsed" : ""}" style="--branch-color: ${branchColor}">
-                <div class="mindmap-branch-main">
-                  <button class="mindmap-branch-title ${branch.id === selectedNode?.id ? "selected" : ""}" data-mindmap-node="${escapeHtml(branch.id)}">
-                    <span>${escapeHtml(branch.label)}</span>
-                  </button>
-                  ${branch.children?.length ? `
-                    <button class="mindmap-fold" data-mindmap-toggle="${escapeHtml(branch.id)}" title="${isCollapsed ? "展开" : "收起"}">
-                      <i data-lucide="${isCollapsed ? "plus" : "minus"}"></i>
-                    </button>
-                  ` : ""}
-                </div>
-                <div class="mindmap-branch-children">
-                  ${isCollapsed ? "" : renderMindmapChildNodes(branch.children || [], selectedNode?.id, collapsed, branchIndex)}
-                </div>
-              </section>
-            `;
-          }).join("")}
-          </div>
-        </div>
-      `
+      ? renderMindmapSvg(focusedMindmap, selectedNode?.id || focusedMindmap.id, collapsed, {
+        compact: studyModule.mindmapMode === "compact",
+        zoom: studyModule.mindmapZoom || 1,
+      })
       : "";
   }
+  document.querySelectorAll("[data-mindmap-zoom='reset']").forEach((button) => {
+    button.textContent = `${Math.round((Number(studyModule.mindmapZoom) || 1) * 100)}%`;
+  });
+  document.querySelectorAll("[data-mindmap-action='delete-node']").forEach((button) => {
+    button.disabled = Boolean(selectedNode?.isRoot);
+  });
 
   if (detailTitle) detailTitle.textContent = selectedNode?.label || selectedNode?.title || "导图节点详情";
   if (detailDesc) detailDesc.textContent = selectedNode?.summary || "点击导图节点查看该主题的复习提示。";
   if (detailMeta) {
     const childCount = selectedNode?.children?.length || 0;
+    const linkedTopicId = resolveMindmapTopicId(selectedNode, studyModule.graph);
     detailMeta.innerHTML = selectedNode
       ? `
         <span>${selectedNode.isRoot ? "中心主题" : "导图主题"}</span>
         <span>${childCount ? `${childCount} 个子主题` : "末级节点"}</span>
+        <span>${linkedTopicId ? "已链接图谱" : "独立主题"}</span>
         <span>${escapeHtml(selectedNode.source || mindmap.meta?.sourceDocuments?.[0] || "独立导图")}</span>
       `
       : `<span>暂无选中节点</span>`;
@@ -7208,14 +7814,23 @@ function renderMindmapModule() {
   window.lucide?.createIcons();
 }
 
+function sanitizeMermaidMindmapLabel(value = "主题") {
+  return String(value || "主题")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[()\[\]{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 48) || "主题";
+}
+
 function appendMermaidMindmapNode(lines, node, depth = 2) {
   const indent = "  ".repeat(depth);
-  lines.push(`${indent}${String(node.label || "主题").replace(/[()\[\]{}]/g, "")}`);
+  lines.push(`${indent}${sanitizeMermaidMindmapLabel(node.label || "主题")}`);
   (node.children || []).forEach((child) => appendMermaidMindmapNode(lines, child, depth + 1));
 }
 
 function buildMermaidMindmap(mindmap = getStudyModule().mindmap, course = getActiveCourse()) {
-  const safeTitle = String(mindmap?.title || course.name || "课程思维导图").replace(/[()]/g, "");
+  const safeTitle = sanitizeMermaidMindmapLabel(mindmap?.title || course.name || "课程思维导图");
   const lines = ["mindmap", `  root((${safeTitle}))`];
   (mindmap?.nodes || []).forEach((node) => appendMermaidMindmapNode(lines, node, 2));
   return lines.join("\n");
@@ -7882,13 +8497,69 @@ function generateQuizForTopic(topicId, difficulty = "all") {
   showView("quiz");
 }
 
-function regenerateQuizQuestionsFromCurrentGraph(source = "local-quiz-rules") {
+function buildQuizGenerationPrompt(graph, context = {}, documents = []) {
+  const nodes = (graph.nodes || []).slice(0, 40).map((node) => ({
+    id: node.id,
+    label: node.label,
+    summary: node.summary,
+    keywords: node.keywords,
+    sourceSnippets: node.sourceSnippets,
+  }));
+  const edges = (graph.edges || []).slice(0, 60).map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+    relation: edge.relation,
+    explanation: edge.explanation,
+  }));
+  const outline = extractDocumentOutlineForAi(documents, 60);
+  return [
+    "请基于课程资料独立生成自动测验题库，只返回严格 JSON，不要 Markdown。",
+    "优先依据资料正文和资料大纲出题；可参考知识图谱节点，但不要依赖知识图谱质量。",
+    "JSON 格式：{\"questions\":[{\"id\":\"q1\",\"topic\":\"短主题名或图谱节点id\",\"type\":\"choice|multi|judge|short|match\",\"difficulty\":\"基础|中等|较难\",\"prompt\":\"题干\",\"options\":[\"A\",\"B\"],\"answer\":0,\"pairs\":[[\"概念\",\"解释\"]],\"keywords\":[\"关键词\"],\"sampleAnswer\":\"参考答案\",\"explanation\":\"解析，说明正确依据和错选项问题\",\"source\":\"资料出处\",\"sourceSnippet\":\"原文证据片段\"}]}",
+    "要求：生成 12-20 道题，覆盖定义理解、关系判断、应用场景、易混概念和简答；不要生成脱离资料的通用模板题；每题必须有 sourceSnippet；不要把“本书/网址/版次/作者/目录项”当成考点。",
+    `练习模式：${context.mode || "adaptive"}；范围：${context.scope || "all"}；难度：${context.difficulty || "all"}`,
+    `资料大纲候选：${JSON.stringify(outline)}`,
+    `图谱节点：${JSON.stringify(nodes)}`,
+    `图谱关系：${JSON.stringify(edges)}`,
+  ].join("\n");
+}
+
+async function regenerateQuizQuestionsFromCurrentGraph(source = "local-quiz-rules", context = {}) {
   const studyModule = getStudyModule();
-  const questions = createRuleBasedQuizQuestions(studyModule.graph, getCourseStudyDocumentsSnapshot());
+  const documents = getCourseStudyDocumentsSnapshot();
+  let questions = [];
+  let quizSource = source;
+  if (window.mindStudy?.ai?.askQuestion && documents.length) {
+    try {
+      await ensureAiConfigured();
+      const response = await withTimeout(window.mindStudy.ai.askQuestion({
+        question: buildQuizGenerationPrompt(studyModule.graph, context, documents),
+        documents,
+        options: {
+          maxChunks: 10,
+          maxContextChars: GRAPH_TEXT_LIMIT,
+          maxTokens: 1800,
+          temperature: 0.12,
+          persona: false,
+          multimodal: true,
+        },
+      }), GRAPH_SECONDARY_AI_TIMEOUT_MS, "AI 题库生成");
+      const parsed = extractJsonFromAiText(response.answer);
+      const rawQuestions = parsed?.quiz?.questions || parsed?.questions || [];
+      questions = rawQuestions.map((question) => normalizeGeneratedQuestionWithTopic(question, studyModule.graph, documents)).filter(Boolean);
+      if (questions.length) quizSource = "qwen-quiz";
+    } catch {
+      questions = [];
+    }
+  }
+  if (!questions.length) {
+    questions = createRuleBasedQuizQuestions(studyModule.graph, documents);
+    quizSource = source;
+  }
   if (!questions.length) return false;
   studyModule.quiz.questions = questions;
   studyModule.quiz.generatedAt = Date.now();
-  studyModule.quiz.source = source;
+  studyModule.quiz.source = quizSource;
   studyModule.quiz.cursor = 0;
   return true;
 }
@@ -7910,7 +8581,7 @@ function moveQuizCursor(step = 1) {
   renderQuizModule();
 }
 
-function handleQuizActionButton(quizActionButton) {
+async function handleQuizActionButton(quizActionButton) {
   const action = quizActionButton?.dataset.quizAction;
   if (!action) return;
 
@@ -7923,9 +8594,20 @@ function handleQuizActionButton(quizActionButton) {
     const scope = document.querySelector("#quiz-scope-select")?.value || getStudyModule().selectedNodeId;
     const difficulty = document.querySelector("#quiz-difficulty-select")?.value || "all";
     const studyModule = getStudyModule();
-    studyModule.quiz.mode = mode;
-    regenerateQuizQuestionsFromCurrentGraph();
-    generateQuizForTopic(scope || "all", difficulty);
+    if (!studyModule.graph.nodes.length && getCourseStudyDocumentsSnapshot().length) {
+      await generateStudyModuleFromUploads();
+      return;
+    }
+    quizActionButton.disabled = true;
+    quizActionButton.querySelector("span").textContent = "生成中";
+    try {
+      studyModule.quiz.mode = mode;
+      await regenerateQuizQuestionsFromCurrentGraph("local-quiz-rules", { mode, scope, difficulty });
+      generateQuizForTopic(scope || "all", difficulty);
+    } finally {
+      quizActionButton.disabled = false;
+      quizActionButton.querySelector("span").textContent = "生成题组";
+    }
   }
   if (action === "next") moveQuizCursor(1);
   if (action === "reset") generateQuizForTopic(getStudyModule().quiz.scope || getStudyModule().selectedNodeId);
@@ -8144,12 +8826,14 @@ function buildStudyGenerationPrompt(documents) {
     "请基于课程资料生成 MindStudy 学习图谱和自动测验数据。",
     "必须返回严格 JSON，不要 Markdown，不要解释。",
     "只抽取正文里的课程概念、原理、方法、模型、术语、流程和约束。",
-    "禁止把 PDF 文件名、书名、作者、学校、学院、出版社、版次、ISBN、CIP、版权声明、页码、目录项、封面/封底信息、人名、机构名当作知识点。",
+    "禁止把 PDF 文件名、书名、作者、学校、学院、出版社、版次、ISBN、CIP、版权声明、页码、目录项、封面/封底信息、人名、机构名、本书说明、网址、参考文献、习题说明当作知识点。",
+    "负例：不要输出“本书”“本书中”“本书英文版网站的网址”“第7版是”“方面由”“目前的研究领域”“表和例子来说明为什么结论”“的工作提出建议或给予了”这类节点。",
+    "节点必须是可考试、可复习的短概念或短主题，例如“事务”“并发控制”“关系模型”“SQL”“完整性约束”。",
     "JSON 结构：",
     "{",
     '  "graph": {',
     '    "nodes": [{"id":"知识点唯一中文名","label":"显示名","summary":"60字内解释","chapter":"章节","difficulty":"基础|中等|较难","source":"资料出处","sourceSnippets":["原文证据片段"],"examples":["例子"],"keywords":["关键词"],"mastery":40}],',
-    '    "edges": [{"source":"节点id","target":"节点id","relation":"关系","weight":0.6}]',
+    '    "edges": [{"source":"节点id","target":"节点id","relation":"前置|包含|应用|对比|因果|证据|示例|相关","weight":0.6,"explanation":"为什么成立"}]',
     "  },",
     '  "quiz": {',
     '    "questions": [',
@@ -8160,8 +8844,9 @@ function buildStudyGenerationPrompt(documents) {
     "  },",
     '  "recommendations": [{"topic":"节点id","title":"复习建议标题","detail":"具体建议"}]',
     "}",
-    "质量要求：8-16 个节点，边不少于 6 条，覆盖定义、方法、模型、约束、流程和应用场景；每个节点必须能在正文中找到证据。",
-    "题目要求：生成 8-12 道题，必须直接来自课程资料内容；topic 必须等于某个 graph.nodes[].id；每道题都要有 source/sourceSnippet，解析要说明为什么错选项不合适；不要为了配合知识图谱关系而编造题目。",
+    "质量要求：优先生成 24-64 个节点，边数不少于节点数的 1.2 倍；必须覆盖章节层级、核心概念、方法/模型、约束、流程、应用和对比关系。",
+    "证据要求：每个核心节点必须有 sourceSnippets；每条非“相关”关系必须能用节点证据或 explanation 解释。",
+    "题目要求：生成 12-20 道题，题型覆盖 choice/multi/judge/short/match；必须直接来自课程资料内容；topic 必须等于某个 graph.nodes[].id；每道题都要有 source/sourceSnippet，解析要说明正确依据和错选项为什么不合适；不要为了配合知识图谱关系而编造题目。",
     `资料标题：${titles}`,
   ].join("\n");
 }
@@ -8182,6 +8867,11 @@ function adaptExternalGraphPayload(payload, documents = [], engine = "ai") {
       source: node.source || node.file || sourceDocuments[0] || "上传资料",
       examples: Array.isArray(node.examples) ? node.examples : node.example ? [node.example] : [`${label} 可结合资料原文、例题和相关概念复习。`],
       keywords: Array.isArray(node.keywords) ? node.keywords : [label],
+      sourceSnippets: Array.isArray(node.sourceSnippets)
+        ? node.sourceSnippets.map(String).filter(Boolean).slice(0, 4)
+        : node.sourceSnippet
+          ? [String(node.sourceSnippet)]
+          : [],
       mastery: Number(node.mastery) || 50 + (index % 5) * 6,
       x: Number(node.x) || 130 + (index % 5) * 180,
       y: Number(node.y) || 110 + Math.floor(index / 5) * 150,
@@ -8197,6 +8887,8 @@ function adaptExternalGraphPayload(payload, documents = [], engine = "ai") {
         source,
         target,
         relation: edge.relation || edge.label || edge.type || "相关",
+        relationType: edge.relationType || edge.type || "",
+        explanation: edge.explanation || edge.reason || "",
         weight: Number(edge.weight) || 0.6,
       };
     })
@@ -8216,38 +8908,30 @@ function adaptExternalGraphPayload(payload, documents = [], engine = "ai") {
 
 function ensureGraphQuality(graph, documents = [], engine = "local-fallback") {
   const normalized = sanitizeStudyGraph(graph);
-  normalized.nodes = normalized.nodes.filter((node) => isLikelyCourseConceptLabel(node.label || node.id, [node.summary, node.keywords?.join(" ")].filter(Boolean).join("\n")));
+  normalized.nodes = normalized.nodes.filter((node) =>
+    isLikelyCourseConceptLabel(node.label || node.id, [node.summary, node.keywords?.join(" ")].filter(Boolean).join("\n"))
+    && isGraphNodeSupportedByDocuments(node, documents));
   const nodeIds = new Set(normalized.nodes.map((node) => node.id));
   normalized.edges = normalized.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
   const needsFallback = normalized.nodes.length < GRAPH_QUALITY_MIN_NODES || normalized.edges.length < GRAPH_QUALITY_MIN_EDGES;
   if (!needsFallback) {
     normalized.meta.qualityScore = estimateGraphQuality(normalized);
+    normalized.meta.fallbackUsed = false;
     return normalized;
   }
 
-  const fallback = documents.length ? createRuleBasedGraphFromDocuments(documents, { skipQualityCheck: true }) : createFallbackStudyGraph(documents);
-  const existingIds = new Set(normalized.nodes.map((node) => node.id));
-  const mergedNodes = [
-    ...normalized.nodes,
-    ...fallback.nodes.filter((node) => !existingIds.has(node.id)).slice(0, GRAPH_NODE_LIMIT - normalized.nodes.length),
-  ];
-  const mergedIds = new Set(mergedNodes.map((node) => node.id));
-  const mergedEdges = [
-    ...normalized.edges,
-    ...fallback.edges.filter((edge) => mergedIds.has(edge.source) && mergedIds.has(edge.target)),
-  ].filter((edge, index, list) => list.findIndex((item) => item.source === edge.source && item.target === edge.target) === index);
-
-  return sanitizeStudyGraph({
-    nodes: mergedNodes,
-    edges: mergedEdges,
-    meta: {
-      generatedBy: engine,
-      generatedAt: Date.now(),
-      qualityScore: estimateGraphQuality({ nodes: mergedNodes, edges: mergedEdges }),
-      fallbackUsed: true,
-      sourceDocuments: documents.map((documentMeta) => documentMeta.title),
-    },
-  });
+  const rebuilt = documents.length ? createRuleBasedGraphFromDocuments(documents, { skipQualityCheck: true }) : createEmptyStudyGraph({ documents });
+  const replacement = rebuilt.nodes.length >= normalized.nodes.length ? rebuilt : normalized;
+  replacement.meta = {
+    ...(replacement.meta || {}),
+    generatedBy: rebuilt === replacement ? `${engine}+local-rebuild` : engine,
+    generatedAt: Date.now(),
+    qualityScore: estimateGraphQuality(replacement),
+    fallbackUsed: true,
+    qualityIssue: `节点或关系不足：${normalized.nodes.length} 个节点，${normalized.edges.length} 条关系。`,
+    sourceDocuments: documents.map((documentMeta) => documentMeta.title),
+  };
+  return sanitizeStudyGraph(replacement);
 }
 
 function createRuleBasedGraphFromDocuments(documents = [], options = {}) {
@@ -8297,6 +8981,7 @@ function createRuleBasedGraphFromDocuments(documents = [], options = {}) {
       documentMeta.text.split("\n").forEach((line) => {
         const label = normalizeStudyTextLine(line).replace(/^[#\d.、\s]+/, "").replace(/[：:。；;，,]+$/g, "");
         if (candidateMap.has(label) || !isLikelyCourseConceptLabel(label, line)) return;
+        if (GRAPH_SENTENCE_LABEL_PATTERN.test(label) || GRAPH_LABEL_HARD_NOISE_PATTERN.test(label)) return;
         if (label.length > 18) return;
         addCandidate(label, line, documentMeta.title, 3);
       });
@@ -8362,10 +9047,10 @@ function extractMindmapLabelsFromText(text = "", limit = 18) {
   const normalized = String(text || "").replace(/\r/g, "");
   const headingLabels = Array.from(normalized.matchAll(/^(?:#{1,4}\s*|第[一二三四五六七八九十\d]+[章节]\s*|[一二三四五六七八九十\d]+[.、]\s*)([A-Za-z0-9\u4e00-\u9fa5][^\n]{1,26})$/gm))
     .map((match) => match[1].replace(/[：:，,。；;、\-\s]+$/g, "").trim())
-    .filter((label) => label.length >= 2 && label.length <= 24);
+    .filter((label) => label.length >= 2 && label.length <= 24 && isLikelyCourseConceptLabel(label, label));
   const keywordLabels = Array.from(new Set((normalized.match(/[\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9 ]{1,12}/g) || [])
     .map((label) => label.trim())
-    .filter((label) => label.length >= 2 && label.length <= 14 && !/^(the|and|for|with|this|that)$/i.test(label))));
+    .filter((label) => label.length >= 2 && label.length <= 14 && isLikelyCourseConceptLabel(label, label) && !/^(the|and|for|with|this|that)$/i.test(label))));
   return Array.from(new Set([...headingLabels, ...keywordLabels])).slice(0, limit);
 }
 
@@ -8375,8 +9060,8 @@ function createRuleBasedMindmapFromDocuments(documents = [], course = getActiveC
   const branches = [];
 
   documents.slice(0, 6).forEach((documentMeta, documentIndex) => {
-    const labels = extractMindmapLabelsFromText(`${documentMeta.title}\n${documentMeta.text}`, 16);
-    const branchLabel = labels[0] || documentMeta.title || `资料 ${documentIndex + 1}`;
+    const labels = extractMindmapLabelsFromText(documentMeta.text, 16);
+    const branchLabel = labels[0] || `资料主题 ${documentIndex + 1}`;
     const childLabels = labels.slice(1, 7);
     branches.push({
       id: `mindmap-doc-${documentIndex + 1}`,
@@ -8446,6 +9131,149 @@ function createRuleBasedMindmapFromDocuments(documents = [], course = getActiveC
   }, course);
 }
 
+function extractDocumentOutlineForAi(documents = [], maxItems = 80) {
+  const items = [];
+  documents.forEach((documentMeta, documentIndex) => {
+    const lines = String(documentMeta.text || "")
+      .split("\n")
+      .map(normalizeStudyTextLine)
+      .filter((line) => line && !isBoilerplateStudyLine(line));
+    lines.forEach((line, lineIndex) => {
+      if (items.length >= maxItems) return;
+      const heading = line.match(/^(?:#{1,5}\s*|第[一二三四五六七八九十\d]+[章节篇]\s*|[一二三四五六七八九十\d]+(?:\.\d+)*[.、\s]+)([A-Za-z0-9\u4e00-\u9fa5][^\n]{1,42})$/);
+      const definition = line.match(/^([\u4e00-\u9fa5A-Za-z0-9 SQLER+\-#]{2,24})(?:是|指|表示|定义为|用于|包括|分为|由|称为)/);
+      const label = normalizeStudyTextLine((heading?.[1] || definition?.[1] || "").replace(/[：:。；;，,]+$/g, ""));
+      if (!label || !isLikelyCourseConceptLabel(label, line)) return;
+      items.push({
+        title: label,
+        source: documentMeta.title || `资料 ${documentIndex + 1}`,
+        snippet: lines.slice(Math.max(0, lineIndex - 1), Math.min(lines.length, lineIndex + 2)).join(" ").slice(0, 220),
+      });
+    });
+  });
+  return items;
+}
+
+function buildMindmapGenerationPrompt(documents = [], course = getActiveCourse()) {
+  const outline = extractDocumentOutlineForAi(documents);
+  const documentBrief = documents.map((documentMeta, index) => ({
+    id: `D${index + 1}`,
+    title: documentMeta.title,
+    excerpt: sampleTextWithinLimit(documentMeta.text || "", Math.floor(GRAPH_TEXT_LIMIT / Math.max(1, documents.length))).slice(0, 12000),
+  }));
+  return [
+    "请基于课程资料生成独立思维导图 JSON。不要依赖知识图谱，不要返回 Markdown，不要解释。",
+    "只保留正文中的课程知识主题、章节主题、核心概念、方法、模型、流程、约束和应用场景。",
+    "禁止使用 PDF 文件名、书名、作者、出版社、版次、网址、本书/本章说明、目录页、版权信息、参考文献、残缺句作为节点。",
+    "JSON 格式：",
+    '{"mindmap":{"id":"mindmap-root","title":"课程主题","summary":"一句导图说明","nodes":[{"id":"稳定id","label":"一级主题","summary":"复习提示","source":"资料出处","children":[{"id":"稳定id","label":"二级主题","summary":"复习提示","source":"资料出处","children":[{"id":"稳定id","label":"三级主题","summary":"复习提示","source":"资料出处"}]}]}]}}',
+    "质量要求：5-8 个一级主题；每个一级主题 3-6 个子主题；节点标签必须是短概念或短主题，不要超过 12 个汉字；不要出现“本书”“网址”“第7版”“方面由”“目前研究领域”等教材元信息。",
+    `课程：${course.name || "当前课程"}`,
+    `资料大纲候选：${JSON.stringify(outline)}`,
+    `资料正文摘录：${JSON.stringify(documentBrief)}`,
+  ].join("\n");
+}
+
+async function generateMindmapFromDocumentsWithAi(documents = [], course = getActiveCourse()) {
+  if (!window.mindStudy?.ai?.askQuestion || !documents.length) return null;
+  await ensureAiConfigured();
+  const response = await withTimeout(window.mindStudy.ai.askQuestion({
+    question: buildMindmapGenerationPrompt(documents, course),
+    documents,
+    options: {
+      maxChunks: 12,
+      maxContextChars: GRAPH_TEXT_LIMIT,
+      maxTokens: 1800,
+      temperature: 0.12,
+      persona: false,
+      multimodal: true,
+    },
+  }), GRAPH_SECONDARY_AI_TIMEOUT_MS, "Qwen 思维导图生成");
+  const parsed = extractJsonFromAiText(response.answer);
+  const mindmapPayload = parsed?.mindmap || parsed;
+  if (!mindmapPayload?.nodes?.length) return null;
+  return sanitizeMindmap({
+    ...mindmapPayload,
+    meta: {
+      ...(mindmapPayload.meta || {}),
+      generatedBy: "qwen-mindmap",
+      generatedAt: Date.now(),
+      sourceDocuments: documents.map((documentMeta) => documentMeta.title),
+    },
+  }, course);
+}
+
+function createMindmapFromGraph(graph = getStudyModule().graph, documents = [], course = getActiveCourse()) {
+  const nodes = (graph.nodes || []).filter((node) => isLikelyCourseConceptLabel(node.label || node.id, node.summary || ""));
+  if (!nodes.length) return createRuleBasedMindmapFromDocuments(documents, course);
+  const sourceDocuments = documents.map((documentMeta) => documentMeta.title || documentMeta.name).filter(Boolean);
+  const chapterMap = new Map();
+  nodes.forEach((node) => {
+    const chapter = String(node.chapter || node.source || "课程资料").trim() || "课程资料";
+    if (!chapterMap.has(chapter)) chapterMap.set(chapter, []);
+    chapterMap.get(chapter).push(node);
+  });
+
+  const branches = Array.from(chapterMap.entries())
+    .slice(0, GRAPH_MINDMAP_BRANCH_LIMIT)
+    .map(([chapter, chapterNodes], branchIndex) => {
+      const sortedNodes = [...chapterNodes].sort((a, b) => {
+        const aDegree = (graph.edges || []).filter((edge) => edge.source === a.id || edge.target === a.id).length;
+        const bDegree = (graph.edges || []).filter((edge) => edge.source === b.id || edge.target === b.id).length;
+        return bDegree - aDegree || String(a.label).localeCompare(String(b.label), "zh-CN");
+      });
+      return {
+        id: `mindmap-chapter-${branchIndex + 1}-${normalizeComparableText(chapter).slice(0, 16) || "course"}`,
+        label: chapter,
+        summary: `围绕 ${chapter} 整理的课程概念分支。`,
+        source: chapter,
+        children: sortedNodes.slice(0, GRAPH_MINDMAP_CHILD_LIMIT).map((node) => {
+          const relationHints = (graph.edges || [])
+            .filter((edge) => edge.source === node.id || edge.target === node.id)
+            .slice(0, 3)
+            .map((edge) => {
+              const otherId = edge.source === node.id ? edge.target : edge.source;
+              const otherNode = nodes.find((item) => item.id === otherId);
+              return otherNode ? `${edge.relation || "相关"}：${otherNode.label}` : "";
+            })
+            .filter(Boolean);
+          return {
+            id: `mindmap-topic-${normalizeComparableText(node.id).slice(0, 28)}`,
+            topicId: node.id,
+            label: node.label || node.id,
+            summary: [node.summary, relationHints.join("；")].filter(Boolean).join(" "),
+            source: node.source || chapter,
+          };
+        }),
+      };
+    });
+
+  return sanitizeMindmap({
+    id: "mindmap-root",
+    title: course.name || "课程思维导图",
+    summary: "根据知识图谱按章节与概念关系生成的层级复习导图。",
+    nodes: branches,
+    meta: {
+      generatedBy: "graph-linked-mindmap",
+      generatedAt: Date.now(),
+      empty: false,
+      sourceDocuments: sourceDocuments.length ? sourceDocuments : graph.meta?.sourceDocuments || [],
+    },
+  }, course);
+}
+
+function resolveMindmapTopicId(mindmapNode, graph = getStudyModule().graph) {
+  if (!mindmapNode) return "";
+  if (mindmapNode.topicId && graph.nodes.some((node) => node.id === mindmapNode.topicId)) return mindmapNode.topicId;
+  const comparableLabel = normalizeComparableText(mindmapNode.label);
+  const matched = (graph.nodes || []).find((node) => {
+    const id = normalizeComparableText(node.id);
+    const label = normalizeComparableText(node.label);
+    return id === comparableLabel || label === comparableLabel;
+  });
+  return matched?.id || "";
+}
+
 async function generateStudyModuleFromUploads() {
   const course = getActiveCourse();
   const studyModule = getStudyModule(course);
@@ -8478,10 +9306,20 @@ async function generateStudyModuleFromUploads() {
     if (!documents.length) throw new Error("没有可用于生成的资料文本。");
     documents = documents.map((documentMeta) => ({
       ...documentMeta,
-      text: String(documentMeta.text || "").slice(0, GRAPH_TEXT_LIMIT),
+      text: sampleTextWithinLimit(documentMeta.text || "", GRAPH_TEXT_LIMIT),
     }));
     documents = cleanDocumentsForStudyGeneration(documents);
-    mindmap = createRuleBasedMindmapFromDocuments(documents, course);
+    if (window.mindStudy?.ai?.askQuestion) {
+      studyModule.generation = { state: "ai", engine: "Qwen Mindmap", message: "正在根据资料大纲独立生成思维导图。", updatedAt: Date.now() };
+      saveWorkspace();
+      renderStudyModuleViews();
+      try {
+        mindmap = await generateMindmapFromDocumentsWithAi(documents, course);
+      } catch (error) {
+        studyModule.generation.message = `思维导图 AI 生成不可用，使用本地大纲规则：${getAiErrorMessage(error)}`;
+      }
+    }
+    if (!mindmap) mindmap = createRuleBasedMindmapFromDocuments(documents, course);
 
     if (!graph && window.mindStudy?.graph?.generateFromDocuments) {
       studyModule.generation = { state: "ai", engine: "Qwen + Neo4j", message: "正在抽取知识点、写入 Neo4j 并生成可交互图谱。", updatedAt: Date.now() };
@@ -8564,6 +9402,17 @@ async function generateStudyModuleFromUploads() {
         }
       } catch (error) {
         studyModule.generation.message = `本地图谱已生成，但写入 Neo4j 失败：${getAiErrorMessage(error)}`;
+      }
+    }
+    if (window.mindStudy?.ai?.askQuestion) {
+      try {
+        const previousGraph = studyModule.graph;
+        studyModule.graph = graph;
+        await regenerateQuizQuestionsFromCurrentGraph("local-quiz-rules", { mode: "adaptive", scope: "all", difficulty: "all" });
+        questions = studyModule.quiz.questions;
+        studyModule.graph = previousGraph;
+      } catch {
+        questions = [];
       }
     }
     if (!questions.length) {
@@ -10869,6 +11718,24 @@ function createDocumentMeta(file) {
   };
 }
 
+function scheduleStudyGenerationAfterImport(courseId) {
+  window.setTimeout(() => {
+    if (getActiveCourse()?.id !== courseId) return;
+    const studyModule = getStudyModule();
+    if (["extracting", "ai", "validating"].includes(studyModule.generation?.state)) return;
+    generateStudyModuleFromUploads().catch((error) => {
+      studyModule.generation = {
+        state: "error",
+        engine: studyModule.generation?.engine || "",
+        message: getAiErrorMessage(error),
+        updatedAt: Date.now(),
+      };
+      saveWorkspace();
+      renderStudyModuleViews();
+    });
+  }, 350);
+}
+
 async function handleCourseImport() {
   try {
     const files = (await selectCourseFiles()).filter((file) =>
@@ -10900,6 +11767,7 @@ async function handleCourseImport() {
     renderCourseSwitcher();
     await loadDocumentById(newMetas[0].id);
     showView("reader");
+    scheduleStudyGenerationAfterImport(course.id);
   } catch (error) {
     setParseStatus("解析失败", "working");
     showView("reader");
@@ -11709,6 +12577,10 @@ document.addEventListener("submit", (event) => {
     submitCourseForm(event);
   }
 
+  if (event.target.matches("#mindmap-node-form")) {
+    submitMindmapNodeForm(event);
+  }
+
   if (event.target.matches("#planner-form")) {
     addPlannerItem(event);
   }
@@ -11759,6 +12631,7 @@ document.addEventListener("click", (event) => {
   const mindmapActionButton = event.target.closest("[data-mindmap-action]");
   const mindmapNodeButton = event.target.closest("[data-mindmap-node]");
   const mindmapToggleButton = event.target.closest("[data-mindmap-toggle]");
+  const mindmapZoomButton = event.target.closest("[data-mindmap-zoom]");
   const quizAnswerButton = event.target.closest("[data-quiz-answer]");
   const quizMultiButton = event.target.closest("[data-quiz-multi]");
   const quizActionButton = event.target.closest("[data-quiz-action]");
@@ -11825,7 +12698,10 @@ document.addEventListener("click", (event) => {
   }
 
   if (quizActionButton) {
-    handleQuizActionButton(quizActionButton);
+    handleQuizActionButton(quizActionButton).catch((error) => {
+      const feedback = document.querySelector("#answer-feedback");
+      if (feedback) feedback.textContent = getAiErrorMessage(error);
+    });
     return;
   }
 
@@ -11839,6 +12715,11 @@ document.addEventListener("click", (event) => {
 
   if (graphZoomButton) {
     zoomGraph(Number(graphZoomButton.dataset.graphZoom) || 0);
+    return;
+  }
+
+  if (mindmapZoomButton) {
+    zoomMindmap(mindmapZoomButton.dataset.mindmapZoom);
     return;
   }
 
@@ -11891,6 +12772,9 @@ document.addEventListener("click", (event) => {
   if (mindmapNodeButton) {
     const studyModule = getStudyModule();
     studyModule.selectedMindmapNodeId = mindmapNodeButton.dataset.mindmapNode;
+    const selectedMindmapNode = getMindmapNodeById(studyModule.selectedMindmapNodeId, studyModule.mindmap);
+    const topicId = resolveMindmapTopicId(selectedMindmapNode, studyModule.graph);
+    if (topicId) studyModule.selectedNodeId = topicId;
     saveWorkspace();
     renderMindmapModule();
     return;
@@ -11907,10 +12791,26 @@ document.addEventListener("click", (event) => {
       openMindmapExportDialog();
       return;
     }
+    if (action === "regenerate") {
+      regenerateMindmapFromUploads();
+      return;
+    }
+    if (action === "add-child") {
+      openMindmapNodeEditor("add");
+      return;
+    }
+    if (action === "edit-node") {
+      openMindmapNodeEditor("edit");
+      return;
+    }
+    if (action === "delete-node") {
+      deleteSelectedMindmapNodeFromPrompt();
+      return;
+    }
     if (action === "practice") {
       const selectedMindmapNode = getMindmapNodeById(studyModule.selectedMindmapNodeId, studyModule.mindmap);
-      const matchedTopic = studyModule.graph.nodes.find((node) => node.label === selectedMindmapNode?.label || node.id === selectedMindmapNode?.label);
-      generateQuizForTopic(matchedTopic?.id || studyModule.selectedNodeId || "all");
+      const topicId = resolveMindmapTopicId(selectedMindmapNode, studyModule.graph);
+      generateQuizForTopic(topicId || studyModule.selectedNodeId || "all");
       return;
     }
     if (action === "expand-all") studyModule.mindmapCollapsed = [];
