@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld("mindStudy", {
   },
   rag: {
     askLibrary: (request) => ipcRenderer.invoke("b:rag:ask-library", request),
+    cancelAsk: (requestId) => ipcRenderer.invoke("b:rag:cancel-ask", requestId),
   },
   graph: {
     getStatus: () => ipcRenderer.invoke("graph:get-status"),

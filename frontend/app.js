@@ -265,6 +265,11 @@ const runtimeFiles = new Map();
 const documentState = {
   current: null,
 };
+const ragQuestionState = {
+  pending: false,
+  canceling: false,
+  requestId: "",
+};
 const supportedDocumentExtensions = new Set(["PDF", "MD"]);
 const PDF_TEXT_LIMIT = 60000;
 const PDF_PAGE_TEXT_LIMIT = 8000;
@@ -2986,6 +2991,51 @@ function setRagStatus(text, tone = "ready") {
   status.className = `rag-status ${tone}`;
 }
 
+function setRagQuestionButtonState(pending = ragQuestionState.pending, canceling = ragQuestionState.canceling) {
+  const button = document.querySelector("#rag-question-submit");
+  if (!button) return;
+
+  const icon = button.querySelector("i");
+  const label = button.querySelector("span");
+  const nextLabel = pending ? (canceling ? "停止中" : "停止提问") : "提问";
+
+  button.classList.toggle("is-stop", pending);
+  button.setAttribute("aria-label", nextLabel);
+  button.disabled = Boolean(canceling);
+  if (label) label.textContent = nextLabel;
+  if (icon) icon.setAttribute("data-lucide", pending ? "square" : "send");
+  window.lucide?.createIcons();
+}
+
+function isRagQuestionCanceledError(error) {
+  const message = error?.message || String(error || "");
+  return message.includes("RAG request was canceled") || message.includes("AbortError") || message.includes("aborted");
+}
+
+async function cancelRagQuestion() {
+  const requestId = ragQuestionState.requestId;
+
+  if (!ragQuestionState.pending || !requestId || ragQuestionState.canceling) return;
+
+  ragQuestionState.canceling = true;
+  setRagQuestionButtonState(true, true);
+  setRagStatus("正在停止提问...", "working");
+
+  try {
+    await window.mindStudy?.rag?.cancelAsk?.(requestId);
+  } catch (error) {
+    console.warn("Failed to cancel RAG request", error);
+  } finally {
+    if (ragQuestionState.requestId === requestId) {
+      ragQuestionState.pending = false;
+      ragQuestionState.canceling = false;
+      ragQuestionState.requestId = "";
+      setRagQuestionButtonState(false, false);
+      setRagStatus("已停止提问", "ready");
+    }
+  }
+}
+
 function isPdfMeta(meta) {
   return String(meta?.extension || "").toUpperCase() === "PDF";
 }
@@ -3120,6 +3170,7 @@ function renderRagAssistant() {
 
   renderRagMessages();
   setRagStatus(knowledge.documents.length ? "知识库已就绪" : "等待学习资料", knowledge.documents.length ? "ready" : "working");
+  setRagQuestionButtonState();
   window.lucide?.createIcons();
 }
 
@@ -3357,6 +3408,12 @@ function clearRagKnowledge() {
 
 async function submitRagQuestion(event) {
   event.preventDefault();
+
+  if (ragQuestionState.pending) {
+    await cancelRagQuestion();
+    return;
+  }
+
   const input = document.querySelector("#rag-question-input");
   const question = input?.value.trim();
 
@@ -3374,6 +3431,12 @@ async function submitRagQuestion(event) {
     return;
   }
 
+  const requestId = createId("ragreq");
+  ragQuestionState.pending = true;
+  ragQuestionState.canceling = false;
+  ragQuestionState.requestId = requestId;
+  setRagQuestionButtonState(true, false);
+
   addRagMessage({ role: "user", text: question });
   input.value = "";
   setRagStatus(LONGLONG_THINKING_LINE, "working");
@@ -3382,6 +3445,7 @@ async function submitRagQuestion(event) {
   try {
     await ensureAiConfigured();
     const response = await window.mindStudy.rag.askLibrary({
+      requestId,
       question,
       documents: knowledge.documents,
       includeWeb: settings.includeWeb,
@@ -3394,6 +3458,8 @@ async function submitRagQuestion(event) {
       },
     });
 
+    if (ragQuestionState.requestId !== requestId) return;
+
     addRagMessage({
       role: "assistant",
       text: withLonglongAnswerLine(response.answer || "AI 没有返回内容。"),
@@ -3403,11 +3469,23 @@ async function submitRagQuestion(event) {
     playLonglongAnswerLine();
     setRagStatus("回答完成", "ready");
   } catch (error) {
+    if (isRagQuestionCanceledError(error) || ragQuestionState.requestId !== requestId) {
+      setRagStatus("已停止提问", "ready");
+      return;
+    }
+
     addRagMessage({
       role: "assistant",
       text: getAiErrorMessage(error),
     });
     setRagStatus("回答失败", "warning");
+  } finally {
+    if (ragQuestionState.requestId === requestId) {
+      ragQuestionState.pending = false;
+      ragQuestionState.canceling = false;
+      ragQuestionState.requestId = "";
+      setRagQuestionButtonState(false, false);
+    }
   }
 }
 
