@@ -71,6 +71,7 @@ function buildQuestionMessages(question, chunks, options = {}) {
         "Cite sources with labels such as [S1] or [S2].",
         "Keep the answer concise and helpful for study.",
         "When formulas are useful, write inline formulas as $...$ and display formulas as $$...$$; do not put formulas in code blocks.",
+        "If the user asks you to create quiz questions or exercises, write each item in this order: 题目, 选项, 答案, 解析. Never place options, answers, or explanations before the question stem, and never mix them into the stem.",
       ].join(" "),
     },
     {
@@ -149,7 +150,7 @@ function createStudyAiService(options = {}) {
         model: options.model,
         multimodal: options.multimodal === true,
         temperature: options.temperature != null ? options.temperature : 0.2,
-        maxTokens: options.maxTokens != null ? options.maxTokens : 900,
+        maxTokens: options.maxTokens != null ? options.maxTokens : 4096,
         signal: options.signal,
       });
 
@@ -176,7 +177,7 @@ function createStudyAiService(options = {}) {
         model: options.model,
         multimodal: options.multimodal === true,
         temperature: options.temperature != null ? options.temperature : 0.2,
-        maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
+        maxTokens: options.maxTokens != null ? options.maxTokens : 4096,
         signal: options.signal,
       });
 

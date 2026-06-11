@@ -1200,7 +1200,8 @@ h3 {
 }
 
 .reader-layout {
-  grid-template-columns: 230px minmax(420px, 1fr) 320px;
+  grid-template-columns: var(--reader-library-width, 230px) 8px minmax(420px, 1fr) 8px var(--reader-insight-width, 390px);
+  gap: 10px;
   height: calc(100vh - 116px);
   min-height: 620px;
   overflow: hidden;
@@ -1210,8 +1211,39 @@ h3 {
   min-height: 0;
 }
 
+.reader-resizer {
+  position: relative;
+  align-self: stretch;
+  min-width: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: col-resize;
+}
+
+.reader-resizer::before {
+  content: "";
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 50%;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(24, 143, 132, 0.16);
+  transform: translateX(-50%);
+  transition:
+    width 160ms ease,
+    background 160ms ease;
+}
+
+.reader-resizer:hover::before,
+.reader-resizing .reader-resizer::before {
+  width: 4px;
+  background: rgba(24, 143, 132, 0.42);
+}
+
 .reader-layout:fullscreen {
-  grid-template-columns: minmax(220px, 260px) minmax(520px, 1fr) minmax(300px, 360px);
+  grid-template-columns: var(--reader-library-width, 230px) 8px minmax(520px, 1fr) 8px var(--reader-insight-width, 390px);
   width: 100vw;
   min-height: 100vh;
   padding: 18px;
@@ -1227,7 +1259,7 @@ h3 {
   position: fixed;
   inset: 0;
   z-index: 120;
-  grid-template-columns: minmax(220px, 260px) minmax(520px, 1fr) minmax(300px, 360px);
+  grid-template-columns: var(--reader-library-width, 230px) 8px minmax(520px, 1fr) 8px var(--reader-insight-width, 390px);
   width: 100vw;
   min-height: 100vh;
   padding: 18px;
@@ -1392,13 +1424,22 @@ h3 {
 }
 
 .library-empty {
+  width: calc(100% - 16px);
   margin: 0 8px;
   padding: 18px;
   border: 1px dashed var(--line);
   border-radius: 8px;
   background: #fbfcfa;
   color: var(--muted);
+  font: inherit;
   line-height: 1.7;
+  text-align: left;
+}
+
+.library-empty:hover {
+  border-color: rgba(24, 143, 132, 0.32);
+  background: var(--teal-soft);
+  color: var(--teal);
 }
 
 .slide-list-heading {
@@ -1431,6 +1472,37 @@ h3 {
 
 .confirm-modal {
   width: min(420px, 100%);
+}
+
+.reading-popout-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(980px, calc(100vw - 48px));
+  min-width: min(520px, calc(100vw - 48px));
+  height: min(760px, calc(100vh - 48px));
+  min-height: min(420px, calc(100vh - 48px));
+  overflow: auto;
+  resize: both;
+}
+
+.ai-reading-popout-text {
+  width: 100%;
+  min-height: 0;
+  padding: 14px;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+  background: #fbfcfa;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.ai-reading-popout-text:focus {
+  border-color: rgba(24, 143, 132, 0.5);
+  box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.1);
 }
 
 .modal-heading {
@@ -1838,10 +1910,21 @@ h3 {
   padding: 0;
 }
 
+.ai-reading-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-reading-tools .icon-button {
+  width: 36px;
+  min-height: 36px;
+}
+
 .ai-reading-source {
   display: block;
   width: 100%;
-  min-height: 118px;
+  min-height: 156px;
   padding: 12px;
   resize: vertical;
   border: 1px solid var(--line);
@@ -1892,7 +1975,7 @@ h3 {
 
 .pdf-range-controls {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: repeat(2, minmax(92px, 1fr));
   gap: 8px;
   margin-bottom: 10px;
 }
@@ -1908,6 +1991,7 @@ h3 {
 .pdf-range-controls input,
 .rag-range-settings input[type="number"] {
   width: 100%;
+  min-width: 88px;
   min-height: 34px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -1918,19 +2002,24 @@ h3 {
 }
 
 .pdf-range-controls .ghost-action {
+  grid-column: 1 / -1;
   align-self: end;
   min-height: 34px;
 }
 
 .ai-reading-output {
-  min-height: 118px;
+  min-height: 180px;
+  max-height: 360px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   color: var(--muted);
+  overflow: auto;
+  resize: vertical;
   white-space: normal;
   line-height: 1.7;
+  user-select: text;
 }
 
 .rag-page {
@@ -2147,6 +2236,25 @@ h3 {
 .rag-web-toggle input {
   width: 16px;
   height: 16px;
+}
+
+.rag-retrieval-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 20px 14px;
+}
+
+.rag-retrieval-settings label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rag-retrieval-settings input {
+  min-width: 0;
 }
 
 .rag-learned-list {
@@ -6055,6 +6163,74 @@ button.review-row:hover {
   transform: translateY(-3px) scale(1.02);
 }
 
+@media (min-width: 1181px) {
+  .view[data-view-panel="reader"],
+  .view[data-view-panel="rag"],
+  .view[data-view-panel="coding"],
+  .view[data-view-panel="calculator"],
+  .view[data-view-panel="planner"],
+  .view[data-view-panel="map"],
+  .view[data-view-panel="mindmap"],
+  .view[data-view-panel="quiz"],
+  .view[data-view-panel="focus"] {
+    overflow: hidden;
+  }
+
+  .rag-page,
+  .coding-page,
+  .calculator-page,
+  .planner-page,
+  .map-page,
+  .mindmap-page,
+  .quiz-layout,
+  .focus-page {
+    height: calc(100vh - 116px);
+    min-height: 0;
+    overflow: hidden;
+    align-items: stretch;
+  }
+
+  .rag-chat-panel,
+  .rag-library-panel,
+  .coding-input-panel,
+  .coding-output-panel,
+  .planner-board,
+  .mindmap-panel {
+    height: 100%;
+  }
+
+  .dashboard-grid > .panel,
+  .calculator-device,
+  .calculator-side-panel,
+  .planner-side,
+  .node-detail,
+  .mindmap-detail,
+  .quiz-main,
+  .quiz-side,
+  .focus-page > .panel {
+    max-height: 100%;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .rag-chat-list,
+  .rag-learned-list,
+  .coding-form,
+  .coding-output,
+  .planner-table-wrap,
+  .mindmap-stage,
+  .pdf-viewer,
+  .markdown-preview,
+  .chapter-panel,
+  .insight-panel {
+    overscroll-behavior: contain;
+  }
+
+  .rag-learned-list {
+    flex: 1 1 auto;
+  }
+}
+
 @media (max-width: 1180px) {
   body {
     overflow: auto;
@@ -6103,6 +6279,10 @@ button.review-row:hover {
   .reader-layout {
     height: auto;
     overflow: visible;
+  }
+
+  .reader-resizer {
+    display: none;
   }
 
   .reader-layout:fullscreen,

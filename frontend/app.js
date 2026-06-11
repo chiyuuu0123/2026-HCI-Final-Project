@@ -222,8 +222,8 @@ const GRAPH_NODE_LIMIT = 64;
 const GRAPH_MINDMAP_BRANCH_LIMIT = 10;
 const GRAPH_MINDMAP_CHILD_LIMIT = 8;
 const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
-const GRAPH_GENERATION_TIMEOUT_MS = 120000;
-const GRAPH_SECONDARY_AI_TIMEOUT_MS = 90000;
+const GRAPH_GENERATION_TIMEOUT_MS = 0;
+const GRAPH_SECONDARY_AI_TIMEOUT_MS = 0;
 const GRAPH_NOISE_LINE_PATTERN = /(ISBN|CIP|copyright|all rights reserved|seventh edition|edition|机械工业出版社|出版社|出版|印刷|版次|责任编辑|责任编|版权所有|盗版|防伪|校区|大学|学院|图书在版|编目|定价|开本|印张|字数|书名|作者|译者|封面|封底|library of congress|pearson|mcgraw|press)/i;
 const GRAPH_CONCEPT_SIGNAL_PATTERN = /(是|指|表示|定义|概念|包括|分为|组成|用于|作用|特点|模型|算法|方法|系统|结构|过程|关系|约束|查询|事务|索引|范式|模式|实体|属性|完整性|并发|恢复|SQL|ER|database|relation|transaction|query|index|schema)/i;
 const GRAPH_LABEL_HARD_NOISE_PATTERN = /(本书|本章|本节|本页|本版|英文版|中文版|网站|网址|第\s*\d+\s*版|第[一二三四五六七八九十]+版|pdf|\.pdf|http|www\.|目录|前言|致谢|参考文献|附录|练习题|习题|图\s*\d+|表\s*\d+|例\s*\d+|版权|出版社|作者|译者|教材|课件|文档|新课程|知识文档)/i;
@@ -262,6 +262,7 @@ const readerPanels = {
   insight: document.querySelector(".insight-panel"),
 };
 
+const READER_LAYOUT_STORAGE_KEY = "mindstudy.readerLayout.v1";
 const runtimeFiles = new Map();
 const documentState = {
   current: null,
@@ -270,6 +271,14 @@ const ragQuestionState = {
   pending: false,
   canceling: false,
   requestId: "",
+};
+let readerLayoutSettings = loadReaderLayoutSettings();
+const readerResizeState = {
+  active: false,
+  side: "",
+  startX: 0,
+  startLibraryWidth: 0,
+  startInsightWidth: 0,
 };
 const supportedDocumentExtensions = new Set(["PDF", "MD"]);
 const PDF_TEXT_LIMIT = 60000;
@@ -282,12 +291,13 @@ const PDF_OCR_AUTO_MAX_PAGES = 8;
 const AI_CONTEXT_TEXT_LIMIT = 12000;
 const AI_READING_TEXT_LIMIT = 8000;
 const RAG_KNOWLEDGE_TEXT_LIMIT = 240000;
+const RAG_CONTEXT_TEXT_LIMIT = 300000;
 const RAG_DEFAULT_CHUNK_SIZE = 1400;
 const RAG_DEFAULT_MAX_CHUNKS = 6;
 const RAG_MIN_CHUNK_SIZE = 500;
 const RAG_MAX_CHUNK_SIZE = 4000;
 const RAG_MIN_MAX_CHUNKS = 2;
-const RAG_MAX_MAX_CHUNKS = 12;
+const RAG_MAX_MAX_CHUNKS = 500;
 const VOICE_COMMAND_MAX_RECORDING_MS = 14000;
 const VOICE_COMMAND_MIN_RECORDING_MS = 500;
 const VOICE_COMMAND_SILENCE_GRACE_MS = 900;
@@ -581,6 +591,88 @@ const graphNodeDragState = {
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function clampReaderPaneWidth(value, min, max) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return min;
+  return Math.min(max, Math.max(min, Math.round(numericValue)));
+}
+
+function loadReaderLayoutSettings() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(READER_LAYOUT_STORAGE_KEY) || "{}");
+    const libraryWidth = Number(parsed.libraryWidth);
+    const insightWidth = Number(parsed.insightWidth);
+    return {
+      libraryWidth: clampReaderPaneWidth(Number.isFinite(libraryWidth) ? libraryWidth : 230, 190, 360),
+      insightWidth: clampReaderPaneWidth(Number.isFinite(insightWidth) ? insightWidth : 390, 360, 560),
+    };
+  } catch (error) {
+    return {
+      libraryWidth: 230,
+      insightWidth: 390,
+    };
+  }
+}
+
+function saveReaderLayoutSettings() {
+  try {
+    localStorage.setItem(READER_LAYOUT_STORAGE_KEY, JSON.stringify(readerLayoutSettings));
+  } catch (error) {
+    // 阅读区宽度是体验偏好，保存失败时不影响当前会话拖拽。
+  }
+}
+
+function applyReaderLayoutSettings() {
+  const layout = document.querySelector(".reader-layout");
+  if (!layout) return;
+
+  layout.style.setProperty("--reader-library-width", `${readerLayoutSettings.libraryWidth}px`);
+  layout.style.setProperty("--reader-insight-width", `${readerLayoutSettings.insightWidth}px`);
+}
+
+function beginReaderResize(event) {
+  const handle = event.target.closest("[data-reader-resizer]");
+  if (!handle) return;
+
+  const layout = handle.closest(".reader-layout");
+  if (!layout || window.matchMedia("(max-width: 1180px)").matches) return;
+
+  event.preventDefault();
+  readerResizeState.active = true;
+  readerResizeState.side = handle.dataset.readerResizer || "";
+  readerResizeState.startX = event.clientX;
+  readerResizeState.startLibraryWidth = readerLayoutSettings.libraryWidth;
+  readerResizeState.startInsightWidth = readerLayoutSettings.insightWidth;
+  document.documentElement.classList.add("reader-resizing");
+  handle.setPointerCapture?.(event.pointerId);
+}
+
+function updateReaderResize(event) {
+  if (!readerResizeState.active) return;
+
+  const deltaX = event.clientX - readerResizeState.startX;
+
+  if (readerResizeState.side === "library") {
+    readerLayoutSettings.libraryWidth = clampReaderPaneWidth(readerResizeState.startLibraryWidth + deltaX, 190, 360);
+  }
+
+  if (readerResizeState.side === "insight") {
+    readerLayoutSettings.insightWidth = clampReaderPaneWidth(readerResizeState.startInsightWidth - deltaX, 360, 560);
+  }
+
+  applyReaderLayoutSettings();
+}
+
+function finishReaderResize() {
+  if (!readerResizeState.active) return;
+
+  readerResizeState.active = false;
+  readerResizeState.side = "";
+  document.documentElement.classList.remove("reader-resizing");
+  saveReaderLayoutSettings();
+  rerenderCurrentPdfAfterReaderResize();
 }
 
 function withLonglongAnswerLine(markdown) {
@@ -1609,7 +1701,7 @@ async function submitLonglongChat(event) {
       includeScreen: false,
       source: "main",
       options: {
-        maxTokens: 900,
+        maxTokens: 4096,
         temperature: 0.32,
       },
     });
@@ -3201,14 +3293,16 @@ async function exportActivePdfRange(prefix = "ai") {
 
 function getRagSettingsFromInputs() {
   const knowledge = getRagKnowledge();
-  const chunkSize = normalizeRagNumber(knowledge.settings.chunkSize, RAG_DEFAULT_CHUNK_SIZE, RAG_MIN_CHUNK_SIZE, RAG_MAX_CHUNK_SIZE);
-  const maxChunks = normalizeRagNumber(knowledge.settings.maxChunks, RAG_DEFAULT_MAX_CHUNKS, RAG_MIN_MAX_CHUNKS, RAG_MAX_MAX_CHUNKS);
+  const chunkSizeInput = document.querySelector("#rag-chunk-size");
+  const maxChunksInput = document.querySelector("#rag-max-chunks");
+  const chunkSize = normalizeRagNumber(chunkSizeInput?.value || knowledge.settings.chunkSize, RAG_DEFAULT_CHUNK_SIZE, RAG_MIN_CHUNK_SIZE, RAG_MAX_CHUNK_SIZE);
+  const maxChunks = normalizeRagNumber(maxChunksInput?.value || knowledge.settings.maxChunks, RAG_DEFAULT_MAX_CHUNKS, RAG_MIN_MAX_CHUNKS, RAG_MAX_MAX_CHUNKS);
 
   return {
     chunkSize,
     maxChunks,
     includeWeb: document.querySelector("#rag-include-web")?.checked ?? knowledge.settings.includeWeb,
-    maxContextChars: Math.min(18000, chunkSize * maxChunks),
+    maxContextChars: RAG_CONTEXT_TEXT_LIMIT,
   };
 }
 
@@ -3366,6 +3460,8 @@ function renderRagAssistant() {
   const stats = document.querySelector("#rag-knowledge-stats");
   const list = document.querySelector("#rag-learned-files");
   const includeWebInput = document.querySelector("#rag-include-web");
+  const chunkSizeInput = document.querySelector("#rag-chunk-size");
+  const maxChunksInput = document.querySelector("#rag-max-chunks");
   const activePdf = documentState.current?.kind === "pdf" ? documentState.current : null;
   const activePage = activePdf ? getActivePdfPageNumber(activePdf) : 1;
   const activePageCount = activePdf ? Math.max(1, activePdf.pageCount || activePdf.meta.pageCount || 1) : 1;
@@ -3377,6 +3473,16 @@ function renderRagAssistant() {
   }
 
   if (includeWebInput) includeWebInput.checked = settings.includeWeb;
+  if (chunkSizeInput) {
+    chunkSizeInput.min = String(RAG_MIN_CHUNK_SIZE);
+    chunkSizeInput.max = String(RAG_MAX_CHUNK_SIZE);
+    chunkSizeInput.value = String(settings.chunkSize);
+  }
+  if (maxChunksInput) {
+    maxChunksInput.min = String(RAG_MIN_MAX_CHUNKS);
+    maxChunksInput.max = String(RAG_MAX_MAX_CHUNKS);
+    maxChunksInput.value = String(settings.maxChunks);
+  }
   if (rangeStartInput) {
     rangeStartInput.max = String(activePageCount);
     rangeStartInput.value = String(Math.min(activePageCount, Math.max(1, Number(rangeStartInput.value) || activePage)));
@@ -3695,7 +3801,12 @@ async function submitRagQuestion(event) {
         maxChunks: settings.maxChunks,
         maxContextChars: settings.maxContextChars,
         webResults: 4,
+<<<<<<< HEAD
+        webSearchTimeoutMs: 20000,
         maxTokens: 1200,
+=======
+        maxTokens: 4096,
+>>>>>>> b4a0ca8de3ad0cf4fad069bba1c1abc9786a7ab7
       },
     });
 
@@ -3776,7 +3887,7 @@ async function submitCodingAssistant(event) {
       code,
       language,
       options: {
-        maxTokens: 2600,
+        maxTokens: 8192,
         temperature: 0.18,
       },
     });
@@ -5789,89 +5900,94 @@ function updatePdfAiReadingPanel(doc) {
 
 function renderPdfInsightPanel(doc) {
   const pageCount = Math.max(1, doc.pageCount || doc.meta.pageCount || 1);
+  const inkCount = getPdfInkStrokes(doc).length;
 
   readerPanels.insight.innerHTML = `
     ${renderAiReadingWindow(doc)}
-    <div class="panel-heading">
-      <div>
-        <span class="tag muted">PDF 批注</span>
-        <h3>阅读与编辑</h3>
-      </div>
-    </div>
-    <p class="summary-text">已载入 PDF 阅读器。滚动到不同页面时，AI 阅读窗口会自动切换到当前页文字。</p>
-    <div class="pdf-toolbox">
-      <div class="pdf-page-jump">
-        <button class="mini-button" data-pdf-page-step="-1" ${doc.activePdfPage <= 1 ? "disabled" : ""} title="上一页">
-          <i data-lucide="chevron-left"></i>
+    <details class="pdf-annotation-panel">
+      <summary>
+        <div>
+          <span class="tag muted">PDF 批注</span>
+          <strong>阅读与编辑</strong>
+          <small>当前第 ${doc.activePdfPage || 1} / ${pageCount} 页 · ${inkCount ? `${inkCount} 笔待写入` : "暂无画笔批注"}</small>
+        </div>
+        <i data-lucide="chevron-down"></i>
+      </summary>
+      <p class="summary-text">已载入 PDF 阅读器。滚动到不同页面时，AI 阅读窗口会自动切换到当前页文字。</p>
+      <div class="pdf-toolbox">
+        <div class="pdf-page-jump">
+          <button class="mini-button" data-pdf-page-step="-1" ${doc.activePdfPage <= 1 ? "disabled" : ""} title="上一页">
+            <i data-lucide="chevron-left"></i>
+          </button>
+          <label class="pdf-page-control">
+            <span>当前页</span>
+            <input id="pdf-target-page" type="number" min="1" max="${pageCount}" value="${doc.activePdfPage}" />
+            <small>/ ${pageCount}</small>
+          </label>
+          <button class="mini-button" data-pdf-page-step="1" ${doc.activePdfPage >= pageCount ? "disabled" : ""} title="下一页">
+            <i data-lucide="chevron-right"></i>
+          </button>
+        </div>
+        <button class="ghost-action full" id="insert-pdf-image">
+          <i data-lucide="image-plus"></i>
+          <span>插入图片到当前页</span>
         </button>
-        <label class="pdf-page-control">
-          <span>当前页</span>
-          <input id="pdf-target-page" type="number" min="1" max="${pageCount}" value="${doc.activePdfPage}" />
-          <small>/ ${pageCount}</small>
-        </label>
-        <button class="mini-button" data-pdf-page-step="1" ${doc.activePdfPage >= pageCount ? "disabled" : ""} title="下一页">
-          <i data-lucide="chevron-right"></i>
+        <button class="ghost-action full" id="add-pdf-page">
+          <i data-lucide="file-plus-2"></i>
+          <span>在当前页后加空白页</span>
         </button>
-      </div>
-      <button class="ghost-action full" id="insert-pdf-image">
-        <i data-lucide="image-plus"></i>
-        <span>插入图片到当前页</span>
-      </button>
-      <button class="ghost-action full" id="add-pdf-page">
-        <i data-lucide="file-plus-2"></i>
-        <span>在当前页后加空白页</span>
-      </button>
-      <button class="danger-action full" id="delete-pdf-page">
-        <i data-lucide="trash-2"></i>
-        <span>删除当前页</span>
-      </button>
-      <div class="pdf-ink-tools">
-        <button class="ghost-action compact" data-pdf-ink-tool="pen" aria-pressed="${pdfInkState.enabled && pdfInkState.tool === "pen"}">
-          <i data-lucide="brush"></i>
-          <span>画笔</span>
-        </button>
-        <button class="ghost-action compact" data-pdf-ink-tool="highlight" aria-pressed="${pdfInkState.enabled && pdfInkState.tool === "highlight"}">
-          <i data-lucide="highlighter"></i>
-          <span>荧光笔</span>
-        </button>
-        <button class="ghost-action compact" data-pdf-ink-tool="eraser" aria-pressed="${pdfInkState.enabled && pdfInkState.tool === "eraser"}">
-          <i data-lucide="eraser"></i>
-          <span>橡皮擦</span>
-        </button>
-        <button class="ghost-action compact" id="undo-pdf-ink">
-          <i data-lucide="undo-2"></i>
-          <span>撤销</span>
-        </button>
-        <button class="ghost-action compact" id="clear-pdf-ink-page">
+        <button class="danger-action full" id="delete-pdf-page">
           <i data-lucide="trash-2"></i>
-          <span>清空本页</span>
+          <span>删除当前页</span>
         </button>
-        <button class="primary-action compact" id="apply-pdf-ink">
-          <i data-lucide="check"></i>
-          <span>写入 PDF</span>
-        </button>
-        <label class="pdf-ink-color">
-          <span>颜色</span>
-          <input id="pdf-ink-color" type="color" value="${escapeHtml(pdfInkState.color)}" />
-        </label>
-        <label class="pdf-ink-width">
-          <span>粗细 <b id="pdf-ink-width-value">${pdfInkState.width}px</b></span>
-          <input id="pdf-ink-width" type="range" min="2" max="12" value="${pdfInkState.width}" />
-        </label>
-        <small id="pdf-ink-mode" class="pdf-ink-mode">点击工具后在 PDF 上拖动批注</small>
-        <small id="pdf-ink-count" class="pdf-ink-count">${getPdfInkStrokes(doc).length ? `${getPdfInkStrokes(doc).length} 笔待写入` : "暂无画笔批注"}</small>
+        <div class="pdf-ink-tools">
+          <button class="ghost-action compact" data-pdf-ink-tool="pen" aria-pressed="${pdfInkState.enabled && pdfInkState.tool === "pen"}">
+            <i data-lucide="brush"></i>
+            <span>画笔</span>
+          </button>
+          <button class="ghost-action compact" data-pdf-ink-tool="highlight" aria-pressed="${pdfInkState.enabled && pdfInkState.tool === "highlight"}">
+            <i data-lucide="highlighter"></i>
+            <span>荧光笔</span>
+          </button>
+          <button class="ghost-action compact" data-pdf-ink-tool="eraser" aria-pressed="${pdfInkState.enabled && pdfInkState.tool === "eraser"}">
+            <i data-lucide="eraser"></i>
+            <span>橡皮擦</span>
+          </button>
+          <button class="ghost-action compact" id="undo-pdf-ink">
+            <i data-lucide="undo-2"></i>
+            <span>撤销</span>
+          </button>
+          <button class="ghost-action compact" id="clear-pdf-ink-page">
+            <i data-lucide="trash-2"></i>
+            <span>清空本页</span>
+          </button>
+          <button class="primary-action compact" id="apply-pdf-ink">
+            <i data-lucide="check"></i>
+            <span>写入 PDF</span>
+          </button>
+          <label class="pdf-ink-color">
+            <span>颜色</span>
+            <input id="pdf-ink-color" type="color" value="${escapeHtml(pdfInkState.color)}" />
+          </label>
+          <label class="pdf-ink-width">
+            <span>粗细 <b id="pdf-ink-width-value">${pdfInkState.width}px</b></span>
+            <input id="pdf-ink-width" type="range" min="2" max="12" value="${pdfInkState.width}" />
+          </label>
+          <small id="pdf-ink-mode" class="pdf-ink-mode">点击工具后在 PDF 上拖动批注</small>
+          <small id="pdf-ink-count" class="pdf-ink-count">${inkCount ? `${inkCount} 笔待写入` : "暂无画笔批注"}</small>
+        </div>
       </div>
-    </div>
-    <textarea id="document-notes" class="document-editor" placeholder="在这里写 PDF 批注、复习重点或待提问的问题...">${escapeHtml(doc.meta.notes || "")}</textarea>
-    <button class="primary-action full" id="save-document-notes">
-      <i data-lucide="save"></i>
-      <span>保存学习笔记</span>
-    </button>
-    <button class="ghost-action full" id="export-annotated-pdf">
-      <i data-lucide="file-output"></i>
-      <span>导出当前 PDF 副本</span>
-    </button>
-    <p class="small-hint">说明：PDF 编辑会作用在当前副本上，导出后得到新 PDF；不会直接破坏原文件。</p>
+      <textarea id="document-notes" class="document-editor" placeholder="在这里写 PDF 批注、复习重点或待提问的问题...">${escapeHtml(doc.meta.notes || "")}</textarea>
+      <button class="primary-action full" id="save-document-notes">
+        <i data-lucide="save"></i>
+        <span>保存学习笔记</span>
+      </button>
+      <button class="ghost-action full" id="export-annotated-pdf">
+        <i data-lucide="file-output"></i>
+        <span>导出当前 PDF 副本</span>
+      </button>
+      <p class="small-hint">说明：PDF 编辑会作用在当前副本上，导出后得到新 PDF；不会直接破坏原文件。</p>
+    </details>
   `;
   window.lucide?.createIcons();
   syncPdfPageControls(doc);
@@ -7576,19 +7692,114 @@ function sanitizeMindmap(mindmap = {}, course = {}) {
   };
 }
 
+function normalizeQuestionType(type) {
+  const rawType = String(type || "choice").trim().toLowerCase();
+  if (["multi", "multiple", "multiple_choice", "multiple-choice"].includes(rawType) || /多选|多项/.test(rawType)) return "multi";
+  if (["judge", "true_false", "true-false", "boolean"].includes(rawType) || /判断|正误/.test(rawType)) return "judge";
+  if (["short", "short_answer", "short-answer", "essay"].includes(rawType) || /简答|问答/.test(rawType)) return "short";
+  if (["match", "matching"].includes(rawType) || /匹配|配对/.test(rawType)) return "match";
+  return "choice";
+}
+
+function stripQuestionOptionLabel(option) {
+  return String(option?.text || option?.label || option?.value || option || "")
+    .replace(/^\s*(?:[A-F]|[①②③④⑤⑥])[\.\．、\)\）:：]\s*/i, "")
+    .trim();
+}
+
+function normalizeQuestionOptions(options) {
+  if (Array.isArray(options)) {
+    return options.map(stripQuestionOptionLabel).filter(Boolean);
+  }
+
+  if (options && typeof options === "object") {
+    return Object.values(options).map(stripQuestionOptionLabel).filter(Boolean);
+  }
+
+  return [];
+}
+
+function hasQuestionStemFieldLeakage(prompt) {
+  const text = String(prompt || "").trim();
+  if (!text) return false;
+  if (/(^|\n)\s*(?:选项|答案|正确答案|参考答案|解析|解释)\s*(?:[:：]|是|为)/.test(text)) return true;
+  const optionLineMatches = text.match(/(^|\n)\s*(?:[A-F]|[①②③④⑤⑥])[\.\．、\)\）:：]\s*\S/gi) || [];
+  return optionLineMatches.length >= 2;
+}
+
+function hasQuestionOptionFieldLeakage(options = []) {
+  return options.some((option) => /(^|\n)\s*(?:题目|答案|正确答案|参考答案|解析|解释)\s*(?:[:：]|是|为)/.test(String(option || "")));
+}
+
+function coerceChoiceAnswerIndex(answer, options = []) {
+  if (typeof answer === "number" && Number.isInteger(answer)) {
+    return answer >= 0 && answer < options.length ? answer : -1;
+  }
+
+  const raw = String(answer ?? "").trim();
+  if (!raw) return -1;
+
+  const letterMatch = raw.match(/(?:^|[^A-Za-z])([A-F])(?:[\.\．、\)\）\s:：]|$)/i) || raw.match(/^[A-F]$/i);
+  if (letterMatch) {
+    const letter = (letterMatch[1] || letterMatch[0]).toUpperCase();
+    const index = letter.charCodeAt(0) - 65;
+    if (index >= 0 && index < options.length) return index;
+  }
+
+  const numericMatch = raw.match(/(?:第\s*)?(\d+)\s*(?:项|个|号|选项)?/);
+  if (numericMatch) {
+    const number = Number(numericMatch[1]);
+    if (raw.includes("第") && number >= 1 && number <= options.length) return number - 1;
+    if (number >= 0 && number < options.length) return number;
+    if (number >= 1 && number <= options.length && number === options.length) return number - 1;
+  }
+
+  const comparableRaw = stripQuestionOptionLabel(raw.replace(/^(?:答案|正确答案|参考答案)\s*[:：]\s*/, ""))
+    .replace(/\s/g, "")
+    .toLowerCase();
+  return options.findIndex((option) => {
+    const comparableOption = stripQuestionOptionLabel(option).replace(/\s/g, "").toLowerCase();
+    return comparableOption && (comparableRaw === comparableOption || comparableRaw.includes(comparableOption));
+  });
+}
+
+function coerceMultiAnswerIndexes(answer, options = []) {
+  const values = Array.isArray(answer)
+    ? answer
+    : String(answer ?? "").split(/[,，、;；\s]+/).filter(Boolean);
+  const indexes = [];
+
+  values.forEach((value) => {
+    const index = coerceChoiceAnswerIndex(value, options);
+    if (index >= 0) indexes.push(index);
+  });
+
+  if (!indexes.length && !Array.isArray(answer)) {
+    const letters = String(answer ?? "").match(/[A-F]/gi) || [];
+    letters.forEach((letter) => {
+      const index = letter.toUpperCase().charCodeAt(0) - 65;
+      if (index >= 0 && index < options.length) indexes.push(index);
+    });
+  }
+
+  return Array.from(new Set(indexes)).sort((left, right) => left - right);
+}
+
 function normalizeStudyQuestion(question, nodes = getStudyModule().graph.nodes) {
   if (!question) return null;
   const topic = String(question.topic || question.nodeId || question.knowledgePoint || nodes[0]?.id || "知识点").trim();
   const node = resolveQuestionTopic(topic, nodes);
   if (!node) return null;
-  const type = question.type === "multiple" ? "multi" : question.type || "choice";
+  const type = normalizeQuestionType(question.type);
+  const prompt = String(question.prompt || question.question || "").trim();
+  if (hasQuestionStemFieldLeakage(prompt)) return null;
   const normalized = {
     id: question.id || createId("q"),
     topic: node?.id || topic,
     type,
     difficulty: question.difficulty || node?.difficulty || "中等",
-    prompt: String(question.prompt || question.question || "").trim() || `请解释 ${node?.label || topic} 的核心含义。`,
-    options: Array.isArray(question.options) ? question.options.map(String) : [],
+    prompt: prompt || `请解释 ${node?.label || topic} 的核心含义。`,
+    options: normalizeQuestionOptions(question.options),
     answer: question.answer,
     keywords: Array.isArray(question.keywords) ? question.keywords.map(String) : node?.keywords || [],
     pairs: Array.isArray(question.pairs) ? question.pairs : [],
@@ -7597,25 +7808,24 @@ function normalizeStudyQuestion(question, nodes = getStudyModule().graph.nodes) 
     source: question.source || node?.source || "课程资料",
     sourceSnippet: question.sourceSnippet || question.snippet || (node?.sourceSnippets || [])[0] || "",
   };
+  if (hasQuestionOptionFieldLeakage(normalized.options)) return null;
 
   if (normalized.type === "judge" && typeof normalized.answer !== "boolean") {
     normalized.answer = String(normalized.answer).includes("true") || String(normalized.answer).includes("正确");
   }
   if (normalized.type === "choice") {
     normalized.options = normalized.options.filter(Boolean).slice(0, 4);
-    const answerIndex = Number(normalized.answer);
-    normalized.answer = Number.isInteger(answerIndex) && answerIndex >= 0 && answerIndex < normalized.options.length ? answerIndex : 0;
+    const answerIndex = coerceChoiceAnswerIndex(normalized.answer, normalized.options);
+    normalized.answer = answerIndex >= 0 && answerIndex < normalized.options.length ? answerIndex : -1;
     if (normalized.options.length < 2) return null;
+    if (normalized.answer < 0) return null;
   }
   if (normalized.type === "multi" && !Array.isArray(normalized.answer)) {
-    normalized.answer = String(normalized.answer || "")
-      .split(/[,，、\s]+/)
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value));
+    normalized.answer = coerceMultiAnswerIndexes(normalized.answer, normalized.options);
   }
   if (normalized.type === "multi") {
     normalized.options = normalized.options.filter(Boolean).slice(0, 6);
-    normalized.answer = (normalized.answer || []).map(Number).filter((value) => value >= 0 && value < normalized.options.length);
+    normalized.answer = coerceMultiAnswerIndexes(normalized.answer, normalized.options);
     if (normalized.options.length < 3 || !normalized.answer.length) return null;
   }
   if (normalized.type === "match" && !normalized.pairs.length) {
@@ -9453,7 +9663,7 @@ async function gradeShortAnswerWithAi(question, answer) {
     options: {
       maxChunks: 3,
       maxContextChars: 4000,
-      maxTokens: 700,
+      maxTokens: 2000,
       temperature: 0.05,
       persona: false,
       multimodal: false,
@@ -9531,6 +9741,11 @@ function withTimeout(promise, timeoutMs, label) {
   let timer = null;
   const guarded = Promise.resolve(promise);
   guarded.catch(() => {});
+
+  if (!Number.isFinite(Number(timeoutMs)) || Number(timeoutMs) <= 0) {
+    return guarded;
+  }
+
   return Promise.race([
     guarded,
     new Promise((resolve, reject) => {
@@ -9577,6 +9792,8 @@ function buildQuizGenerationPrompt(graph, context = {}, documents = []) {
     "请基于课程资料独立生成自动测验题库，只返回严格 JSON，不要 Markdown。",
     "优先依据资料正文和资料大纲出题；可参考知识图谱节点，但不要依赖知识图谱质量。",
     "JSON 格式：{\"questions\":[{\"id\":\"q1\",\"topic\":\"短主题名或图谱节点id\",\"type\":\"choice|multi|judge|short|match\",\"difficulty\":\"基础|中等|较难\",\"prompt\":\"题干\",\"options\":[\"A\",\"B\"],\"answer\":0,\"pairs\":[[\"概念\",\"解释\"]],\"keywords\":[\"关键词\"],\"sampleAnswer\":\"参考答案\",\"explanation\":\"解析，说明正确依据和错选项问题\",\"source\":\"资料出处\",\"sourceSnippet\":\"原文证据片段\"}]}",
+    "字段纪律：prompt 只能写题干；options 只能写选项正文且不要带 A/B/C/D 编号；answer 只写正确选项的 0 基下标、下标数组或判断布尔值；explanation 只写解析。禁止把选项、答案、解析写进 prompt。",
+    "出题顺序：模型思考时也必须按题干、选项、答案、解析组织，不要出现答案或解析跑到题目前面的内容。",
     "要求：生成 12-20 道题，覆盖定义理解、关系判断、应用场景、易混概念和简答；不要生成脱离资料的通用模板题；每题必须有 sourceSnippet；不要把“本书/网址/版次/作者/目录项”当成考点。",
     `练习模式：${context.mode || "adaptive"}；范围：${context.scope || "all"}；难度：${context.difficulty || "all"}`,
     `资料大纲候选：${JSON.stringify(outline)}`,
@@ -9599,7 +9816,7 @@ async function regenerateQuizQuestionsFromCurrentGraph(source = "local-quiz-rule
         options: {
           maxChunks: 10,
           maxContextChars: GRAPH_TEXT_LIMIT,
-          maxTokens: 1800,
+          maxTokens: 8192,
           temperature: 0.12,
           persona: false,
           multimodal: true,
@@ -10244,7 +10461,7 @@ async function generateMindmapFromDocumentsWithAi(documents = [], course = getAc
     options: {
       maxChunks: 12,
       maxContextChars: GRAPH_TEXT_LIMIT,
-      maxTokens: 1800,
+      maxTokens: 8192,
       temperature: 0.12,
       persona: false,
       multimodal: true,
@@ -10391,7 +10608,7 @@ async function generateStudyModuleFromUploads() {
           course: getGraphCoursePayload(course),
           documents,
           options: {
-            maxTokens: 2200,
+            maxTokens: 8192,
             temperature: 0.12,
           },
         }), GRAPH_GENERATION_TIMEOUT_MS, "Qwen + Neo4j 知识图谱生成");
@@ -10419,7 +10636,7 @@ async function generateStudyModuleFromUploads() {
           options: {
             maxChunks: 10,
             maxContextChars: GRAPH_TEXT_LIMIT,
-            maxTokens: 2000,
+            maxTokens: 8192,
             temperature: 0.15,
             persona: false,
             multimodal: true,
@@ -11047,7 +11264,6 @@ function renderDocumentLibrary() {
         <i data-lucide="plus"></i>
       </button>
     </div>
-    <p class="library-subtitle">${escapeHtml(activeCourse.description || "每门课程拥有独立资料库")}</p>
     <div class="document-list">
       ${
         activeCourse.documents.length
@@ -11067,7 +11283,7 @@ function renderDocumentLibrary() {
                 `,
               )
               .join("")
-          : `<div class="library-empty">还没有资料。点击右上角或此处上传 PDF、MD。</div>`
+          : `<button class="library-empty" data-library-import="true" type="button">还没有资料，点击导入 PDF / Markdown</button>`
       }
     </div>
   `;
@@ -11086,15 +11302,11 @@ function showReaderEmpty() {
   readerPanels.insight.innerHTML = `
     <div class="panel-heading">
       <div>
-        <span class="tag muted">资料说明</span>
-        <h3>支持格式</h3>
+        <span class="tag muted">资料状态</span>
+        <h3>等待导入</h3>
       </div>
     </div>
-    <p class="summary-text">当前资料库仅支持 PDF 阅读批注和 Markdown 阅读编辑。</p>
-    <button class="primary-action full" data-library-import="true">
-      <i data-lucide="upload-cloud"></i>
-      <span>上传课程资料</span>
-    </button>
+    <p class="summary-text">支持 PDF 阅读批注和 Markdown 阅读编辑。导入入口保留在顶部按钮和资料库右上角。</p>
   `;
   window.lucide?.createIcons();
 }
@@ -11939,6 +12151,7 @@ function renderAiReadingWindow(doc) {
   const pdfPageCount = doc.kind === "pdf" ? Math.max(1, doc.pageCount || doc.meta.pageCount || 1) : 1;
   const rangeStart = Math.min(pdfPageCount, Math.max(1, Number(doc.meta.pdfRangeStart || getActivePdfPageNumber(doc) || 1)));
   const rangeEnd = Math.min(pdfPageCount, Math.max(rangeStart, Number(doc.meta.pdfRangeEnd || rangeStart)));
+  const sourceLength = normalizeExtractedPdfText(sourceText).length;
 
   return `
     <section class="ai-reading-card">
@@ -11947,10 +12160,18 @@ function renderAiReadingWindow(doc) {
           <span class="tag muted">AI 阅读窗口</span>
           <h3>解析与翻译</h3>
         </div>
-        <button class="mini-button" data-ai-action="settings" title="设置 Qwen API Key">
-          <i data-lucide="key-round"></i>
-          <span>Key</span>
-        </button>
+        <div class="ai-reading-tools">
+          <button class="icon-button light" id="popout-ai-reading-source" type="button" title="弹出提取文字">
+            <i data-lucide="maximize-2"></i>
+          </button>
+          <button class="icon-button light" id="popout-ai-reading-output" type="button" title="弹出返回内容">
+            <i data-lucide="external-link"></i>
+          </button>
+          <button class="mini-button" data-ai-action="settings" title="设置 Qwen API Key">
+            <i data-lucide="key-round"></i>
+            <span>Key</span>
+          </button>
+        </div>
       </div>
       ${
         extractStatus
@@ -11975,7 +12196,11 @@ function renderAiReadingWindow(doc) {
             </div>`
           : ""
       }
-      <textarea id="ai-reading-source" class="ai-reading-source" placeholder="${escapeHtml(placeholder)}">${escapeHtml(sourceText)}</textarea>
+      <textarea id="ai-reading-source" class="ai-reading-source is-hidden" placeholder="${escapeHtml(placeholder)}">${escapeHtml(sourceText)}</textarea>
+      <p class="ai-reading-source-note">
+        <i data-lucide="file-text"></i>
+        <span>${sourceLength ? `已载入当前页提取文字 ${sourceLength} 字，点击右上角展开查看或复制。` : "当前页暂无提取文字，可重新提取或在弹出窗口中手动粘贴。"}</span>
+      </p>
       <div class="ai-reading-actions">
         <button class="primary-action compact" id="ai-analyze-reading">
           <i data-lucide="sparkles"></i>
@@ -11994,6 +12219,84 @@ function renderAiReadingWindow(doc) {
       <div class="ai-reading-output" id="ai-reading-output">${renderAiMarkdown(output)}</div>
     </section>
   `;
+}
+
+function getAiReadingPopoutText(kind) {
+  if (kind === "source") {
+    return document.querySelector("#ai-reading-source")?.value || "";
+  }
+
+  const output = document.querySelector("#ai-reading-output");
+  return output?.innerText?.trim() || output?.textContent?.trim() || "";
+}
+
+function openAiReadingPopout(kind) {
+  const normalizedKind = kind === "source" ? "source" : "output";
+  const isSource = normalizedKind === "source";
+  const text = getAiReadingPopoutText(normalizedKind);
+  const title = isSource ? "提取文字" : "返回内容";
+
+  closeModal();
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    `
+      <div class="modal-backdrop" data-modal="ai-reading-popout">
+        <section class="course-modal reading-popout-modal" role="dialog" aria-modal="true" aria-labelledby="ai-reading-popout-title">
+          <div class="modal-heading">
+            <div>
+              <span class="tag muted">AI Reading</span>
+              <h2 id="ai-reading-popout-title">${title}</h2>
+            </div>
+            <button class="icon-button light" data-modal-action="close" title="关闭">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <textarea id="ai-reading-popout-text" class="ai-reading-popout-text" data-popout-kind="${normalizedKind}" ${isSource ? "" : "readonly"}>${escapeHtml(text)}</textarea>
+          <div class="modal-actions">
+            <button type="button" class="ghost-action compact" id="copy-ai-reading-popout">
+              <i data-lucide="copy"></i>
+              <span>复制</span>
+            </button>
+            ${
+              isSource
+                ? `<button type="button" class="primary-action compact" id="save-ai-reading-popout">
+                    <i data-lucide="check"></i>
+                    <span>保存回输入框</span>
+                  </button>`
+                : ""
+            }
+          </div>
+        </section>
+      </div>
+    `,
+  );
+
+  const textarea = document.querySelector("#ai-reading-popout-text");
+  textarea?.focus();
+  textarea?.select();
+  window.lucide?.createIcons();
+}
+
+async function copyAiReadingPopoutText() {
+  const textarea = document.querySelector("#ai-reading-popout-text");
+  if (!textarea) return;
+
+  try {
+    await navigator.clipboard.writeText(textarea.value);
+  } catch (error) {
+    textarea.select();
+    document.execCommand?.("copy");
+  }
+}
+
+function saveAiReadingPopoutText() {
+  const textarea = document.querySelector("#ai-reading-popout-text");
+  const sourceInput = document.querySelector("#ai-reading-source");
+  if (!textarea || textarea.dataset.popoutKind !== "source" || !sourceInput) return;
+
+  sourceInput.value = textarea.value;
+  sourceInput.dispatchEvent(new Event("input", { bubbles: true }));
+  closeModal();
 }
 
 async function updateAiReadingOutput(mode) {
@@ -12027,7 +12330,7 @@ async function updateAiReadingOutput(mode) {
           chunkSize: chunkSettings.chunkSize,
           maxChunks: chunkSettings.maxChunks,
           maxContextChars: chunkSettings.maxContextChars,
-          maxTokens: 1200,
+          maxTokens: 4096,
         },
       });
       result = formatAiAnswer(response);
@@ -12040,7 +12343,7 @@ async function updateAiReadingOutput(mode) {
           chunkSize: chunkSettings.chunkSize,
           maxChunks: chunkSettings.maxChunks,
           maxContextChars: chunkSettings.maxContextChars,
-          maxTokens: 1200,
+          maxTokens: 4096,
         },
       });
       result = formatAiSummary(response);
@@ -13439,7 +13742,7 @@ document.querySelectorAll(".prompt-chip").forEach((chip) => {
         options: {
           maxChunks: 6,
           maxContextChars: AI_CONTEXT_TEXT_LIMIT,
-          maxTokens: 1000,
+          maxTokens: 4096,
         },
       });
       setAiMarkdownContent(aiBubble, formatAiAnswer(response));
@@ -13477,7 +13780,7 @@ document.addEventListener("change", (event) => {
     syncPdfInkUi();
   }
 
-  if (event.target.matches("#rag-include-web")) {
+  if (event.target.matches("#rag-include-web, #rag-chunk-size, #rag-max-chunks")) {
     rememberRagSettings();
   }
 
@@ -13577,6 +13880,10 @@ document.addEventListener("pointerdown", beginGraphPan);
 document.addEventListener("pointermove", updateGraphPan);
 document.addEventListener("pointerup", finishGraphPan);
 document.addEventListener("pointercancel", finishGraphPan);
+document.addEventListener("pointerdown", beginReaderResize);
+document.addEventListener("pointermove", updateReaderResize);
+document.addEventListener("pointerup", finishReaderResize);
+document.addEventListener("pointercancel", finishReaderResize);
 document.addEventListener("mousedown", beginLonglongMouseDrag);
 document.addEventListener("mousemove", updateLonglongMouseDrag);
 document.addEventListener("mouseup", finishLonglongMouseDrag);
@@ -14065,6 +14372,10 @@ document.addEventListener("click", (event) => {
   if (actionButton.id === "undo-pdf-ink") undoPdfInkStroke();
   if (actionButton.id === "clear-pdf-ink-page") clearCurrentPdfInkPage();
   if (actionButton.id === "apply-pdf-ink") applyPdfInkToCurrentPdf();
+  if (actionButton.id === "popout-ai-reading-source") openAiReadingPopout("source");
+  if (actionButton.id === "popout-ai-reading-output") openAiReadingPopout("output");
+  if (actionButton.id === "copy-ai-reading-popout") copyAiReadingPopoutText();
+  if (actionButton.id === "save-ai-reading-popout") saveAiReadingPopoutText();
   if (actionButton.id === "ai-analyze-reading") updateAiReadingOutput("analyze");
   if (actionButton.id === "ai-translate-reading") updateAiReadingOutput("translate");
   if (actionButton.id === "export-ai-pdf-range") exportActivePdfRange("ai");
@@ -14089,6 +14400,7 @@ window.addEventListener("DOMContentLoaded", () => {
   initLonglongChatState();
   initLonglongActionHover();
   applyLonglongPosition();
+  applyReaderLayoutSettings();
   renderAllCourseViews();
   setCameraStatus("idle");
 

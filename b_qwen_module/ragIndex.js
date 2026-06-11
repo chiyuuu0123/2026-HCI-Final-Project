@@ -2,6 +2,8 @@
 
 const { chunkText, tokenize } = require("./textChunker");
 
+const DEFAULT_MAX_CONTEXT_CHARS = 300000;
+
 function countTerms(tokens) {
   const counts = new Map();
 
@@ -71,9 +73,27 @@ function scoreChunk(index, chunk, queryTokens, options = {}) {
   return score;
 }
 
+function getChunkKey(chunk) {
+  return `${chunk.id || chunk.title || "document"}::${chunk.chunkIndex}`;
+}
+
+function getDocumentKey(chunk) {
+  return String(chunk.id || chunk.title || "document");
+}
+
+function toSelectedChunk(chunk) {
+  return {
+    id: chunk.id,
+    title: chunk.title,
+    chunkIndex: chunk.chunkIndex,
+    text: chunk.text,
+    score: Number(chunk.score.toFixed(4)),
+  };
+}
+
 function queryRagIndex(index, query, options = {}) {
-  const topK = options.topK || options.maxChunks || 6;
-  const maxContextChars = options.maxContextChars || 12000;
+  const topK = Math.max(1, Number(options.topK || options.maxChunks || 6));
+  const maxContextChars = options.maxContextChars || DEFAULT_MAX_CONTEXT_CHARS;
   const queryTokens = tokenize(query);
 
   if (!index || !Array.isArray(index.chunks) || index.chunks.length === 0) {
@@ -92,20 +112,53 @@ function queryRagIndex(index, query, options = {}) {
     });
 
   const selected = [];
+  const selectedKeys = new Set();
   let totalChars = 0;
+
+  const trySelect = (chunk) => {
+    if (selected.length >= topK) return false;
+    const key = getChunkKey(chunk);
+    if (selectedKeys.has(key)) return false;
+    if (totalChars + chunk.text.length > maxContextChars && selected.length > 0) return false;
+
+    selected.push(toSelectedChunk(chunk));
+    selectedKeys.add(key);
+    totalChars += chunk.text.length;
+    return true;
+  };
+
+  if (options.documentCoverage !== false && ranked.length > 1) {
+    const bestByDocument = new Map();
+
+    for (const chunk of ranked) {
+      const documentKey = getDocumentKey(chunk);
+      if (!bestByDocument.has(documentKey)) {
+        bestByDocument.set(documentKey, chunk);
+      }
+    }
+
+    const bestChunks = Array.from(bestByDocument.values());
+    const bestScore = bestChunks[0]?.score || 0;
+    const minCoverageScore = bestScore > 0
+      ? bestScore * (Number.isFinite(Number(options.documentCoverageScoreRatio)) ? Number(options.documentCoverageScoreRatio) : 0.25)
+      : 0;
+    const coverageLimit = Math.min(
+      topK,
+      Math.max(0, Number.isFinite(Number(options.documentCoverageLimit)) ? Number(options.documentCoverageLimit) : topK),
+    );
+    const coverageCandidates = bestScore > 0
+      ? bestChunks.filter((chunk) => chunk.score >= minCoverageScore)
+      : bestChunks;
+
+    for (const chunk of coverageCandidates) {
+      if (selected.length >= coverageLimit) break;
+      trySelect(chunk);
+    }
+  }
 
   for (const chunk of ranked) {
     if (selected.length >= topK) break;
-    if (totalChars + chunk.text.length > maxContextChars && selected.length > 0) continue;
-
-    selected.push({
-      id: chunk.id,
-      title: chunk.title,
-      chunkIndex: chunk.chunkIndex,
-      text: chunk.text,
-      score: Number(chunk.score.toFixed(4)),
-    });
-    totalChars += chunk.text.length;
+    trySelect(chunk);
   }
 
   return selected;

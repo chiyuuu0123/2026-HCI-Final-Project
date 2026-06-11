@@ -268,6 +268,8 @@
               <button class="chapter">5. 可用性测试</button>
             </aside>
 
+            <div class="reader-resizer" data-reader-resizer="library" role="separator" aria-orientation="vertical" title="拖拽调整资料栏宽度"></div>
+
             <section class="panel document-panel">
               <div class="doc-toolbar">
                 <span>第 12 / 38 页</span>
@@ -298,6 +300,8 @@
                 </div>
               </div>
             </section>
+
+            <div class="reader-resizer" data-reader-resizer="insight" role="separator" aria-orientation="vertical" title="拖拽调整 AI 栏宽度"></div>
 
             <aside class="panel insight-panel">
               <div class="panel-heading">
@@ -398,6 +402,17 @@
                 <input id="rag-include-web" type="checkbox" checked />
                 <span>结合联网搜索</span>
               </label>
+
+              <div class="rag-retrieval-settings">
+                <label>
+                  <span>切分长度</span>
+                  <input id="rag-chunk-size" type="number" min="500" max="4000" step="100" value="1400" />
+                </label>
+                <label>
+                  <span>召回段数</span>
+                  <input id="rag-max-chunks" type="number" min="2" max="500" step="1" value="6" />
+                </label>
+              </div>
 
               <div class="rag-learned-list" id="rag-learned-files"></div>
 
