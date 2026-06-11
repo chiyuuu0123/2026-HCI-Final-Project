@@ -75,7 +75,7 @@ function extractMessageContentText(content) {
 
 function getDefaultMaxTokens() {
   const configured = Number(process.env.QWEN_MAX_TOKENS || process.env.DASHSCOPE_MAX_TOKENS);
-  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 8192;
+  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 32768;
 }
 
 function normalizeMaxTokens(value) {

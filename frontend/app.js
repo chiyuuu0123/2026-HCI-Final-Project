@@ -298,6 +298,7 @@ const RAG_MIN_CHUNK_SIZE = 500;
 const RAG_MAX_CHUNK_SIZE = 4000;
 const RAG_MIN_MAX_CHUNKS = 2;
 const RAG_MAX_MAX_CHUNKS = 500;
+const RAG_RESPONSE_MAX_TOKENS = 32768;
 const VOICE_COMMAND_MAX_RECORDING_MS = 14000;
 const VOICE_COMMAND_MIN_RECORDING_MS = 500;
 const VOICE_COMMAND_SILENCE_GRACE_MS = 900;
@@ -1859,7 +1860,8 @@ function createDefaultRagKnowledge() {
     settings: {
       chunkSize: RAG_DEFAULT_CHUNK_SIZE,
       maxChunks: RAG_DEFAULT_MAX_CHUNKS,
-      includeWeb: true,
+      includeWeb: false,
+      webSearchOptIn: false,
     },
     updatedAt: 0,
   };
@@ -2230,7 +2232,8 @@ function sanitizeRagKnowledge(ragKnowledge = {}) {
       RAG_MIN_MAX_CHUNKS,
       RAG_MAX_MAX_CHUNKS,
     ),
-    includeWeb: ragKnowledge.settings?.includeWeb !== false,
+    includeWeb: ragKnowledge.settings?.webSearchOptIn === true && ragKnowledge.settings?.includeWeb === true,
+    webSearchOptIn: ragKnowledge.settings?.webSearchOptIn === true,
   };
 
   const documents = (ragKnowledge.documents || [])
@@ -3295,13 +3298,16 @@ function getRagSettingsFromInputs() {
   const knowledge = getRagKnowledge();
   const chunkSizeInput = document.querySelector("#rag-chunk-size");
   const maxChunksInput = document.querySelector("#rag-max-chunks");
+  const includeWebInput = document.querySelector("#rag-include-web");
   const chunkSize = normalizeRagNumber(chunkSizeInput?.value || knowledge.settings.chunkSize, RAG_DEFAULT_CHUNK_SIZE, RAG_MIN_CHUNK_SIZE, RAG_MAX_CHUNK_SIZE);
   const maxChunks = normalizeRagNumber(maxChunksInput?.value || knowledge.settings.maxChunks, RAG_DEFAULT_MAX_CHUNKS, RAG_MIN_MAX_CHUNKS, RAG_MAX_MAX_CHUNKS);
+  const includeWeb = includeWebInput ? includeWebInput.checked : false;
 
   return {
     chunkSize,
     maxChunks,
-    includeWeb: document.querySelector("#rag-include-web")?.checked ?? knowledge.settings.includeWeb,
+    includeWeb,
+    webSearchOptIn: includeWeb,
     maxContextChars: RAG_CONTEXT_TEXT_LIMIT,
   };
 }
@@ -3798,15 +3804,11 @@ async function submitRagQuestion(event) {
       includeWeb: settings.includeWeb,
       options: {
         chunkSize: settings.chunkSize,
-        maxChunks: settings.maxChunks,
+        maxChunks: Math.max(12, settings.maxChunks),
         maxContextChars: settings.maxContextChars,
         webResults: 4,
-<<<<<<< HEAD
         webSearchTimeoutMs: 20000,
-        maxTokens: 1200,
-=======
-        maxTokens: 4096,
->>>>>>> b4a0ca8de3ad0cf4fad069bba1c1abc9786a7ab7
+        maxTokens: RAG_RESPONSE_MAX_TOKENS,
       },
     });
 

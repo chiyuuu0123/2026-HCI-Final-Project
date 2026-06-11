@@ -1887,13 +1887,8 @@ async function answerRagLibrary(request = {}) {
     options: {
       chunkSize: options.chunkSize,
       maxChunks: options.maxChunks,
-<<<<<<< HEAD
       maxContextChars: options.maxContextChars || 300000,
-      maxTokens: options.maxTokens || 1100,
-=======
-      maxContextChars: options.maxContextChars,
-      maxTokens: options.maxTokens || 4096,
->>>>>>> b4a0ca8de3ad0cf4fad069bba1c1abc9786a7ab7
+      maxTokens: options.maxTokens || 32768,
       temperature: options.temperature ?? 0.2,
       signal,
     },
