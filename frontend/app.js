@@ -321,6 +321,10 @@ const gestureRuntimeConfig = {
   pointerXMax: 1,
   pointerYMin: 0,
   pointerYMax: 1,
+  emotionRelaxedSmileThreshold: 0.34,
+  emotionRelaxedBrowMax: 0.22,
+  emotionRelaxedEyeClosedMax: 0.35,
+  emotionRelaxedJawOpenMax: 0.28,
 };
 const pdfInkState = {
   enabled: false,
@@ -384,6 +388,72 @@ const longlongState = {
   focusScore: "--",
   music: "白噪音 + 轻钢琴，适合继续专注阅读。",
   ragAnswer: "RAG 向量接口已预留，后续接入资料库向量检索后会在这里回答。",
+};
+const emotionMusicLibrary = {
+  focused: {
+    title: "白噪音 + 轻钢琴",
+    detail: "适合保持当前专注节奏。",
+    tracks: [
+      { title: "River Flows in You", src: "./assets/music/River-Flows-in-You.mp3" },
+      { title: "Canon in D", src: "./assets/music/canon-D.mp3" },
+    ],
+  },
+  tired: {
+    title: "雨声 + 低速钢琴",
+    detail: "建议先放慢节奏，休息 3 分钟再继续。",
+    tracks: [
+      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante.mp3" },
+      { title: "River Flows in You", src: "./assets/music/River-Flows-in-You.mp3" },
+    ],
+  },
+  confused: {
+    title: "低干扰白噪音",
+    detail: "适合边听边整理问题，降低额外干扰。",
+    tracks: [
+      { title: "Canon in D", src: "./assets/music/canon-D.mp3" },
+      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante.mp3" },
+    ],
+  },
+  relaxed: {
+    title: "轻钢琴 + 自然环境音",
+    detail: "保持平稳学习节奏。",
+    tracks: [
+      { title: "Summer", src: "./assets/music/summer-夏石让.mp3" },
+      { title: "River Flows in You", src: "./assets/music/River-Flows-in-You.mp3" },
+    ],
+  },
+  away: {
+    title: "暂停音乐",
+    detail: "等待你回到摄像头前后再继续推荐。",
+    tracks: [],
+  },
+  dim: {
+    title: "自然白噪音 + 轻节拍",
+    detail: "画面偏暗，先开灯再继续读。",
+    tracks: [
+      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante.mp3" },
+    ],
+  },
+  bright: {
+    title: "舒缓钢琴",
+    detail: "光线偏强，适合低音量播放。",
+    tracks: [
+      { title: "Canon in D", src: "./assets/music/canon-D.mp3" },
+    ],
+  },
+  default: {
+    title: "雨声 + 柔和钢琴",
+    detail: "适合整理笔记和复盘。",
+    tracks: [
+      { title: "River Flows in You", src: "./assets/music/River-Flows-in-You.mp3" },
+      { title: "Summer", src: "./assets/music/summer-夏石让.mp3" },
+    ],
+  },
+};
+const musicPlayerState = {
+  recommendationId: "",
+  trackIndex: 0,
+  playing: false,
 };
 let longlongBondNoticeTimer = null;
 let longlongCoinSyncKey = "";
@@ -1371,10 +1441,7 @@ function updateLonglongMood(mood, detail, music = "") {
 }
 
 function getLonglongMusicForBrightness(normalized) {
-  if (normalized < 22) return "自然白噪音 + 轻节拍，先开灯再继续读。";
-  if (normalized > 82) return "舒缓钢琴 + 低音量，注意屏幕和环境光。";
-  if (normalized > 55) return "白噪音 + 轻钢琴，适合继续专注阅读。";
-  return "雨声 + 柔和钢琴，适合整理笔记和复盘。";
+  return getMusicRecommendationForBrightness(normalized).summary;
 }
 
 function getDocumentRagSnippet(documentMeta) {
@@ -3948,19 +4015,183 @@ function updateCameraMetrics(brightness) {
   if (ui.focusLabel) ui.focusLabel.textContent = label;
   if (ui.moodTitle) ui.moodTitle.textContent = title;
   if (ui.gestureTitle) ui.gestureTitle.textContent = "摄像头已开启，等待手势";
+  const musicRecommendation = getMusicRecommendationForBrightness(normalized);
+  setMusicRecommendation(musicRecommendation);
   updateLonglongMood(
     title.replace("当前状态：", ""),
     `${label}，专注分 ${score}。${normalized < 22 ? "先把环境光补足再继续。" : normalized > 82 ? "光线偏强，可以降低屏幕亮度。" : "现在适合继续沉浸阅读。"}`,
-    getLonglongMusicForBrightness(normalized),
+    musicRecommendation.summary,
   );
 }
 
 function getLonglongMusicForEmotion(emotionId, normalizedBrightness) {
-  if (emotionId === "tired") return "雨声 + 低速钢琴，建议先休息 3 分钟再继续。";
-  if (emotionId === "confused") return "低干扰白噪音，适合边听边让 AI 解释当前资料。";
-  if (emotionId === "relaxed") return "轻钢琴 + 自然环境音，保持当前学习节奏。";
-  if (emotionId === "away") return "暂停音乐，等你回到学习状态后继续。";
-  return getLonglongMusicForBrightness(normalizedBrightness);
+  return getMusicRecommendationForEmotion(emotionId, normalizedBrightness).summary;
+}
+
+function getMusicRecommendationById(id) {
+  const recommendation = emotionMusicLibrary[id] || emotionMusicLibrary.default;
+  return {
+    id: emotionMusicLibrary[id] ? id : "default",
+    ...recommendation,
+    summary: `${recommendation.title}，${recommendation.detail}`,
+  };
+}
+
+function getMusicRecommendationForBrightness(normalized) {
+  if (normalized < 22) return getMusicRecommendationById("dim");
+  if (normalized > 82) return getMusicRecommendationById("bright");
+  if (normalized > 55) return getMusicRecommendationById("focused");
+  return getMusicRecommendationById("default");
+}
+
+function getMusicRecommendationForEmotion(emotionId, normalizedBrightness) {
+  if (["tired", "confused", "relaxed", "away"].includes(emotionId)) {
+    return getMusicRecommendationById(emotionId);
+  }
+  return getMusicRecommendationForBrightness(normalizedBrightness);
+}
+
+function getMusicUi() {
+  return {
+    title: document.querySelector("#music-recommend-title"),
+    detail: document.querySelector("#music-recommend-detail"),
+    trackTitle: document.querySelector("#music-track-title"),
+    audio: document.querySelector("#emotion-music-audio"),
+    playButton: document.querySelector("#music-play-toggle"),
+    prevButton: document.querySelector("#music-prev"),
+    nextButton: document.querySelector("#music-next"),
+    panel: document.querySelector(".music-panel"),
+  };
+}
+
+function getCurrentMusicRecommendation() {
+  return getMusicRecommendationById(musicPlayerState.recommendationId || "focused");
+}
+
+function getCurrentMusicTrack() {
+  const recommendation = getCurrentMusicRecommendation();
+  if (!recommendation.tracks.length) return null;
+  const index = Math.max(0, Math.min(musicPlayerState.trackIndex, recommendation.tracks.length - 1));
+  return recommendation.tracks[index] || recommendation.tracks[0];
+}
+
+function setMusicPlayIcon(isPlaying) {
+  const ui = getMusicUi();
+  if (!ui.playButton) return;
+  if (ui.playButton.dataset.playing === String(isPlaying)) return;
+  ui.playButton.dataset.playing = String(isPlaying);
+  ui.playButton.replaceChildren();
+  const icon = document.createElement("i");
+  icon.setAttribute("data-lucide", isPlaying ? "pause" : "play");
+  ui.playButton.appendChild(icon);
+  ui.playButton.setAttribute("aria-pressed", isPlaying ? "true" : "false");
+  ui.playButton.title = isPlaying ? "暂停音乐" : "播放推荐音乐";
+  window.lucide?.createIcons();
+}
+
+function renderMusicRecommendation(recommendation = getCurrentMusicRecommendation()) {
+  const ui = getMusicUi();
+  const track = getCurrentMusicTrack();
+  if (ui.title) ui.title.textContent = recommendation.title;
+  if (ui.detail) ui.detail.textContent = recommendation.detail;
+  if (ui.trackTitle) ui.trackTitle.textContent = track?.title || "未选择曲目";
+  if (ui.prevButton) ui.prevButton.disabled = recommendation.tracks.length <= 1;
+  if (ui.nextButton) ui.nextButton.disabled = recommendation.tracks.length <= 1;
+  if (ui.playButton) ui.playButton.disabled = !track;
+  ui.panel?.classList.toggle("is-playing", musicPlayerState.playing);
+  ui.panel?.classList.toggle("is-paused", !musicPlayerState.playing);
+  setMusicPlayIcon(musicPlayerState.playing);
+}
+
+function loadCurrentMusicTrack({ keepPlaying = false } = {}) {
+  const ui = getMusicUi();
+  const track = getCurrentMusicTrack();
+  if (!ui.audio) return;
+
+  if (!track) {
+    ui.audio.pause();
+    ui.audio.removeAttribute("src");
+    delete ui.audio.dataset.trackSrc;
+    musicPlayerState.playing = false;
+    renderMusicRecommendation();
+    return;
+  }
+
+  if (ui.audio.dataset.trackSrc !== track.src) {
+    ui.audio.src = track.src;
+    ui.audio.dataset.trackSrc = track.src;
+    ui.audio.load();
+  }
+  renderMusicRecommendation();
+  if (keepPlaying) playCurrentMusic();
+}
+
+function setMusicRecommendation(recommendation, { autoPlayIfPlaying = true } = {}) {
+  if (!recommendation?.id) return;
+  const wasPlaying = musicPlayerState.playing;
+  if (musicPlayerState.recommendationId !== recommendation.id) {
+    musicPlayerState.recommendationId = recommendation.id;
+    musicPlayerState.trackIndex = 0;
+    loadCurrentMusicTrack({ keepPlaying: autoPlayIfPlaying && wasPlaying });
+    return;
+  }
+}
+
+function playCurrentMusic() {
+  const ui = getMusicUi();
+  const track = getCurrentMusicTrack();
+  if (!ui.audio || !track) return;
+  if (!ui.audio.src) loadCurrentMusicTrack();
+  ui.audio.play()
+    .then(() => {
+      musicPlayerState.playing = true;
+      renderMusicRecommendation();
+    })
+    .catch(() => {
+      musicPlayerState.playing = false;
+      renderMusicRecommendation();
+    });
+}
+
+function pauseCurrentMusic() {
+  const ui = getMusicUi();
+  ui.audio?.pause();
+  musicPlayerState.playing = false;
+  renderMusicRecommendation();
+}
+
+function toggleEmotionMusicPlayback() {
+  if (musicPlayerState.playing) {
+    pauseCurrentMusic();
+    return;
+  }
+  playCurrentMusic();
+}
+
+function shiftEmotionMusicTrack(step) {
+  const recommendation = getCurrentMusicRecommendation();
+  if (!recommendation.tracks.length) return;
+  const nextIndex = (musicPlayerState.trackIndex + step + recommendation.tracks.length) % recommendation.tracks.length;
+  musicPlayerState.trackIndex = nextIndex;
+  loadCurrentMusicTrack({ keepPlaying: musicPlayerState.playing });
+}
+
+function initEmotionMusicPlayer() {
+  const ui = getMusicUi();
+  if (!ui.audio) return;
+  musicPlayerState.recommendationId = "focused";
+  musicPlayerState.trackIndex = 0;
+  ui.audio.volume = 0.55;
+  ui.audio.addEventListener("play", () => {
+    musicPlayerState.playing = true;
+    renderMusicRecommendation();
+  });
+  ui.audio.addEventListener("pause", () => {
+    musicPlayerState.playing = false;
+    renderMusicRecommendation();
+  });
+  ui.audio.addEventListener("ended", () => shiftEmotionMusicTrack(1));
+  loadCurrentMusicTrack();
 }
 
 function readEnvNumber(env, key, fallback, min, max) {
@@ -4006,8 +4237,16 @@ async function loadGestureRuntimeConfig() {
       gestureRuntimeConfig.pointerYMin,
       gestureRuntimeConfig.pointerYMax,
     ] = readPointerRange(env, "GESTURE_POINTER_Y_MIN", "GESTURE_POINTER_Y_MAX", 0, 1);
+    gestureRuntimeConfig.emotionRelaxedSmileThreshold = readEnvFloat(env, "EMOTION_RELAXED_SMILE_THRESHOLD", 0.34, 0, 1);
+    gestureRuntimeConfig.emotionRelaxedBrowMax = readEnvFloat(env, "EMOTION_RELAXED_BROW_MAX", 0.22, 0, 1);
+    gestureRuntimeConfig.emotionRelaxedEyeClosedMax = readEnvFloat(env, "EMOTION_RELAXED_EYE_CLOSED_MAX", 0.35, 0, 1);
+    gestureRuntimeConfig.emotionRelaxedJawOpenMax = readEnvFloat(env, "EMOTION_RELAXED_JAW_OPEN_MAX", 0.28, 0, 1);
     window.MindStudyVision?.configure?.({
       frameIntervalMs: gestureRuntimeConfig.visionFrameIntervalMs,
+      relaxedSmileThreshold: gestureRuntimeConfig.emotionRelaxedSmileThreshold,
+      relaxedBrowMax: gestureRuntimeConfig.emotionRelaxedBrowMax,
+      relaxedEyeClosedMax: gestureRuntimeConfig.emotionRelaxedEyeClosedMax,
+      relaxedJawOpenMax: gestureRuntimeConfig.emotionRelaxedJawOpenMax,
     });
   } catch (error) {
     console.warn("Failed to load frontend gesture config.", error);
@@ -4270,10 +4509,12 @@ function updateCameraVisionUi(result) {
   }
 
   updateGestureCards(gesture.id || "none");
+  const musicRecommendation = getMusicRecommendationForEmotion(emotion.id, normalizedBrightness);
+  setMusicRecommendation(musicRecommendation);
   updateLonglongMood(
     emotion.label || "摄像头识别中",
     emotion.detail || "我会结合表情和手势给出提醒。",
-    getLonglongMusicForEmotion(emotion.id, normalizedBrightness),
+    musicRecommendation.summary,
   );
 }
 
@@ -13564,6 +13805,9 @@ document.addEventListener("click", (event) => {
   if (actionButton.id === "toggle-camera-landmarks") toggleVisionLandmarks();
   if (actionButton.id === "start-camera") startCamera();
   if (actionButton.id === "stop-camera") stopCamera();
+  if (actionButton.id === "music-play-toggle") toggleEmotionMusicPlayback();
+  if (actionButton.id === "music-prev") shiftEmotionMusicTrack(-1);
+  if (actionButton.id === "music-next") shiftEmotionMusicTrack(1);
   if (actionButton.id === "simulate-upload" || actionButton.dataset.libraryImport === "true") handleCourseImport();
   if (actionButton.id === "save-document-notes" || actionButton.id === "save-notes-top") saveDocumentNotes();
   if (actionButton.id === "export-annotated-pdf") exportAnnotatedPdf();
@@ -13590,6 +13834,7 @@ document.addEventListener("click", (event) => {
 window.addEventListener("DOMContentLoaded", () => {
   loadGestureRuntimeConfig();
   setupGestureCategoryLabels();
+  initEmotionMusicPlayer();
   applyAppZoom();
   initStudyTimer();
   initLonglongBond();

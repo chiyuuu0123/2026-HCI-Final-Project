@@ -21,14 +21,20 @@
 | 状态 | 触发条件 | 页面反馈 |
 | --- | --- | --- |
 | 专注 | 检测到人脸，且没有明显疲劳、困惑或放松特征 | 显示专注状态，并给出较高专注分 |
-| 疲劳 | 闭眼 blendshape 较高，或张嘴 blendshape 较高 | 提醒短暂休息，并降低专注分 |
+| 疲劳 | 闭眼 blendshape 持续超过约 1.2 秒，或张嘴 blendshape 较高 | 提醒短暂休息，并降低专注分 |
 | 困惑 | 皱眉 blendshape 较高，同时微笑特征较低 | 建议让 AI 解释当前资料 |
-| 放松 | 左右嘴角微笑 blendshape 较高 | 保持当前学习节奏，并推荐平稳音乐 |
+| 放松 | 左右嘴角微笑 blendshape 较高，同时皱眉、闭眼、张嘴特征都较低 | 保持当前学习节奏，并推荐平稳音乐 |
 | 离开 | 没有检测到人脸关键点 | 显示离开状态，降低学习状态可信度 |
 | 光线偏暗 | 摄像头画面平均亮度较低 | 降低专注分，并提示补光 |
 | 光线偏强 | 摄像头画面平均亮度较高 | 降低专注分，并提示降低环境光或屏幕亮度 |
 
 这些状态只作为学习状态提示，不作为医学或心理诊断。
+
+### 疲劳和放松的细化逻辑
+
+- 普通眨眼不会触发“疲劳”。系统会记录闭眼开始时间，只有 `eyeBlinkLeft` 和 `eyeBlinkRight` 的平均值持续高于阈值约 1.2 秒，才判断为持续闭眼并进入“疲劳”。
+- 张嘴特征仍可单独触发“疲劳”，用于覆盖明显打哈欠场景。
+- “放松”不是只看微笑。当前逻辑要求嘴角微笑较明显，同时皱眉、闭眼、张嘴特征都较低，避免把苦笑、闭眼笑或说话时的表情误判为轻松。
 
 ## `.env` 可调参数
 
@@ -48,6 +54,10 @@ GESTURE_POINTER_X_MIN=0.5
 GESTURE_POINTER_X_MAX=1
 GESTURE_POINTER_Y_MIN=0.2
 GESTURE_POINTER_Y_MAX=0.8
+EMOTION_RELAXED_SMILE_THRESHOLD=0.34
+EMOTION_RELAXED_BROW_MAX=0.22
+EMOTION_RELAXED_EYE_CLOSED_MAX=0.35
+EMOTION_RELAXED_JAW_OPEN_MAX=0.28
 ```
 
 | 参数 | 默认值 | 应用限制范围 | 作用 |
@@ -59,6 +69,10 @@ GESTURE_POINTER_Y_MAX=0.8
 | `GESTURE_POINTER_X_MAX` | `1` | `0` 到 `1` | 摄像头横向映射区域右边界。 |
 | `GESTURE_POINTER_Y_MIN` | `0` | `0` 到 `1` | 摄像头纵向映射区域上边界。 |
 | `GESTURE_POINTER_Y_MAX` | `1` | `0` 到 `1` | 摄像头纵向映射区域下边界。 |
+| `EMOTION_RELAXED_SMILE_THRESHOLD` | `0.34` | `0` 到 `1` | 触发“轻松”状态所需的最低微笑 blendshape 平均值。数值越高，越不容易触发轻松。 |
+| `EMOTION_RELAXED_BROW_MAX` | `0.22` | `0` 到 `1` | 触发“轻松”状态允许的最大皱眉 blendshape 平均值。数值越低，皱眉时越不容易误判为轻松。 |
+| `EMOTION_RELAXED_EYE_CLOSED_MAX` | `0.35` | `0` 到 `1` | 触发“轻松”状态允许的最大闭眼 blendshape 平均值。数值越低，闭眼或眨眼时越不容易误判为轻松。 |
+| `EMOTION_RELAXED_JAW_OPEN_MAX` | `0.28` | `0` 到 `1` | 触发“轻松”状态允许的最大张嘴 blendshape 值。数值越低，说话或张嘴时越不容易误判为轻松。 |
 
 修改 `frontend/.env` 后，需要重启 Electron 应用才会生效。
 

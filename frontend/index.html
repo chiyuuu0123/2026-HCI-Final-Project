@@ -1056,12 +1056,15 @@
             </section>
             <section class="panel music-panel">
               <span class="tag muted">音乐推荐</span>
-              <h3>白噪音 + 轻钢琴</h3>
+              <h3 id="music-recommend-title">白噪音 + 轻钢琴</h3>
+              <p class="music-recommend-detail" id="music-recommend-detail">等待情绪识别后推荐音乐</p>
+              <strong class="music-track-title" id="music-track-title">未选择曲目</strong>
               <div class="music-player">
-                <button class="icon-button"><i data-lucide="skip-back"></i></button>
-                <button class="play-button"><i data-lucide="play"></i></button>
-                <button class="icon-button"><i data-lucide="skip-forward"></i></button>
+                <button class="icon-button" id="music-prev" title="上一首"><i data-lucide="skip-back"></i></button>
+                <button class="play-button" id="music-play-toggle" title="播放推荐音乐" aria-pressed="false"><i data-lucide="play"></i></button>
+                <button class="icon-button" id="music-next" title="下一首"><i data-lucide="skip-forward"></i></button>
               </div>
+              <audio id="emotion-music-audio" preload="metadata"></audio>
               <div class="wave-line">
                 <span></span><span></span><span></span><span></span><span></span><span></span>
               </div>

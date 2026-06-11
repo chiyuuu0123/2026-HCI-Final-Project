@@ -14,6 +14,21 @@ const visionRuntimeConfig = {
   frameIntervalMs: 180,
 };
 
+const emotionRuntimeConfig = {
+  eyeClosedThreshold: 0.58,
+  tiredEyeClosedMs: 1200,
+  yawnThreshold: 0.5,
+  browDownThreshold: 0.36,
+  relaxedSmileThreshold: 0.34,
+  relaxedBrowMax: 0.22,
+  relaxedEyeClosedMax: 0.35,
+  relaxedJawOpenMax: 0.28,
+};
+
+const emotionRuntimeState = {
+  eyeClosedSince: 0,
+};
+
 let visionFilesetPromise = null;
 let gestureRecognizerPromise = null;
 let faceLandmarkerPromise = null;
@@ -150,9 +165,11 @@ function createMouseGesture(hands) {
 }
 
 function classifyEmotion(faceResult, brightness) {
+  const now = performance.now();
   const blendshapes = faceResult?.faceBlendshapes?.[0]?.categories || [];
   const landmarks = faceResult?.faceLandmarks?.[0] || [];
   if (!landmarks.length) {
+    emotionRuntimeState.eyeClosedSince = 0;
     return {
       id: "away",
       label: "离开",
@@ -167,26 +184,40 @@ function classifyEmotion(faceResult, brightness) {
   const blink = (getBlendshapeScore(blendshapeMap, "eyeBlinkLeft") + getBlendshapeScore(blendshapeMap, "eyeBlinkRight")) / 2;
   const browDown = (getBlendshapeScore(blendshapeMap, "browDownLeft") + getBlendshapeScore(blendshapeMap, "browDownRight")) / 2;
   const jawOpen = getBlendshapeScore(blendshapeMap, "jawOpen");
+  const isEyeClosed = blink > emotionRuntimeConfig.eyeClosedThreshold;
+  if (isEyeClosed) {
+    if (!emotionRuntimeState.eyeClosedSince) emotionRuntimeState.eyeClosedSince = now;
+  } else {
+    emotionRuntimeState.eyeClosedSince = 0;
+  }
+  const eyeClosedMs = emotionRuntimeState.eyeClosedSince ? now - emotionRuntimeState.eyeClosedSince : 0;
+  const isLongEyeClosed = eyeClosedMs >= emotionRuntimeConfig.tiredEyeClosedMs;
+  const isYawning = jawOpen > emotionRuntimeConfig.yawnThreshold;
+  const isRelaxed =
+    smile > emotionRuntimeConfig.relaxedSmileThreshold &&
+    browDown < emotionRuntimeConfig.relaxedBrowMax &&
+    blink < emotionRuntimeConfig.relaxedEyeClosedMax &&
+    jawOpen < emotionRuntimeConfig.relaxedJawOpenMax;
 
   let label = "专注";
   let detail = "脸部稳定，适合继续阅读";
   let focusScore = 82;
   let id = "focused";
 
-  if (blink > 0.58 || jawOpen > 0.5) {
+  if (isLongEyeClosed || isYawning) {
     id = "tired";
     label = "疲劳";
-    detail = "检测到闭眼或打哈欠特征，建议短暂休息";
+    detail = isLongEyeClosed ? "检测到持续闭眼，建议短暂休息" : "检测到打哈欠特征，建议短暂休息";
     focusScore = 54;
-  } else if (browDown > 0.36 && smile < 0.18) {
+  } else if (browDown > emotionRuntimeConfig.browDownThreshold && smile < 0.18) {
     id = "confused";
     label = "困惑";
     detail = "眉部紧张，适合让 AI 解释当前内容";
     focusScore = 61;
-  } else if (smile > 0.34) {
+  } else if (isRelaxed) {
     id = "relaxed";
     label = "轻松";
-    detail = "表情放松，适合保持当前节奏";
+    detail = "检测到稳定微笑，且没有明显皱眉、闭眼或张嘴特征，适合保持当前节奏";
     focusScore = 78;
   }
 
@@ -205,7 +236,7 @@ function classifyEmotion(faceResult, brightness) {
     detail,
     focusScore,
     confidence: Math.max(smile, blink, browDown, jawOpen, 0.65),
-    raw: { smile, blink, browDown, jawOpen },
+    raw: { smile, blink, browDown, jawOpen, eyeClosedMs },
   };
 }
 
@@ -262,6 +293,22 @@ function configure(options = {}) {
   const frameIntervalMs = Number(options.frameIntervalMs);
   if (Number.isFinite(frameIntervalMs) && frameIntervalMs >= 60 && frameIntervalMs <= 2000) {
     visionRuntimeConfig.frameIntervalMs = frameIntervalMs;
+  }
+  const relaxedSmileThreshold = Number(options.relaxedSmileThreshold);
+  if (Number.isFinite(relaxedSmileThreshold) && relaxedSmileThreshold >= 0 && relaxedSmileThreshold <= 1) {
+    emotionRuntimeConfig.relaxedSmileThreshold = relaxedSmileThreshold;
+  }
+  const relaxedBrowMax = Number(options.relaxedBrowMax);
+  if (Number.isFinite(relaxedBrowMax) && relaxedBrowMax >= 0 && relaxedBrowMax <= 1) {
+    emotionRuntimeConfig.relaxedBrowMax = relaxedBrowMax;
+  }
+  const relaxedEyeClosedMax = Number(options.relaxedEyeClosedMax);
+  if (Number.isFinite(relaxedEyeClosedMax) && relaxedEyeClosedMax >= 0 && relaxedEyeClosedMax <= 1) {
+    emotionRuntimeConfig.relaxedEyeClosedMax = relaxedEyeClosedMax;
+  }
+  const relaxedJawOpenMax = Number(options.relaxedJawOpenMax);
+  if (Number.isFinite(relaxedJawOpenMax) && relaxedJawOpenMax >= 0 && relaxedJawOpenMax <= 1) {
+    emotionRuntimeConfig.relaxedJawOpenMax = relaxedJawOpenMax;
   }
   return { ...visionRuntimeConfig };
 }
