@@ -1013,69 +1013,101 @@
 
         <section class="view" data-view-panel="focus">
           <div class="focus-page">
-            <section class="panel mood-panel">
-              <div class="panel-heading">
-                <div>
-                  <span class="tag muted">状态识别</span>
-                  <h3 id="camera-mood-title">当前状态：等待摄像头</h3>
+            <div class="focus-status-grid">
+              <section class="panel mood-panel">
+                <div class="panel-heading">
+                  <div>
+                    <span class="tag muted">状态识别</span>
+                    <h3 id="camera-mood-title">当前状态：等待摄像头</h3>
+                  </div>
+                  <span class="status-pill calm" id="camera-mode-badge">待开启</span>
                 </div>
-                <span class="status-pill calm" id="camera-mode-badge">待开启</span>
-              </div>
-              <div class="camera-stage">
-                <video id="camera-preview" playsinline muted></video>
-                <canvas id="camera-landmark-overlay" aria-hidden="true"></canvas>
-                <button type="button" class="camera-landmark-toggle" id="toggle-camera-landmarks" title="开关识别点阵" aria-pressed="false">X</button>
-                <div class="camera-placeholder" id="camera-placeholder">
-                  <i data-lucide="camera"></i>
-                  <span>摄像头未开启</span>
+                <div class="camera-stage">
+                  <video id="camera-preview" playsinline muted></video>
+                  <canvas id="camera-landmark-overlay" aria-hidden="true"></canvas>
+                  <button type="button" class="camera-landmark-toggle" id="toggle-camera-landmarks" title="开关识别点阵" aria-pressed="false">X</button>
+                  <div class="camera-placeholder" id="camera-placeholder">
+                    <i data-lucide="camera"></i>
+                    <span>摄像头未开启</span>
+                  </div>
                 </div>
-              </div>
-              <div class="camera-controls">
-                <button class="primary-action" id="start-camera">
-                  <i data-lucide="video"></i>
-                  <span>开启摄像头</span>
-                </button>
-                <button class="ghost-action" id="stop-camera" disabled>
-                  <i data-lucide="video-off"></i>
-                  <span>停止</span>
-                </button>
-              </div>
-              <div class="mood-orbit">
-                <span class="orbit-dot focus"></span>
-                <span class="orbit-dot tired"></span>
-                <span class="orbit-dot calm-dot"></span>
-                <div class="mood-core">
-                  <strong id="camera-focus-score">--</strong>
-                  <span id="camera-focus-label">等待识别</span>
+                <div class="camera-controls">
+                  <button class="primary-action" id="start-camera">
+                    <i data-lucide="video"></i>
+                    <span>开启摄像头</span>
+                  </button>
+                  <button class="ghost-action" id="stop-camera" disabled>
+                    <i data-lucide="video-off"></i>
+                    <span>停止</span>
+                  </button>
                 </div>
-              </div>
-              <div class="vision-detail-grid">
-                <span id="camera-emotion-detail">等待面部状态识别</span>
-                <span id="camera-gesture-detail">等待手势识别</span>
-              </div>
-            </section>
+                <div class="vision-detail-grid">
+                  <span id="camera-emotion-detail">等待面部状态识别</span>
+                </div>
+              </section>
+              <section class="panel focus-score-panel">
+                <span class="tag muted">专注度</span>
+                <div class="mood-orbit">
+                  <span class="orbit-dot focus"></span>
+                  <span class="orbit-dot tired"></span>
+                  <span class="orbit-dot calm-dot"></span>
+                  <div class="mood-core">
+                    <strong id="camera-focus-score">--</strong>
+                    <span id="camera-focus-label">等待识别</span>
+                  </div>
+                </div>
+              </section>
+              <section class="panel gesture-panel">
+                <span class="tag muted">手势识别</span>
+                <h3 id="gesture-status-title">等待摄像头</h3>
+                <div class="vision-detail-grid">
+                  <span id="camera-gesture-detail">等待手势识别</span>
+                </div>
+                <div class="gesture-grid">
+                  <span data-gesture-id="left-thumb-click">&#24038;&#25163;&#28857;&#36190;<br />&#40736;&#26631;&#24038;&#38190;</span>
+                  <span data-gesture-id="right-pinch-pointer">&#21491;&#25163;&#25423;&#21512;<br />&#40736;&#26631;&#31227;&#21160;</span>
+                  <span data-gesture-id="right-thumb-up-scroll-up">&#21491;&#25163;&#28857;&#36190;<br />&#21521;&#19978;&#28378;&#21160;</span>
+                  <span data-gesture-id="right-thumb-down-scroll-down">&#21491;&#25163;&#20498;&#36190;<br />&#21521;&#19979;&#28378;&#21160;</span>
+                </div>
+              </section>
+            </div>
             <section class="panel music-panel">
-              <span class="tag muted">音乐推荐</span>
-              <h3 id="music-recommend-title">白噪音 + 轻钢琴</h3>
-              <p class="music-recommend-detail" id="music-recommend-detail">等待情绪识别后推荐音乐</p>
-              <strong class="music-track-title" id="music-track-title">未选择曲目</strong>
-              <div class="music-player">
-                <button class="icon-button" id="music-prev" title="上一首"><i data-lucide="skip-back"></i></button>
-                <button class="play-button" id="music-play-toggle" title="播放推荐音乐" aria-pressed="false"><i data-lucide="play"></i></button>
-                <button class="icon-button" id="music-next" title="下一首"><i data-lucide="skip-forward"></i></button>
-              </div>
-              <audio id="emotion-music-audio" preload="metadata"></audio>
-              <div class="wave-line">
-                <span></span><span></span><span></span><span></span><span></span><span></span>
-              </div>
-            </section>
-            <section class="panel gesture-panel">
-              <span class="tag muted">手势识别</span>
-              <h3 id="gesture-status-title">等待摄像头</h3>
-              <div class="gesture-grid">
-                <span data-gesture-id="left-thumb-click">&#24038;&#25163;&#28857;&#36190;<br />&#40736;&#26631;&#24038;&#38190;</span>
-                <span data-gesture-id="right-index-pointer">&#21491;&#25163;&#39135;&#25351;<br />&#40736;&#26631;&#31227;&#21160;</span>
-                <span data-gesture-id="left-fist-right-index-scroll">&#24038;&#25331; + &#21491;&#39135;&#25351;<br />&#28378;&#36718;&#28369;&#21160;</span>
+              <div class="music-layout">
+                <div class="music-now-playing">
+                  <span class="tag muted">音乐推荐</span>
+                  <h3 id="music-recommend-title">白噪音 + 轻钢琴</h3>
+                  <p class="music-recommend-detail" id="music-recommend-detail">等待情绪识别后推荐音乐</p>
+                  <strong class="music-track-title" id="music-track-title">未选择曲目</strong>
+                  <div class="wave-line">
+                    <span></span><span></span><span></span><span></span><span></span><span></span>
+                  </div>
+                </div>
+                <div class="music-control-surface">
+                  <div class="music-player">
+                    <button class="icon-button" id="music-prev" title="上一首"><i data-lucide="skip-back"></i></button>
+                    <button class="play-button" id="music-play-toggle" title="播放推荐音乐" aria-pressed="false"><i data-lucide="play"></i></button>
+                    <button class="icon-button" id="music-next" title="下一首"><i data-lucide="skip-forward"></i></button>
+                  </div>
+                  <div class="music-timeline">
+                    <span id="music-current-time">0:00</span>
+                    <input id="music-seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="播放进度" />
+                    <span id="music-duration">0:00</span>
+                  </div>
+                  <label class="music-volume">
+                    <i data-lucide="volume-2"></i>
+                    <input id="music-volume" type="range" min="0" max="1" value="0.55" step="0.01" aria-label="音量" />
+                  </label>
+                  <audio id="emotion-music-audio" preload="metadata"></audio>
+                </div>
+                <div class="music-playlist">
+                  <div class="panel-heading">
+                    <div>
+                      <span class="tag muted">歌单</span>
+                      <h3>推荐列表</h3>
+                    </div>
+                  </div>
+                  <div class="music-playlist-list" id="music-playlist-list"></div>
+                </div>
               </div>
             </section>
           </div>

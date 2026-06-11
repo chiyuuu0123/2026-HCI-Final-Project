@@ -308,9 +308,12 @@ const cameraState = {
     x: 0,
     y: 0,
     visible: false,
+    lastPoint: null,
     lastClickAt: 0,
     lastScrollY: null,
     lastScrollAt: 0,
+    scrollDirection: "",
+    scrollDirectionSince: 0,
   },
 };
 const gestureRuntimeConfig = {
@@ -321,6 +324,23 @@ const gestureRuntimeConfig = {
   pointerXMax: 1,
   pointerYMin: 0,
   pointerYMax: 1,
+  gestureVoteWindowMs: 1000,
+  emotionVoteWindowMs: 1000,
+  gesturePinchDistanceMax: 0.055,
+  pointerRelativeSensitivity: 1.8,
+  pointerRelativeDeadZone: 0.002,
+  scrollIntervalMs: 180,
+  scrollAmount: 120,
+  scrollStableMs: 220,
+  emotionEyeClosedThreshold: 0.58,
+  emotionTiredEyeClosedMs: 1200,
+  emotionYawnThreshold: 0.5,
+  emotionDistractedEyeMovementWindowMs: 1000,
+  emotionDistractedEyeMovementMax: 0.018,
+  emotionDistractedEyeOpenMax: 0.2,
+  emotionDistractedNoBlinkMs: 1000,
+  emotionAnxiousBrowDownThreshold: 0.36,
+  emotionConfusedHeadTiltDegrees: 12,
   emotionRelaxedSmileThreshold: 0.34,
   emotionRelaxedBrowMax: 0.22,
   emotionRelaxedEyeClosedMax: 0.35,
@@ -394,24 +414,40 @@ const emotionMusicLibrary = {
     title: "白噪音 + 轻钢琴",
     detail: "适合保持当前专注节奏。",
     tracks: [
-      { title: "River Flows in You", src: "./assets/music/River-Flows-in-You.mp3" },
-      { title: "Canon in D", src: "./assets/music/canon-D.mp3" },
+      { title: "River Flows in You", src: "./assets/music/River Flows in You-未知歌手.mp3" },
+      { title: "Canon in D", src: "./assets/music/Canon in D-未知歌手.mp3" },
     ],
   },
   tired: {
     title: "雨声 + 低速钢琴",
     detail: "建议先放慢节奏，休息 3 分钟再继续。",
     tracks: [
-      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante.mp3" },
-      { title: "River Flows in You", src: "./assets/music/River-Flows-in-You.mp3" },
+      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante-未知歌手.mp3" },
+      { title: "River Flows in You", src: "./assets/music/River Flows in You-未知歌手.mp3" },
     ],
   },
   confused: {
     title: "低干扰白噪音",
     detail: "适合边听边整理问题，降低额外干扰。",
     tracks: [
-      { title: "Canon in D", src: "./assets/music/canon-D.mp3" },
-      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante.mp3" },
+      { title: "Canon in D", src: "./assets/music/Canon in D-未知歌手.mp3" },
+      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante-未知歌手.mp3" },
+    ],
+  },
+  anxious: {
+    title: "舒缓钢琴 + 低音量",
+    detail: "适合放慢节奏，把当前任务拆成更小步骤。",
+    tracks: [
+      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante-未知歌手.mp3" },
+      { title: "Canon in D", src: "./assets/music/Canon in D-未知歌手.mp3" },
+    ],
+  },
+  distracted: {
+    title: "轻节奏唤醒歌单",
+    detail: "适合把注意力拉回当前任务。",
+    tracks: [
+      { title: "稻香", src: "./assets/music/稻香-周杰伦.mp3" },
+      { title: "晴天", src: "./assets/music/晴天-林俊杰，周董.mp3" },
     ],
   },
   relaxed: {
@@ -419,7 +455,7 @@ const emotionMusicLibrary = {
     detail: "保持平稳学习节奏。",
     tracks: [
       { title: "Summer", src: "./assets/music/summer-夏石让.mp3" },
-      { title: "River Flows in You", src: "./assets/music/River-Flows-in-You.mp3" },
+      { title: "River Flows in You", src: "./assets/music/River Flows in You-未知歌手.mp3" },
     ],
   },
   away: {
@@ -431,29 +467,47 @@ const emotionMusicLibrary = {
     title: "自然白噪音 + 轻节拍",
     detail: "画面偏暗，先开灯再继续读。",
     tracks: [
-      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante.mp3" },
+      { title: "Nocturne Op. 9 No. 2", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante-未知歌手.mp3" },
     ],
   },
   bright: {
     title: "舒缓钢琴",
     detail: "光线偏强，适合低音量播放。",
     tracks: [
-      { title: "Canon in D", src: "./assets/music/canon-D.mp3" },
+      { title: "Canon in D", src: "./assets/music/Canon in D-未知歌手.mp3" },
     ],
   },
   default: {
     title: "雨声 + 柔和钢琴",
     detail: "适合整理笔记和复盘。",
     tracks: [
-      { title: "River Flows in You", src: "./assets/music/River-Flows-in-You.mp3" },
+      { title: "River Flows in You", src: "./assets/music/River Flows in You-未知歌手.mp3" },
       { title: "Summer", src: "./assets/music/summer-夏石让.mp3" },
     ],
   },
 };
+const aiMusicCandidateTracks = [
+  { title: "晴天", artist: "林俊杰，周董", src: "./assets/music/晴天-林俊杰，周董.mp3", moods: ["focused", "relaxed"] },
+  { title: "借", artist: "毛不易", src: "./assets/music/借-毛不易.mp3", moods: ["tired", "distracted"] },
+  { title: "关键词", artist: "叶炫清", src: "./assets/music/关键词-叶炫清.mp3", moods: ["focused", "relaxed"] },
+  { title: "我还想她", artist: "林俊杰", src: "./assets/music/我还想她-林俊杰.mp3", moods: ["anxious", "distracted"] },
+  { title: "黑夜问白天", artist: "林俊杰", src: "./assets/music/黑夜问白天-林俊杰.mp3", moods: ["confused", "anxious"] },
+  { title: "倒影", artist: "蓝心羽", src: "./assets/music/倒影-蓝心羽.mp3", moods: ["relaxed", "focused"] },
+  { title: "晚风快递", artist: "蓝心羽", src: "./assets/music/晚风快递-蓝心羽.mp3", moods: ["relaxed", "tired"] },
+  { title: "阿拉斯加海湾", artist: "蓝心羽", src: "./assets/music/阿拉斯加海湾-蓝心羽.mp3", moods: ["tired", "anxious"] },
+  { title: "夜的第七章", artist: "周杰伦", src: "./assets/music/夜的第七章-周杰伦.mp3", moods: ["focused", "confused"] },
+  { title: "稻香", artist: "周杰伦", src: "./assets/music/稻香-周杰伦.mp3", moods: ["distracted", "relaxed"] },
+  { title: "雅俗共赏", artist: "许嵩", src: "./assets/music/雅俗共赏-许嵩.mp3", moods: ["focused", "relaxed"] },
+  { title: "庐州月", artist: "许嵩", src: "./assets/music/庐州月-许嵩.mp3", moods: ["relaxed", "tired"] },
+];
 const musicPlayerState = {
   recommendationId: "",
   trackIndex: 0,
   playing: false,
+  seeking: false,
+  lastAiEmotionId: "",
+  lastAiRequestedAt: 0,
+  aiInFlight: false,
 };
 let longlongBondNoticeTimer = null;
 let longlongCoinSyncKey = "";
@@ -4045,10 +4099,76 @@ function getMusicRecommendationForBrightness(normalized) {
 }
 
 function getMusicRecommendationForEmotion(emotionId, normalizedBrightness) {
-  if (["tired", "confused", "relaxed", "away"].includes(emotionId)) {
+  if (["tired", "confused", "anxious", "distracted", "relaxed", "away"].includes(emotionId)) {
     return getMusicRecommendationById(emotionId);
   }
   return getMusicRecommendationForBrightness(normalizedBrightness);
+}
+
+function trackKey(track) {
+  return `${track?.title || ""}|${track?.src || ""}`;
+}
+
+function getAvailableAiMusicCandidates(recommendation = getCurrentMusicRecommendation()) {
+  const existing = new Set((recommendation.tracks || []).map(trackKey));
+  return aiMusicCandidateTracks.filter((track) => !existing.has(trackKey(track)));
+}
+
+function addTrackToCurrentRecommendation(track) {
+  const recommendation = getCurrentMusicRecommendation();
+  if (!track?.src || recommendation.tracks.some((item) => item.src === track.src)) return false;
+  recommendation.tracks.push({ title: track.title || track.src.split("/").pop(), src: track.src });
+  renderMusicRecommendation(recommendation);
+  return true;
+}
+
+async function requestAiMusicRecommendation(emotion = {}) {
+  const emotionId = emotion.id || "";
+  if (!emotionId || emotionId === "away") return;
+  const now = Date.now();
+  if (musicPlayerState.aiInFlight) return;
+  if (musicPlayerState.lastAiEmotionId === emotionId && now - musicPlayerState.lastAiRequestedAt < 30000) return;
+
+  const recommendation = getCurrentMusicRecommendation();
+  const candidates = getAvailableAiMusicCandidates(recommendation).slice(0, 10);
+  if (!candidates.length || !window.mindStudy?.ai?.askQuestion) return;
+
+  musicPlayerState.aiInFlight = true;
+  musicPlayerState.lastAiEmotionId = emotionId;
+  musicPlayerState.lastAiRequestedAt = now;
+  try {
+    const response = await window.mindStudy.ai.askQuestion({
+      question: [
+        "你是 MindStudy 的音乐推荐助手。请根据当前学习状态判断是否向当前歌单加入一首歌。",
+        "只能从候选歌曲中选择，不能编造新歌曲或路径。",
+        "如果建议加入，返回 JSON：{\"add\":true,\"title\":\"候选歌曲标题\",\"reason\":\"一句话原因\"}。",
+        "如果不建议加入，返回 JSON：{\"add\":false,\"reason\":\"一句话原因\"}。",
+        "",
+        `当前状态：${emotion.label || emotionId}`,
+        `状态细节：${emotion.detail || ""}`,
+        `当前歌单：${recommendation.tracks.map((track) => track.title).join("、") || "空"}`,
+        `候选歌曲：${candidates.map((track) => `${track.title}-${track.artist} [适合 ${track.moods.join("/")}]`).join("；")}`,
+      ].join("\n"),
+      documents: [{
+        id: "music-candidates",
+        title: "可添加歌曲",
+        text: candidates.map((track) => `${track.title}-${track.artist}：适合 ${track.moods.join("/")}`).join("\n"),
+        mimeType: "text/plain",
+      }],
+      options: { maxTokens: 260, temperature: 0.2 },
+    });
+    const data = extractJsonFromAiText(response?.answer || "");
+    if (!data?.add) return;
+    const selected = candidates.find((track) => track.title === data.title);
+    if (selected && addTrackToCurrentRecommendation(selected)) {
+      const ui = getMusicUi();
+      if (ui.detail) ui.detail.textContent = `${recommendation.detail} AI 已加入：${selected.title}`;
+    }
+  } catch (error) {
+    console.warn("AI music recommendation failed.", error);
+  } finally {
+    musicPlayerState.aiInFlight = false;
+  }
 }
 
 function getMusicUi() {
@@ -4060,6 +4180,11 @@ function getMusicUi() {
     playButton: document.querySelector("#music-play-toggle"),
     prevButton: document.querySelector("#music-prev"),
     nextButton: document.querySelector("#music-next"),
+    playlist: document.querySelector("#music-playlist-list"),
+    seek: document.querySelector("#music-seek"),
+    currentTime: document.querySelector("#music-current-time"),
+    duration: document.querySelector("#music-duration"),
+    volume: document.querySelector("#music-volume"),
     panel: document.querySelector(".music-panel"),
   };
 }
@@ -4073,6 +4198,52 @@ function getCurrentMusicTrack() {
   if (!recommendation.tracks.length) return null;
   const index = Math.max(0, Math.min(musicPlayerState.trackIndex, recommendation.tracks.length - 1));
   return recommendation.tracks[index] || recommendation.tracks[0];
+}
+
+function formatMusicTime(seconds) {
+  const value = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(value / 60);
+  return `${minutes}:${String(value % 60).padStart(2, "0")}`;
+}
+
+function updateMusicTimeline() {
+  const ui = getMusicUi();
+  const audio = ui.audio;
+  if (!audio) return;
+  const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+  const currentTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+  if (ui.currentTime) ui.currentTime.textContent = formatMusicTime(currentTime);
+  if (ui.duration) ui.duration.textContent = formatMusicTime(duration);
+  if (ui.seek && !musicPlayerState.seeking) {
+    ui.seek.value = duration ? String((currentTime / duration) * 100) : "0";
+    ui.seek.disabled = !duration;
+  }
+}
+
+function renderMusicPlaylist(recommendation = getCurrentMusicRecommendation()) {
+  const ui = getMusicUi();
+  if (!ui.playlist) return;
+  ui.playlist.replaceChildren();
+  if (!recommendation.tracks.length) {
+    const empty = document.createElement("span");
+    empty.className = "music-playlist-empty";
+    empty.textContent = "暂无可播放曲目";
+    ui.playlist.appendChild(empty);
+    return;
+  }
+  recommendation.tracks.forEach((track, index) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "music-playlist-item";
+    item.dataset.musicTrackIndex = String(index);
+    item.classList.toggle("active", index === musicPlayerState.trackIndex);
+    const title = document.createElement("strong");
+    title.textContent = track.title;
+    const meta = document.createElement("span");
+    meta.textContent = recommendation.title;
+    item.append(title, meta);
+    ui.playlist.appendChild(item);
+  });
 }
 
 function setMusicPlayIcon(isPlaying) {
@@ -4101,6 +4272,8 @@ function renderMusicRecommendation(recommendation = getCurrentMusicRecommendatio
   ui.panel?.classList.toggle("is-playing", musicPlayerState.playing);
   ui.panel?.classList.toggle("is-paused", !musicPlayerState.playing);
   setMusicPlayIcon(musicPlayerState.playing);
+  renderMusicPlaylist(recommendation);
+  updateMusicTimeline();
 }
 
 function loadCurrentMusicTrack({ keepPlaying = false } = {}) {
@@ -4176,6 +4349,14 @@ function shiftEmotionMusicTrack(step) {
   loadCurrentMusicTrack({ keepPlaying: musicPlayerState.playing });
 }
 
+function selectEmotionMusicTrack(index) {
+  const recommendation = getCurrentMusicRecommendation();
+  const nextIndex = Number(index);
+  if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= recommendation.tracks.length) return;
+  musicPlayerState.trackIndex = nextIndex;
+  loadCurrentMusicTrack({ keepPlaying: musicPlayerState.playing });
+}
+
 function initEmotionMusicPlayer() {
   const ui = getMusicUi();
   if (!ui.audio) return;
@@ -4190,7 +4371,21 @@ function initEmotionMusicPlayer() {
     musicPlayerState.playing = false;
     renderMusicRecommendation();
   });
+  ui.audio.addEventListener("loadedmetadata", updateMusicTimeline);
+  ui.audio.addEventListener("timeupdate", updateMusicTimeline);
   ui.audio.addEventListener("ended", () => shiftEmotionMusicTrack(1));
+  ui.seek?.addEventListener("input", () => {
+    musicPlayerState.seeking = true;
+  });
+  ui.seek?.addEventListener("change", () => {
+    const duration = Number.isFinite(ui.audio.duration) ? ui.audio.duration : 0;
+    if (duration) ui.audio.currentTime = (Number(ui.seek.value) / 100) * duration;
+    musicPlayerState.seeking = false;
+    updateMusicTimeline();
+  });
+  ui.volume?.addEventListener("input", () => {
+    ui.audio.volume = Math.max(0, Math.min(1, Number(ui.volume.value) || 0));
+  });
   loadCurrentMusicTrack();
 }
 
@@ -4237,12 +4432,41 @@ async function loadGestureRuntimeConfig() {
       gestureRuntimeConfig.pointerYMin,
       gestureRuntimeConfig.pointerYMax,
     ] = readPointerRange(env, "GESTURE_POINTER_Y_MIN", "GESTURE_POINTER_Y_MAX", 0, 1);
+    gestureRuntimeConfig.gestureVoteWindowMs = readEnvNumber(env, "GESTURE_VOTE_WINDOW_MS", 1000, 0, 5000);
+    gestureRuntimeConfig.emotionVoteWindowMs = readEnvNumber(env, "EMOTION_VOTE_WINDOW_MS", 1000, 0, 5000);
+    gestureRuntimeConfig.gesturePinchDistanceMax = readEnvFloat(env, "GESTURE_PINCH_DISTANCE_MAX", 0.055, 0.005, 0.2);
+    gestureRuntimeConfig.pointerRelativeSensitivity = readEnvFloat(env, "GESTURE_POINTER_RELATIVE_SENSITIVITY", 1.8, 0.1, 8);
+    gestureRuntimeConfig.pointerRelativeDeadZone = readEnvFloat(env, "GESTURE_POINTER_RELATIVE_DEAD_ZONE", 0.002, 0, 0.05);
+    gestureRuntimeConfig.scrollIntervalMs = readEnvNumber(env, "GESTURE_SCROLL_INTERVAL_MS", 180, 16, 1000);
+    gestureRuntimeConfig.scrollAmount = readEnvNumber(env, "GESTURE_SCROLL_AMOUNT", 120, 10, 800);
+    gestureRuntimeConfig.scrollStableMs = readEnvNumber(env, "GESTURE_SCROLL_STABLE_MS", 220, 0, 1000);
+    gestureRuntimeConfig.emotionEyeClosedThreshold = readEnvFloat(env, "EMOTION_EYE_CLOSED_THRESHOLD", 0.58, 0, 1);
+    gestureRuntimeConfig.emotionTiredEyeClosedMs = readEnvNumber(env, "EMOTION_TIRED_EYE_CLOSED_MS", 1200, 0, 10000);
+    gestureRuntimeConfig.emotionYawnThreshold = readEnvFloat(env, "EMOTION_YAWN_THRESHOLD", 0.5, 0, 1);
+    gestureRuntimeConfig.emotionDistractedEyeMovementWindowMs = readEnvNumber(env, "EMOTION_DISTRACTED_EYE_MOVEMENT_WINDOW_MS", 1000, 200, 10000);
+    gestureRuntimeConfig.emotionDistractedEyeMovementMax = readEnvFloat(env, "EMOTION_DISTRACTED_EYE_MOVEMENT_MAX", 0.018, 0, 0.2);
+    gestureRuntimeConfig.emotionDistractedEyeOpenMax = readEnvFloat(env, "EMOTION_DISTRACTED_EYE_OPEN_MAX", 0.2, 0, 1);
+    gestureRuntimeConfig.emotionDistractedNoBlinkMs = readEnvNumber(env, "EMOTION_DISTRACTED_NO_BLINK_MS", 1000, 0, 5000);
+    gestureRuntimeConfig.emotionAnxiousBrowDownThreshold = readEnvFloat(env, "EMOTION_ANXIOUS_BROW_DOWN_THRESHOLD", 0.36, 0, 1);
+    gestureRuntimeConfig.emotionConfusedHeadTiltDegrees = readEnvFloat(env, "EMOTION_CONFUSED_HEAD_TILT_DEGREES", 12, 0, 45);
     gestureRuntimeConfig.emotionRelaxedSmileThreshold = readEnvFloat(env, "EMOTION_RELAXED_SMILE_THRESHOLD", 0.34, 0, 1);
     gestureRuntimeConfig.emotionRelaxedBrowMax = readEnvFloat(env, "EMOTION_RELAXED_BROW_MAX", 0.22, 0, 1);
     gestureRuntimeConfig.emotionRelaxedEyeClosedMax = readEnvFloat(env, "EMOTION_RELAXED_EYE_CLOSED_MAX", 0.35, 0, 1);
     gestureRuntimeConfig.emotionRelaxedJawOpenMax = readEnvFloat(env, "EMOTION_RELAXED_JAW_OPEN_MAX", 0.28, 0, 1);
     window.MindStudyVision?.configure?.({
       frameIntervalMs: gestureRuntimeConfig.visionFrameIntervalMs,
+      gestureVoteWindowMs: gestureRuntimeConfig.gestureVoteWindowMs,
+      emotionVoteWindowMs: gestureRuntimeConfig.emotionVoteWindowMs,
+      pinchDistanceMax: gestureRuntimeConfig.gesturePinchDistanceMax,
+      eyeClosedThreshold: gestureRuntimeConfig.emotionEyeClosedThreshold,
+      tiredEyeClosedMs: gestureRuntimeConfig.emotionTiredEyeClosedMs,
+      yawnThreshold: gestureRuntimeConfig.emotionYawnThreshold,
+      distractedEyeMovementWindowMs: gestureRuntimeConfig.emotionDistractedEyeMovementWindowMs,
+      distractedEyeMovementMax: gestureRuntimeConfig.emotionDistractedEyeMovementMax,
+      distractedEyeOpenMax: gestureRuntimeConfig.emotionDistractedEyeOpenMax,
+      distractedNoBlinkMs: gestureRuntimeConfig.emotionDistractedNoBlinkMs,
+      anxiousBrowDownThreshold: gestureRuntimeConfig.emotionAnxiousBrowDownThreshold,
+      confusedHeadTiltDegrees: gestureRuntimeConfig.emotionConfusedHeadTiltDegrees,
       relaxedSmileThreshold: gestureRuntimeConfig.emotionRelaxedSmileThreshold,
       relaxedBrowMax: gestureRuntimeConfig.emotionRelaxedBrowMax,
       relaxedEyeClosedMax: gestureRuntimeConfig.emotionRelaxedEyeClosedMax,
@@ -4288,8 +4512,9 @@ function updateGestureCards(gestureId) {
 function setupGestureCategoryLabels() {
   const labels = {
     "left-thumb-click": ["\u5de6\u624b\u70b9\u8d5e", "\u9f20\u6807\u5de6\u952e"],
-    "right-index-pointer": ["\u53f3\u624b\u98df\u6307", "\u9f20\u6807\u79fb\u52a8"],
-    "left-fist-right-index-scroll": ["\u5de6\u62f3 + \u53f3\u98df\u6307", "\u6eda\u8f6e\u6ed1\u52a8"],
+    "right-pinch-pointer": ["\u53f3\u624b\u634f\u5408", "\u9f20\u6807\u79fb\u52a8"],
+    "right-thumb-up-scroll-up": ["\u53f3\u624b\u70b9\u8d5e", "\u5411\u4e0a\u6eda\u52a8"],
+    "right-thumb-down-scroll-down": ["\u53f3\u624b\u5012\u8d5e", "\u5411\u4e0b\u6eda\u52a8"],
   };
 
   Object.entries(labels).forEach(([gestureId, lines]) => {
@@ -4376,19 +4601,24 @@ function moveGestureMouseTo(x, y) {
 
 function moveGestureMouseFromPoint(point) {
   if (!point) return;
-  const normalizedX = normalizeGesturePointerAxis(
-    point.x,
-    gestureRuntimeConfig.pointerXMin,
-    gestureRuntimeConfig.pointerXMax,
-  );
-  const normalizedY = normalizeGesturePointerAxis(
-    point.y,
-    gestureRuntimeConfig.pointerYMin,
-    gestureRuntimeConfig.pointerYMax,
-  );
+  if (!cameraState.mouse.visible) {
+    moveGestureMouseTo(window.innerWidth / 2, window.innerHeight / 2);
+    cameraState.mouse.lastPoint = { x: Number(point.x) || 0, y: Number(point.y) || 0 };
+    return;
+  }
+
+  const previous = cameraState.mouse.lastPoint;
+  const current = { x: Number(point.x) || 0, y: Number(point.y) || 0 };
+  cameraState.mouse.lastPoint = current;
+  if (!previous) return;
+
+  const deltaX = current.x - previous.x;
+  const deltaY = current.y - previous.y;
+  if (Math.hypot(deltaX, deltaY) < gestureRuntimeConfig.pointerRelativeDeadZone) return;
+
   moveGestureMouseTo(
-    (1 - normalizedX) * window.innerWidth * gestureRuntimeConfig.pointerScale,
-    normalizedY * window.innerHeight * gestureRuntimeConfig.pointerScale,
+    cameraState.mouse.x - deltaX * window.innerWidth * gestureRuntimeConfig.pointerRelativeSensitivity,
+    cameraState.mouse.y + deltaY * window.innerHeight * gestureRuntimeConfig.pointerRelativeSensitivity,
   );
 }
 
@@ -4422,21 +4652,24 @@ function getGestureScrollTarget() {
   return document.scrollingElement || document.documentElement;
 }
 
-function scrollByRightIndex(point) {
-  if (!point) return false;
-  const currentY = Number(point.y || 0);
-  const previousY = cameraState.mouse.lastScrollY;
-  cameraState.mouse.lastScrollY = currentY;
-  if (previousY === null) return false;
+function resetGestureScrollState() {
+  cameraState.mouse.lastScrollY = null;
+  cameraState.mouse.scrollDirection = "";
+  cameraState.mouse.scrollDirectionSince = 0;
+}
 
-  const delta = currentY - previousY;
-  if (Math.abs(delta) < 0.018) return false;
-
+function scrollByGestureDirection(direction) {
   const now = Date.now();
-  if (now - cameraState.mouse.lastScrollAt < 60) return false;
+  if (cameraState.mouse.scrollDirection !== direction) {
+    cameraState.mouse.scrollDirection = direction;
+    cameraState.mouse.scrollDirectionSince = now;
+    return false;
+  }
+  if (now - cameraState.mouse.scrollDirectionSince < gestureRuntimeConfig.scrollStableMs) return false;
+  if (now - cameraState.mouse.lastScrollAt < gestureRuntimeConfig.scrollIntervalMs) return false;
   cameraState.mouse.lastScrollAt = now;
 
-  const scrollAmount = Math.max(-220, Math.min(220, delta * 1600));
+  const scrollAmount = direction === "up" ? -gestureRuntimeConfig.scrollAmount : gestureRuntimeConfig.scrollAmount;
   const target = getGestureScrollTarget();
   target.scrollBy({ top: scrollAmount, behavior: "auto" });
   return true;
@@ -4511,6 +4744,7 @@ function updateCameraVisionUi(result) {
   updateGestureCards(gesture.id || "none");
   const musicRecommendation = getMusicRecommendationForEmotion(emotion.id, normalizedBrightness);
   setMusicRecommendation(musicRecommendation);
+  requestAiMusicRecommendation(emotion);
   updateLonglongMood(
     emotion.label || "摄像头识别中",
     emotion.detail || "我会结合表情和手势给出提醒。",
@@ -4526,22 +4760,28 @@ function rememberGestureAction(message) {
 
 function handleMouseControlGesture(gesture) {
   if (!gesture?.id || gesture.id === "none") {
-    cameraState.mouse.lastScrollY = null;
+    resetGestureScrollState();
+    cameraState.mouse.lastPoint = null;
     return;
   }
-  if ((Number(gesture.confidence) || 0) < 0.5) return;
+  if ((Number(gesture.confidence) || 0) < 0.5) {
+    resetGestureScrollState();
+    return;
+  }
 
-  if (gesture.mode === "scroll") {
-    moveGestureMouseFromPoint(gesture.point);
-    if (scrollByRightIndex(gesture.point)) {
-      rememberGestureAction("\u624b\u52bf\u89e6\u53d1\uff1a\u6eda\u8f6e\u4e0a\u4e0b\u6ed1\u52a8");
+  if (gesture.mode === "scroll-up" || gesture.mode === "scroll-down") {
+    cameraState.mouse.lastPoint = null;
+    const direction = gesture.mode === "scroll-up" ? "up" : "down";
+    if (scrollByGestureDirection(direction)) {
+      rememberGestureAction(direction === "up" ? "\u624b\u52bf\u89e6\u53d1\uff1a\u5411\u4e0a\u6eda\u52a8" : "\u624b\u52bf\u89e6\u53d1\uff1a\u5411\u4e0b\u6eda\u52a8");
     }
     return;
   }
 
-  cameraState.mouse.lastScrollY = null;
+  resetGestureScrollState();
 
   if (gesture.mode === "click") {
+    cameraState.mouse.lastPoint = null;
     if (clickGestureMouseTarget()) {
       rememberGestureAction("\u624b\u52bf\u89e6\u53d1\uff1a\u9f20\u6807\u5de6\u952e");
     }
@@ -4549,6 +4789,7 @@ function handleMouseControlGesture(gesture) {
   }
 
   if (gesture.mode === "point") {
+    resetGestureScrollState();
     moveGestureMouseFromPoint(gesture.point);
   }
 }
@@ -4674,6 +4915,7 @@ function stopCamera() {
   updateGestureCards("none");
   clearVisionLandmarks();
   setGestureMouseVisible(false);
+  cameraState.mouse.lastPoint = null;
   cameraState.mouse.lastScrollY = null;
   setCameraStatus("idle");
 }
@@ -13463,7 +13705,13 @@ document.addEventListener("click", (event) => {
   const graphActionButton = event.target.closest("[data-graph-action]");
   const graphZoomButton = event.target.closest("[data-graph-zoom]");
   const mistakeReviewButton = event.target.closest("[data-mistake-review]");
+  const musicTrackButton = event.target.closest("[data-music-track-index]");
   const actionButton = event.target.closest("button");
+
+  if (musicTrackButton) {
+    selectEmotionMusicTrack(Number(musicTrackButton.dataset.musicTrackIndex));
+    return;
+  }
 
   if (calculatorButton) {
     handleCalculatorKey(calculatorButton.dataset.calculatorKey);
