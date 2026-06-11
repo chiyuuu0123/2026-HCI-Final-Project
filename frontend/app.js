@@ -291,12 +291,13 @@ const PDF_OCR_AUTO_MAX_PAGES = 8;
 const AI_CONTEXT_TEXT_LIMIT = 12000;
 const AI_READING_TEXT_LIMIT = 8000;
 const RAG_KNOWLEDGE_TEXT_LIMIT = 240000;
+const RAG_CONTEXT_TEXT_LIMIT = 300000;
 const RAG_DEFAULT_CHUNK_SIZE = 1400;
 const RAG_DEFAULT_MAX_CHUNKS = 6;
 const RAG_MIN_CHUNK_SIZE = 500;
 const RAG_MAX_CHUNK_SIZE = 4000;
 const RAG_MIN_MAX_CHUNKS = 2;
-const RAG_MAX_MAX_CHUNKS = 12;
+const RAG_MAX_MAX_CHUNKS = 500;
 const VOICE_COMMAND_MAX_RECORDING_MS = 14000;
 const VOICE_COMMAND_MIN_RECORDING_MS = 500;
 const VOICE_COMMAND_SILENCE_GRACE_MS = 900;
@@ -3238,14 +3239,16 @@ async function exportActivePdfRange(prefix = "ai") {
 
 function getRagSettingsFromInputs() {
   const knowledge = getRagKnowledge();
-  const chunkSize = normalizeRagNumber(knowledge.settings.chunkSize, RAG_DEFAULT_CHUNK_SIZE, RAG_MIN_CHUNK_SIZE, RAG_MAX_CHUNK_SIZE);
-  const maxChunks = normalizeRagNumber(knowledge.settings.maxChunks, RAG_DEFAULT_MAX_CHUNKS, RAG_MIN_MAX_CHUNKS, RAG_MAX_MAX_CHUNKS);
+  const chunkSizeInput = document.querySelector("#rag-chunk-size");
+  const maxChunksInput = document.querySelector("#rag-max-chunks");
+  const chunkSize = normalizeRagNumber(chunkSizeInput?.value || knowledge.settings.chunkSize, RAG_DEFAULT_CHUNK_SIZE, RAG_MIN_CHUNK_SIZE, RAG_MAX_CHUNK_SIZE);
+  const maxChunks = normalizeRagNumber(maxChunksInput?.value || knowledge.settings.maxChunks, RAG_DEFAULT_MAX_CHUNKS, RAG_MIN_MAX_CHUNKS, RAG_MAX_MAX_CHUNKS);
 
   return {
     chunkSize,
     maxChunks,
     includeWeb: document.querySelector("#rag-include-web")?.checked ?? knowledge.settings.includeWeb,
-    maxContextChars: Math.min(18000, chunkSize * maxChunks),
+    maxContextChars: RAG_CONTEXT_TEXT_LIMIT,
   };
 }
 
@@ -3403,6 +3406,8 @@ function renderRagAssistant() {
   const stats = document.querySelector("#rag-knowledge-stats");
   const list = document.querySelector("#rag-learned-files");
   const includeWebInput = document.querySelector("#rag-include-web");
+  const chunkSizeInput = document.querySelector("#rag-chunk-size");
+  const maxChunksInput = document.querySelector("#rag-max-chunks");
   const activePdf = documentState.current?.kind === "pdf" ? documentState.current : null;
   const activePage = activePdf ? getActivePdfPageNumber(activePdf) : 1;
   const activePageCount = activePdf ? Math.max(1, activePdf.pageCount || activePdf.meta.pageCount || 1) : 1;
@@ -3414,6 +3419,16 @@ function renderRagAssistant() {
   }
 
   if (includeWebInput) includeWebInput.checked = settings.includeWeb;
+  if (chunkSizeInput) {
+    chunkSizeInput.min = String(RAG_MIN_CHUNK_SIZE);
+    chunkSizeInput.max = String(RAG_MAX_CHUNK_SIZE);
+    chunkSizeInput.value = String(settings.chunkSize);
+  }
+  if (maxChunksInput) {
+    maxChunksInput.min = String(RAG_MIN_MAX_CHUNKS);
+    maxChunksInput.max = String(RAG_MAX_MAX_CHUNKS);
+    maxChunksInput.value = String(settings.maxChunks);
+  }
   if (rangeStartInput) {
     rangeStartInput.max = String(activePageCount);
     rangeStartInput.value = String(Math.min(activePageCount, Math.max(1, Number(rangeStartInput.value) || activePage)));
@@ -3732,6 +3747,7 @@ async function submitRagQuestion(event) {
         maxChunks: settings.maxChunks,
         maxContextChars: settings.maxContextChars,
         webResults: 4,
+        webSearchTimeoutMs: 20000,
         maxTokens: 1200,
       },
     });
@@ -13513,7 +13529,7 @@ document.addEventListener("change", (event) => {
     syncPdfInkUi();
   }
 
-  if (event.target.matches("#rag-include-web")) {
+  if (event.target.matches("#rag-include-web, #rag-chunk-size, #rag-max-chunks")) {
     rememberRagSettings();
   }
 

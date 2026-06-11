@@ -403,6 +403,17 @@
                 <span>结合联网搜索</span>
               </label>
 
+              <div class="rag-retrieval-settings">
+                <label>
+                  <span>切分长度</span>
+                  <input id="rag-chunk-size" type="number" min="500" max="4000" step="100" value="1400" />
+                </label>
+                <label>
+                  <span>召回段数</span>
+                  <input id="rag-max-chunks" type="number" min="2" max="500" step="1" value="6" />
+                </label>
+              </div>
+
               <div class="rag-learned-list" id="rag-learned-files"></div>
 
               <button class="ghost-action full" data-rag-action="clear-library">

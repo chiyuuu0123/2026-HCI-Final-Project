@@ -1787,7 +1787,7 @@ async function searchWebKnowledge(request = {}) {
   }
 
   const maxResults = Math.min(8, Math.max(1, Number(request.maxResults) || 5));
-  const timeoutMs = Math.min(15000, Math.max(1500, Number(request.timeoutMs) || 5000));
+  const timeoutMs = Math.min(45000, Math.max(1500, Number(request.timeoutMs) || 20000));
   const errors = [];
   const providers = [
     () => searchDuckDuckGoKnowledge(query, maxResults, timeoutMs, request.signal),
@@ -1844,6 +1844,7 @@ async function answerRagLibrary(request = {}) {
       webSearch = await searchWebKnowledge({
         query: question,
         maxResults: options.webResults || 4,
+        timeoutMs: options.webSearchTimeoutMs || options.webTimeoutMs || 20000,
         signal,
       });
     } catch (error) {
@@ -1886,7 +1887,7 @@ async function answerRagLibrary(request = {}) {
     options: {
       chunkSize: options.chunkSize,
       maxChunks: options.maxChunks,
-      maxContextChars: options.maxContextChars,
+      maxContextChars: options.maxContextChars || 300000,
       maxTokens: options.maxTokens || 1100,
       temperature: options.temperature ?? 0.2,
       signal,

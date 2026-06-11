@@ -2,6 +2,8 @@
 
 const { chunkText, tokenize } = require("./textChunker");
 
+const DEFAULT_MAX_CONTEXT_CHARS = 300000;
+
 function countTerms(tokens) {
   const counts = new Map();
 
@@ -91,7 +93,7 @@ function toSelectedChunk(chunk) {
 
 function queryRagIndex(index, query, options = {}) {
   const topK = Math.max(1, Number(options.topK || options.maxChunks || 6));
-  const maxContextChars = options.maxContextChars || 12000;
+  const maxContextChars = options.maxContextChars || DEFAULT_MAX_CONTEXT_CHARS;
   const queryTokens = tokenize(query);
 
   if (!index || !Array.isArray(index.chunks) || index.chunks.length === 0) {
