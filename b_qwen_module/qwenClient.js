@@ -73,6 +73,37 @@ function extractMessageContentText(content) {
   return "";
 }
 
+function getDefaultMaxTokens() {
+  const configured = Number(process.env.QWEN_MAX_TOKENS || process.env.DASHSCOPE_MAX_TOKENS);
+  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 8192;
+}
+
+function normalizeMaxTokens(value) {
+  if (value === null || value === false || value === "auto" || value === "none") {
+    return null;
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return getDefaultMaxTokens();
+  return Math.floor(numericValue);
+}
+
+function extractChatMessageText(message) {
+  if (!message) return "";
+  const content = extractMessageContentText(message.content).trim();
+  if (content) return content;
+
+  if (typeof message.reasoning_content === "string" && message.reasoning_content.trim()) {
+    return "";
+  }
+
+  return extractMessageContentText(message).trim();
+}
+
+function getFinishReason(data) {
+  return data && data.choices && data.choices[0] ? data.choices[0].finish_reason : "";
+}
+
 function getAsrOptions(options = {}) {
   const rawAsrOptions = options.asrOptions && typeof options.asrOptions === "object" ? options.asrOptions : {};
   const asrOptions = { ...rawAsrOptions };
@@ -122,9 +153,10 @@ class QwenClient {
       model: options.model || (options.multimodal ? this.multimodalModel : this.model),
       messages: options.messages,
       temperature: options.temperature ?? 0.2,
-      max_tokens: options.maxTokens ?? 900,
       stream: false,
     };
+    const maxTokens = normalizeMaxTokens(options.maxTokens);
+    if (maxTokens !== null) body.max_tokens = maxTokens;
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
@@ -144,9 +176,27 @@ class QwenClient {
     }
 
     const message = data.choices && data.choices[0] && data.choices[0].message;
+    const content = extractChatMessageText(message);
+
+    if (!content) {
+      const finishReason = getFinishReason(data);
+      if (message && typeof message.reasoning_content === "string" && message.reasoning_content.trim()) {
+        throw new Error(
+          finishReason === "length"
+            ? "模型把本次输出额度用在思考上，最终答案为空。已提高默认输出额度，请重试；也可以把问题拆小一点。"
+            : "模型只返回了思考过程，没有返回最终答案。请重试一次或把要求说得更具体。",
+        );
+      }
+
+      throw new Error(
+        finishReason === "length"
+          ? "模型输出额度耗尽，最终答案为空。已提高默认输出额度，请重试；复杂问题可以继续拆成几个小问。"
+          : "模型没有返回最终答案。请重试一次或把要求说得更具体。",
+      );
+    }
 
     return {
-      content: message && message.content ? message.content : "",
+      content,
       model: data.model || body.model,
       usage: data.usage || null,
       raw: data,

@@ -1322,7 +1322,7 @@ async function askCodingAssistant(request = {}) {
   const response = await createCurrentQwenClient().chat({
     messages,
     temperature: options.temperature != null ? options.temperature : 0.18,
-    maxTokens: options.maxTokens != null ? options.maxTokens : 2200,
+    maxTokens: options.maxTokens != null ? options.maxTokens : 8192,
     model: options.model,
   });
 
@@ -1463,7 +1463,7 @@ async function askLonglongCompanion(request = {}) {
     messages: buildLonglongChatMessages({ ...request, message, memories: relevantMemories }, screenContext, screenError, screenCapture),
     multimodal: Boolean(screenCapture?.dataUrl),
     temperature: options.temperature != null ? options.temperature : 0.28,
-    maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
+    maxTokens: options.maxTokens != null ? options.maxTokens : 4096,
     model: options.model,
   });
   const screenResult = screenContext
@@ -1887,7 +1887,7 @@ async function answerRagLibrary(request = {}) {
       chunkSize: options.chunkSize,
       maxChunks: options.maxChunks,
       maxContextChars: options.maxContextChars,
-      maxTokens: options.maxTokens || 1100,
+      maxTokens: options.maxTokens || 4096,
       temperature: options.temperature ?? 0.2,
       signal,
     },

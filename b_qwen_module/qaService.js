@@ -149,7 +149,7 @@ function createStudyAiService(options = {}) {
         model: options.model,
         multimodal: options.multimodal === true,
         temperature: options.temperature != null ? options.temperature : 0.2,
-        maxTokens: options.maxTokens != null ? options.maxTokens : 900,
+        maxTokens: options.maxTokens != null ? options.maxTokens : 4096,
         signal: options.signal,
       });
 
@@ -176,7 +176,7 @@ function createStudyAiService(options = {}) {
         model: options.model,
         multimodal: options.multimodal === true,
         temperature: options.temperature != null ? options.temperature : 0.2,
-        maxTokens: options.maxTokens != null ? options.maxTokens : 1200,
+        maxTokens: options.maxTokens != null ? options.maxTokens : 4096,
         signal: options.signal,
       });
 

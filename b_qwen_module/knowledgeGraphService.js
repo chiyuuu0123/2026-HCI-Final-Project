@@ -368,7 +368,7 @@ class KnowledgeGraphService {
         { role: "user", content: buildGraphPrompt(course, documents) },
       ],
       temperature: request.options?.temperature ?? 0.12,
-      maxTokens: request.options?.maxTokens ?? 3000,
+      maxTokens: request.options?.maxTokens ?? 8192,
       model: request.options?.model,
     });
     const parsed = extractJsonPayload(response.content);
