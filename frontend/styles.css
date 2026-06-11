@@ -6053,6 +6053,74 @@ button.review-row:hover {
   transform: translateY(-3px) scale(1.02);
 }
 
+@media (min-width: 1181px) {
+  .view[data-view-panel="reader"],
+  .view[data-view-panel="rag"],
+  .view[data-view-panel="coding"],
+  .view[data-view-panel="calculator"],
+  .view[data-view-panel="planner"],
+  .view[data-view-panel="map"],
+  .view[data-view-panel="mindmap"],
+  .view[data-view-panel="quiz"],
+  .view[data-view-panel="focus"] {
+    overflow: hidden;
+  }
+
+  .rag-page,
+  .coding-page,
+  .calculator-page,
+  .planner-page,
+  .map-page,
+  .mindmap-page,
+  .quiz-layout,
+  .focus-page {
+    height: calc(100vh - 116px);
+    min-height: 0;
+    overflow: hidden;
+    align-items: stretch;
+  }
+
+  .rag-chat-panel,
+  .rag-library-panel,
+  .coding-input-panel,
+  .coding-output-panel,
+  .planner-board,
+  .mindmap-panel {
+    height: 100%;
+  }
+
+  .dashboard-grid > .panel,
+  .calculator-device,
+  .calculator-side-panel,
+  .planner-side,
+  .node-detail,
+  .mindmap-detail,
+  .quiz-main,
+  .quiz-side,
+  .focus-page > .panel {
+    max-height: 100%;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .rag-chat-list,
+  .rag-learned-list,
+  .coding-form,
+  .coding-output,
+  .planner-table-wrap,
+  .mindmap-stage,
+  .pdf-viewer,
+  .markdown-preview,
+  .chapter-panel,
+  .insight-panel {
+    overscroll-behavior: contain;
+  }
+
+  .rag-learned-list {
+    flex: 1 1 auto;
+  }
+}
+
 @media (max-width: 1180px) {
   body {
     overflow: auto;

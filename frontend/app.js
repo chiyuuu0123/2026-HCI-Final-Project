@@ -222,8 +222,8 @@ const GRAPH_NODE_LIMIT = 64;
 const GRAPH_MINDMAP_BRANCH_LIMIT = 10;
 const GRAPH_MINDMAP_CHILD_LIMIT = 8;
 const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
-const GRAPH_GENERATION_TIMEOUT_MS = 120000;
-const GRAPH_SECONDARY_AI_TIMEOUT_MS = 90000;
+const GRAPH_GENERATION_TIMEOUT_MS = 0;
+const GRAPH_SECONDARY_AI_TIMEOUT_MS = 0;
 const GRAPH_NOISE_LINE_PATTERN = /(ISBN|CIP|copyright|all rights reserved|seventh edition|edition|机械工业出版社|出版社|出版|印刷|版次|责任编辑|责任编|版权所有|盗版|防伪|校区|大学|学院|图书在版|编目|定价|开本|印张|字数|书名|作者|译者|封面|封底|library of congress|pearson|mcgraw|press)/i;
 const GRAPH_CONCEPT_SIGNAL_PATTERN = /(是|指|表示|定义|概念|包括|分为|组成|用于|作用|特点|模型|算法|方法|系统|结构|过程|关系|约束|查询|事务|索引|范式|模式|实体|属性|完整性|并发|恢复|SQL|ER|database|relation|transaction|query|index|schema)/i;
 const GRAPH_LABEL_HARD_NOISE_PATTERN = /(本书|本章|本节|本页|本版|英文版|中文版|网站|网址|第\s*\d+\s*版|第[一二三四五六七八九十]+版|pdf|\.pdf|http|www\.|目录|前言|致谢|参考文献|附录|练习题|习题|图\s*\d+|表\s*\d+|例\s*\d+|版权|出版社|作者|译者|教材|课件|文档|新课程|知识文档)/i;
@@ -1647,7 +1647,7 @@ async function submitLonglongChat(event) {
       includeScreen: false,
       source: "main",
       options: {
-        maxTokens: 900,
+        maxTokens: 4096,
         temperature: 0.32,
       },
     });
@@ -3747,8 +3747,12 @@ async function submitRagQuestion(event) {
         maxChunks: settings.maxChunks,
         maxContextChars: settings.maxContextChars,
         webResults: 4,
+<<<<<<< HEAD
         webSearchTimeoutMs: 20000,
         maxTokens: 1200,
+=======
+        maxTokens: 4096,
+>>>>>>> b4a0ca8de3ad0cf4fad069bba1c1abc9786a7ab7
       },
     });
 
@@ -3829,7 +3833,7 @@ async function submitCodingAssistant(event) {
       code,
       language,
       options: {
-        maxTokens: 2600,
+        maxTokens: 8192,
         temperature: 0.18,
       },
     });
@@ -9417,7 +9421,7 @@ async function gradeShortAnswerWithAi(question, answer) {
     options: {
       maxChunks: 3,
       maxContextChars: 4000,
-      maxTokens: 700,
+      maxTokens: 2000,
       temperature: 0.05,
       persona: false,
       multimodal: false,
@@ -9495,6 +9499,11 @@ function withTimeout(promise, timeoutMs, label) {
   let timer = null;
   const guarded = Promise.resolve(promise);
   guarded.catch(() => {});
+
+  if (!Number.isFinite(Number(timeoutMs)) || Number(timeoutMs) <= 0) {
+    return guarded;
+  }
+
   return Promise.race([
     guarded,
     new Promise((resolve, reject) => {
@@ -9565,7 +9574,7 @@ async function regenerateQuizQuestionsFromCurrentGraph(source = "local-quiz-rule
         options: {
           maxChunks: 10,
           maxContextChars: GRAPH_TEXT_LIMIT,
-          maxTokens: 1800,
+          maxTokens: 8192,
           temperature: 0.12,
           persona: false,
           multimodal: true,
@@ -10210,7 +10219,7 @@ async function generateMindmapFromDocumentsWithAi(documents = [], course = getAc
     options: {
       maxChunks: 12,
       maxContextChars: GRAPH_TEXT_LIMIT,
-      maxTokens: 1800,
+      maxTokens: 8192,
       temperature: 0.12,
       persona: false,
       multimodal: true,
@@ -10357,7 +10366,7 @@ async function generateStudyModuleFromUploads() {
           course: getGraphCoursePayload(course),
           documents,
           options: {
-            maxTokens: 2200,
+            maxTokens: 8192,
             temperature: 0.12,
           },
         }), GRAPH_GENERATION_TIMEOUT_MS, "Qwen + Neo4j 知识图谱生成");
@@ -10385,7 +10394,7 @@ async function generateStudyModuleFromUploads() {
           options: {
             maxChunks: 10,
             maxContextChars: GRAPH_TEXT_LIMIT,
-            maxTokens: 2000,
+            maxTokens: 8192,
             temperature: 0.15,
             persona: false,
             multimodal: true,
@@ -12079,7 +12088,7 @@ async function updateAiReadingOutput(mode) {
           chunkSize: chunkSettings.chunkSize,
           maxChunks: chunkSettings.maxChunks,
           maxContextChars: chunkSettings.maxContextChars,
-          maxTokens: 1200,
+          maxTokens: 4096,
         },
       });
       result = formatAiAnswer(response);
@@ -12092,7 +12101,7 @@ async function updateAiReadingOutput(mode) {
           chunkSize: chunkSettings.chunkSize,
           maxChunks: chunkSettings.maxChunks,
           maxContextChars: chunkSettings.maxContextChars,
-          maxTokens: 1200,
+          maxTokens: 4096,
         },
       });
       result = formatAiSummary(response);
@@ -13491,7 +13500,7 @@ document.querySelectorAll(".prompt-chip").forEach((chip) => {
         options: {
           maxChunks: 6,
           maxContextChars: AI_CONTEXT_TEXT_LIMIT,
-          maxTokens: 1000,
+          maxTokens: 4096,
         },
       });
       setAiMarkdownContent(aiBubble, formatAiAnswer(response));
