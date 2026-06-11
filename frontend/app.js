@@ -262,6 +262,7 @@ const readerPanels = {
   insight: document.querySelector(".insight-panel"),
 };
 
+const READER_LAYOUT_STORAGE_KEY = "mindstudy.readerLayout.v1";
 const runtimeFiles = new Map();
 const documentState = {
   current: null,
@@ -270,6 +271,14 @@ const ragQuestionState = {
   pending: false,
   canceling: false,
   requestId: "",
+};
+let readerLayoutSettings = loadReaderLayoutSettings();
+const readerResizeState = {
+  active: false,
+  side: "",
+  startX: 0,
+  startLibraryWidth: 0,
+  startInsightWidth: 0,
 };
 const supportedDocumentExtensions = new Set(["PDF", "MD"]);
 const PDF_TEXT_LIMIT = 60000;
@@ -527,6 +536,88 @@ const graphNodeDragState = {
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function clampReaderPaneWidth(value, min, max) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return min;
+  return Math.min(max, Math.max(min, Math.round(numericValue)));
+}
+
+function loadReaderLayoutSettings() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(READER_LAYOUT_STORAGE_KEY) || "{}");
+    const libraryWidth = Number(parsed.libraryWidth);
+    const insightWidth = Number(parsed.insightWidth);
+    return {
+      libraryWidth: clampReaderPaneWidth(Number.isFinite(libraryWidth) ? libraryWidth : 230, 190, 360),
+      insightWidth: clampReaderPaneWidth(Number.isFinite(insightWidth) ? insightWidth : 390, 360, 560),
+    };
+  } catch (error) {
+    return {
+      libraryWidth: 230,
+      insightWidth: 390,
+    };
+  }
+}
+
+function saveReaderLayoutSettings() {
+  try {
+    localStorage.setItem(READER_LAYOUT_STORAGE_KEY, JSON.stringify(readerLayoutSettings));
+  } catch (error) {
+    // 阅读区宽度是体验偏好，保存失败时不影响当前会话拖拽。
+  }
+}
+
+function applyReaderLayoutSettings() {
+  const layout = document.querySelector(".reader-layout");
+  if (!layout) return;
+
+  layout.style.setProperty("--reader-library-width", `${readerLayoutSettings.libraryWidth}px`);
+  layout.style.setProperty("--reader-insight-width", `${readerLayoutSettings.insightWidth}px`);
+}
+
+function beginReaderResize(event) {
+  const handle = event.target.closest("[data-reader-resizer]");
+  if (!handle) return;
+
+  const layout = handle.closest(".reader-layout");
+  if (!layout || window.matchMedia("(max-width: 1180px)").matches) return;
+
+  event.preventDefault();
+  readerResizeState.active = true;
+  readerResizeState.side = handle.dataset.readerResizer || "";
+  readerResizeState.startX = event.clientX;
+  readerResizeState.startLibraryWidth = readerLayoutSettings.libraryWidth;
+  readerResizeState.startInsightWidth = readerLayoutSettings.insightWidth;
+  document.documentElement.classList.add("reader-resizing");
+  handle.setPointerCapture?.(event.pointerId);
+}
+
+function updateReaderResize(event) {
+  if (!readerResizeState.active) return;
+
+  const deltaX = event.clientX - readerResizeState.startX;
+
+  if (readerResizeState.side === "library") {
+    readerLayoutSettings.libraryWidth = clampReaderPaneWidth(readerResizeState.startLibraryWidth + deltaX, 190, 360);
+  }
+
+  if (readerResizeState.side === "insight") {
+    readerLayoutSettings.insightWidth = clampReaderPaneWidth(readerResizeState.startInsightWidth - deltaX, 360, 560);
+  }
+
+  applyReaderLayoutSettings();
+}
+
+function finishReaderResize() {
+  if (!readerResizeState.active) return;
+
+  readerResizeState.active = false;
+  readerResizeState.side = "";
+  document.documentElement.classList.remove("reader-resizing");
+  saveReaderLayoutSettings();
+  rerenderCurrentPdfAfterReaderResize();
 }
 
 function withLonglongAnswerLine(markdown) {
@@ -10805,7 +10896,6 @@ function renderDocumentLibrary() {
         <i data-lucide="plus"></i>
       </button>
     </div>
-    <p class="library-subtitle">${escapeHtml(activeCourse.description || "每门课程拥有独立资料库")}</p>
     <div class="document-list">
       ${
         activeCourse.documents.length
@@ -10825,7 +10915,7 @@ function renderDocumentLibrary() {
                 `,
               )
               .join("")
-          : `<div class="library-empty">还没有资料。点击右上角或此处上传 PDF、MD。</div>`
+          : `<button class="library-empty" data-library-import="true" type="button">还没有资料，点击导入 PDF / Markdown</button>`
       }
     </div>
   `;
@@ -10844,15 +10934,11 @@ function showReaderEmpty() {
   readerPanels.insight.innerHTML = `
     <div class="panel-heading">
       <div>
-        <span class="tag muted">资料说明</span>
-        <h3>支持格式</h3>
+        <span class="tag muted">资料状态</span>
+        <h3>等待导入</h3>
       </div>
     </div>
-    <p class="summary-text">当前资料库仅支持 PDF 阅读批注和 Markdown 阅读编辑。</p>
-    <button class="primary-action full" data-library-import="true">
-      <i data-lucide="upload-cloud"></i>
-      <span>上传课程资料</span>
-    </button>
+    <p class="summary-text">支持 PDF 阅读批注和 Markdown 阅读编辑。导入入口保留在顶部按钮和资料库右上角。</p>
   `;
   window.lucide?.createIcons();
 }
@@ -11705,10 +11791,18 @@ function renderAiReadingWindow(doc) {
           <span class="tag muted">AI 阅读窗口</span>
           <h3>解析与翻译</h3>
         </div>
-        <button class="mini-button" data-ai-action="settings" title="设置 Qwen API Key">
-          <i data-lucide="key-round"></i>
-          <span>Key</span>
-        </button>
+        <div class="ai-reading-tools">
+          <button class="icon-button light" id="popout-ai-reading-source" type="button" title="弹出提取文字">
+            <i data-lucide="maximize-2"></i>
+          </button>
+          <button class="icon-button light" id="popout-ai-reading-output" type="button" title="弹出返回内容">
+            <i data-lucide="external-link"></i>
+          </button>
+          <button class="mini-button" data-ai-action="settings" title="设置 Qwen API Key">
+            <i data-lucide="key-round"></i>
+            <span>Key</span>
+          </button>
+        </div>
       </div>
       ${
         extractStatus
@@ -11752,6 +11846,84 @@ function renderAiReadingWindow(doc) {
       <div class="ai-reading-output" id="ai-reading-output">${renderAiMarkdown(output)}</div>
     </section>
   `;
+}
+
+function getAiReadingPopoutText(kind) {
+  if (kind === "source") {
+    return document.querySelector("#ai-reading-source")?.value || "";
+  }
+
+  const output = document.querySelector("#ai-reading-output");
+  return output?.innerText?.trim() || output?.textContent?.trim() || "";
+}
+
+function openAiReadingPopout(kind) {
+  const normalizedKind = kind === "source" ? "source" : "output";
+  const isSource = normalizedKind === "source";
+  const text = getAiReadingPopoutText(normalizedKind);
+  const title = isSource ? "提取文字" : "返回内容";
+
+  closeModal();
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    `
+      <div class="modal-backdrop" data-modal="ai-reading-popout">
+        <section class="course-modal reading-popout-modal" role="dialog" aria-modal="true" aria-labelledby="ai-reading-popout-title">
+          <div class="modal-heading">
+            <div>
+              <span class="tag muted">AI Reading</span>
+              <h2 id="ai-reading-popout-title">${title}</h2>
+            </div>
+            <button class="icon-button light" data-modal-action="close" title="关闭">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <textarea id="ai-reading-popout-text" class="ai-reading-popout-text" data-popout-kind="${normalizedKind}" ${isSource ? "" : "readonly"}>${escapeHtml(text)}</textarea>
+          <div class="modal-actions">
+            <button type="button" class="ghost-action compact" id="copy-ai-reading-popout">
+              <i data-lucide="copy"></i>
+              <span>复制</span>
+            </button>
+            ${
+              isSource
+                ? `<button type="button" class="primary-action compact" id="save-ai-reading-popout">
+                    <i data-lucide="check"></i>
+                    <span>保存回输入框</span>
+                  </button>`
+                : ""
+            }
+          </div>
+        </section>
+      </div>
+    `,
+  );
+
+  const textarea = document.querySelector("#ai-reading-popout-text");
+  textarea?.focus();
+  textarea?.select();
+  window.lucide?.createIcons();
+}
+
+async function copyAiReadingPopoutText() {
+  const textarea = document.querySelector("#ai-reading-popout-text");
+  if (!textarea) return;
+
+  try {
+    await navigator.clipboard.writeText(textarea.value);
+  } catch (error) {
+    textarea.select();
+    document.execCommand?.("copy");
+  }
+}
+
+function saveAiReadingPopoutText() {
+  const textarea = document.querySelector("#ai-reading-popout-text");
+  const sourceInput = document.querySelector("#ai-reading-source");
+  if (!textarea || textarea.dataset.popoutKind !== "source" || !sourceInput) return;
+
+  sourceInput.value = textarea.value;
+  sourceInput.dispatchEvent(new Event("input", { bubbles: true }));
+  closeModal();
 }
 
 async function updateAiReadingOutput(mode) {
@@ -13335,6 +13507,10 @@ document.addEventListener("pointerdown", beginGraphPan);
 document.addEventListener("pointermove", updateGraphPan);
 document.addEventListener("pointerup", finishGraphPan);
 document.addEventListener("pointercancel", finishGraphPan);
+document.addEventListener("pointerdown", beginReaderResize);
+document.addEventListener("pointermove", updateReaderResize);
+document.addEventListener("pointerup", finishReaderResize);
+document.addEventListener("pointercancel", finishReaderResize);
 document.addEventListener("mousedown", beginLonglongMouseDrag);
 document.addEventListener("mousemove", updateLonglongMouseDrag);
 document.addEventListener("mouseup", finishLonglongMouseDrag);
@@ -13817,6 +13993,10 @@ document.addEventListener("click", (event) => {
   if (actionButton.id === "undo-pdf-ink") undoPdfInkStroke();
   if (actionButton.id === "clear-pdf-ink-page") clearCurrentPdfInkPage();
   if (actionButton.id === "apply-pdf-ink") applyPdfInkToCurrentPdf();
+  if (actionButton.id === "popout-ai-reading-source") openAiReadingPopout("source");
+  if (actionButton.id === "popout-ai-reading-output") openAiReadingPopout("output");
+  if (actionButton.id === "copy-ai-reading-popout") copyAiReadingPopoutText();
+  if (actionButton.id === "save-ai-reading-popout") saveAiReadingPopoutText();
   if (actionButton.id === "ai-analyze-reading") updateAiReadingOutput("analyze");
   if (actionButton.id === "ai-translate-reading") updateAiReadingOutput("translate");
   if (actionButton.id === "export-ai-pdf-range") exportActivePdfRange("ai");
@@ -13841,6 +14021,7 @@ window.addEventListener("DOMContentLoaded", () => {
   initLonglongChatState();
   initLonglongActionHover();
   applyLonglongPosition();
+  applyReaderLayoutSettings();
   renderAllCourseViews();
   setCameraStatus("idle");
 
