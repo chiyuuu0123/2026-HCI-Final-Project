@@ -287,6 +287,31 @@ npm.cmd start
 
 没有 Qwen API Key 时，知识图谱仍会使用本地规则生成，并尽量写入 Neo4j，保证课堂演示不中断。
 
+## 音乐推荐 API Key 配置
+
+音乐推荐已经和通用 AI 问答拆开。课程问答、知识图谱和摘要仍使用 `DASHSCOPE_API_KEY` / `QWEN_API_KEY`，但“状态与音乐”页面在歌曲播放结束后让 AI 选择下一首时，只读取独立环境变量：
+
+```text
+Music_Recommand_Key
+```
+
+临时设置当前 PowerShell 会话：
+
+```powershell
+$env:Music_Recommand_Key="your_music_recommend_api_key_here"
+npm.cmd start
+```
+
+持久写入 Windows 用户环境变量：
+
+```powershell
+[Environment]::SetEnvironmentVariable("Music_Recommand_Key", "your_music_recommend_api_key_here", "User")
+```
+
+持久写入后需要关闭当前 PowerShell，重新打开终端并重启 Electron 应用。
+
+如果没有配置 `Music_Recommand_Key`，音乐播放器仍可正常播放；AI 选下一首会失败并自动降级为本地随机选择。
+
 ## 知识图谱使用方法
 
 1. 在 Neo4j Desktop 中启动本地 DBMS，并运行 `npm run neo4j:check` 确认连接成功。

@@ -1212,6 +1212,32 @@ function createCurrentStudyAiService() {
   });
 }
 
+function getMusicRecommendationRuntimeConfig() {
+  const baseConfig = getQwenRuntimeConfig();
+  const apiKey = process.env.Music_Recommand_Key || "";
+  return {
+    apiKey,
+    baseUrl: process.env.MUSIC_RECOMMAND_BASE_URL || baseConfig.baseUrl,
+    model: process.env.MUSIC_RECOMMAND_MODEL || baseConfig.model,
+    multimodalModel: baseConfig.multimodalModel,
+    asrModel: baseConfig.asrModel,
+  };
+}
+
+function createMusicRecommendationAiService() {
+  const config = getMusicRecommendationRuntimeConfig();
+
+  return createStudyAiService({
+    clientOptions: {
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+      model: config.model,
+      multimodalModel: config.multimodalModel,
+      asrModel: config.asrModel,
+    },
+  });
+}
+
 function createCurrentQwenClient() {
   const config = getQwenRuntimeConfig();
 
@@ -2292,6 +2318,35 @@ function readFrontendEnv() {
   }
 }
 
+function parseMusicFileName(fileName) {
+  const baseName = path.basename(fileName, path.extname(fileName));
+  const separatorIndex = baseName.lastIndexOf("-");
+  if (separatorIndex <= 0 || separatorIndex >= baseName.length - 1) {
+    return { title: baseName, artist: "未知歌手" };
+  }
+  return {
+    title: baseName.slice(0, separatorIndex).trim() || baseName,
+    artist: baseName.slice(separatorIndex + 1).trim() || "未知歌手",
+  };
+}
+
+async function readMusicLibrary() {
+  const musicDir = path.join(__dirname, "..", "frontend", "assets", "music");
+  const entries = await fs.readdir(musicDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".mp3"))
+    .map((entry) => {
+      const meta = parseMusicFileName(entry.name);
+      return {
+        ...meta,
+        fileName: entry.name,
+        src: `./assets/music/${entry.name}`,
+        moods: ["focused", "relaxed", "distracted", "tired", "anxious", "confused"],
+      };
+    })
+    .sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
+}
+
 ipcMain.handle("app:get-info", () => ({
   name: app.getName(),
   version: app.getVersion(),
@@ -2299,6 +2354,13 @@ ipcMain.handle("app:get-info", () => ({
 }));
 
 ipcMain.handle("app:get-frontend-env", () => readFrontendEnv());
+
+ipcMain.handle("app:get-music-library", async () => readMusicLibrary());
+
+ipcMain.on("app:renderer-log", (event, scope, payload) => {
+  const timestamp = new Date().toLocaleString("zh-CN", { hour12: false });
+  console.log(`[${timestamp}] [${scope || "renderer"}]`, payload || "");
+});
 
 ipcMain.handle("study-timer:get", () => {
   return getStudyTimerSnapshot();
@@ -2381,6 +2443,10 @@ ipcMain.handle("b:ai:clear-api-key", () => {
 
 ipcMain.handle("b:ai:ask-question", async (event, request) => {
   return createCurrentStudyAiService().askCourseQuestion(request);
+});
+
+ipcMain.handle("b:ai:ask-music-recommendation", async (event, request) => {
+  return createMusicRecommendationAiService().askCourseQuestion(request);
 });
 
 ipcMain.handle("b:ai:summarize-documents", async (event, request) => {

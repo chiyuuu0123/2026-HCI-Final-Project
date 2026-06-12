@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer, webFrame } = require("electron");
 contextBridge.exposeInMainWorld("mindStudy", {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
   getFrontendEnv: () => ipcRenderer.invoke("app:get-frontend-env"),
+  getMusicLibrary: () => ipcRenderer.invoke("app:get-music-library"),
+  logToTerminal: (scope, payload) => ipcRenderer.send("app:renderer-log", scope, payload),
   wakeMainWindow: () => ipcRenderer.send("companion:wake-main"),
   setCompanionMode: (mode) => ipcRenderer.invoke("companion:set-mode", mode),
   getCompanionBounds: () => ipcRenderer.invoke("companion:get-bounds"),
@@ -67,6 +69,7 @@ contextBridge.exposeInMainWorld("mindStudy", {
     saveApiKey: (apiKey) => ipcRenderer.invoke("b:ai:save-api-key", apiKey),
     clearApiKey: () => ipcRenderer.invoke("b:ai:clear-api-key"),
     askQuestion: (request) => ipcRenderer.invoke("b:ai:ask-question", request),
+    askMusicRecommendation: (request) => ipcRenderer.invoke("b:ai:ask-music-recommendation", request),
     askCoding: (request) => ipcRenderer.invoke("b:ai:ask-coding", request),
     summarizeDocuments: (request) => ipcRenderer.invoke("b:ai:summarize-documents", request),
     extractPdfText: (payload) => ipcRenderer.invoke("b:ai:extract-pdf-text", payload),

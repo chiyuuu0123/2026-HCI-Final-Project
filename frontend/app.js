@@ -385,8 +385,8 @@ const emotionMusicLibrary = {
     title: "轻节奏唤醒歌单",
     detail: "适合把注意力拉回当前任务。",
     tracks: [
-      { title: "稻香", src: "./assets/music/稻香-周杰伦.mp3" },
-      { title: "晴天", src: "./assets/music/晴天-林俊杰，周董.mp3" },
+      { title: "Dream2020", src: "./assets/music/Dream2020-蜡笔小心.mp3" },
+      { title: "Stitches", src: "./assets/music/Stitches-Shawn Mendes.mp3" },
     ],
   },
   relaxed: {
@@ -426,27 +426,45 @@ const emotionMusicLibrary = {
   },
 };
 const aiMusicCandidateTracks = [
-  { title: "晴天", artist: "林俊杰，周董", src: "./assets/music/晴天-林俊杰，周董.mp3", moods: ["focused", "relaxed"] },
-  { title: "借", artist: "毛不易", src: "./assets/music/借-毛不易.mp3", moods: ["tired", "distracted"] },
-  { title: "关键词", artist: "叶炫清", src: "./assets/music/关键词-叶炫清.mp3", moods: ["focused", "relaxed"] },
-  { title: "我还想她", artist: "林俊杰", src: "./assets/music/我还想她-林俊杰.mp3", moods: ["anxious", "distracted"] },
-  { title: "黑夜问白天", artist: "林俊杰", src: "./assets/music/黑夜问白天-林俊杰.mp3", moods: ["confused", "anxious"] },
+  { title: "River Flows in You", artist: "未知歌手", src: "./assets/music/River Flows in You-未知歌手.mp3", moods: ["focused", "relaxed"] },
+  { title: "Canon in D", artist: "未知歌手", src: "./assets/music/Canon in D-未知歌手.mp3", moods: ["focused", "confused"] },
+  { title: "Nocturne Op. 9 No. 2 in E flat major - Andante", artist: "未知歌手", src: "./assets/music/Nocturne Op. 9 No. 2 in E flat major - Andante-未知歌手.mp3", moods: ["tired", "anxious"] },
+  { title: "summer", artist: "夏石让", src: "./assets/music/summer-夏石让.mp3", moods: ["focused", "relaxed"] },
+  { title: "Dream2020", artist: "蜡笔小心", src: "./assets/music/Dream2020-蜡笔小心.mp3", moods: ["focused", "distracted"] },
+  { title: "UNknown", artist: "蜡笔小心", src: "./assets/music/UNknown-蜡笔小心.mp3", moods: ["confused", "distracted"] },
+  { title: "MOM", artist: "蜡笔小心", src: "./assets/music/MOM-蜡笔小心.mp3", moods: ["tired", "relaxed"] },
   { title: "倒影", artist: "蓝心羽", src: "./assets/music/倒影-蓝心羽.mp3", moods: ["relaxed", "focused"] },
-  { title: "晚风快递", artist: "蓝心羽", src: "./assets/music/晚风快递-蓝心羽.mp3", moods: ["relaxed", "tired"] },
   { title: "阿拉斯加海湾", artist: "蓝心羽", src: "./assets/music/阿拉斯加海湾-蓝心羽.mp3", moods: ["tired", "anxious"] },
-  { title: "夜的第七章", artist: "周杰伦", src: "./assets/music/夜的第七章-周杰伦.mp3", moods: ["focused", "confused"] },
-  { title: "稻香", artist: "周杰伦", src: "./assets/music/稻香-周杰伦.mp3", moods: ["distracted", "relaxed"] },
-  { title: "雅俗共赏", artist: "许嵩", src: "./assets/music/雅俗共赏-许嵩.mp3", moods: ["focused", "relaxed"] },
-  { title: "庐州月", artist: "许嵩", src: "./assets/music/庐州月-许嵩.mp3", moods: ["relaxed", "tired"] },
+  { title: "不染", artist: "毛不易", src: "./assets/music/不染-毛不易.mp3", moods: ["tired", "relaxed"] },
+  { title: "丑八怪", artist: "薛之谦", src: "./assets/music/丑八怪-薛之谦.mp3", moods: ["anxious", "distracted"] },
+  { title: "暗号", artist: "周杰伦", src: "./assets/music/暗号-周杰伦.mp3", moods: ["focused", "confused"] },
+  { title: "Mjito", artist: "周董", src: "./assets/music/Mjito-周董.mp3", moods: ["relaxed", "focused"] },
+  { title: "伯虎说 (feat.唐伯虎Annie)", artist: "伯爵Johnny&唐伯虎Annie", src: "./assets/music/伯虎说 (feat.唐伯虎Annie)-伯爵Johnny&唐伯虎Annie.mp3", moods: ["relaxed", "distracted"] },
+  { title: "侧脸", artist: "雨果", src: "./assets/music/侧脸-雨果.mp3", moods: ["relaxed", "tired"] },
+  { title: "春涧", artist: "浅影阿", src: "./assets/music/春涧-浅影阿.mp3", moods: ["relaxed", "focused"] },
+  { title: "In The End(Mellen Gi Remix)", artist: "Tommee Profitt&Fleurie", src: "./assets/music/In The End(Mellen Gi Remix)-Tommee Profitt&Fleurie.mp3", moods: ["distracted", "focused"] },
+  { title: "Love Yourself", artist: "Justin", src: "./assets/music/Love Yourself-Justin.mp3", moods: ["relaxed", "anxious"] },
+  { title: "One Last Time", artist: "Ariana Grande&Fedez", src: "./assets/music/One Last Time-Ariana Grande&Fedez.mp3", moods: ["distracted", "relaxed"] },
+  { title: "Stitches", artist: "Shawn Mendes", src: "./assets/music/Stitches-Shawn Mendes.mp3", moods: ["distracted", "focused"] },
+  { title: "The Monster", artist: "Eminem&Rihanna", src: "./assets/music/The Monster-Eminem&Rihanna.mp3", moods: ["distracted", "anxious"] },
 ];
 const musicPlayerState = {
   recommendationId: "",
   trackIndex: 0,
   playing: false,
   seeking: false,
+  currentEmotion: { id: "focused", label: "专注", detail: "" },
+  currentTrackStartedAt: 0,
+  emotionStatStartedAt: 0,
+  emotionStats: new Map(),
+  recentTrackKeys: [],
+  libraryTracks: [],
+  importedTracks: [],
   lastAiEmotionId: "",
   lastAiRequestedAt: 0,
   aiInFlight: false,
+  aiNextTrackEnabled: true,
+  aiNextTrackRecentLimit: 3,
 };
 let longlongBondNoticeTimer = null;
 let longlongCoinSyncKey = "";
@@ -4120,6 +4138,11 @@ function updateCameraMetrics(brightness) {
   if (ui.moodTitle) ui.moodTitle.textContent = title;
   if (ui.gestureTitle) ui.gestureTitle.textContent = "摄像头已开启，等待手势";
   const musicRecommendation = getMusicRecommendationForBrightness(normalized);
+  updateMusicEmotionState({
+    id: musicRecommendation.id || "focused",
+    label,
+    detail: title,
+  });
   setMusicRecommendation(musicRecommendation);
   updateLonglongMood(
     title.replace("当前状态：", ""),
@@ -4159,63 +4182,245 @@ function trackKey(track) {
   return `${track?.title || ""}|${track?.src || ""}`;
 }
 
-function getAvailableAiMusicCandidates(recommendation = getCurrentMusicRecommendation()) {
-  const existing = new Set((recommendation.tracks || []).map(trackKey));
-  return aiMusicCandidateTracks.filter((track) => !existing.has(trackKey(track)));
+function getFixedMusicPlaylist() {
+  const seen = new Set();
+  const baseTracks = musicPlayerState.libraryTracks.length ? musicPlayerState.libraryTracks : aiMusicCandidateTracks;
+  return [...baseTracks, ...musicPlayerState.importedTracks]
+    .filter((track) => track?.src)
+    .filter((track) => {
+      const key = trackKey(track);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((track) => ({
+      title: track.title || track.src.split("/").pop(),
+      artist: track.artist || "",
+      src: track.src,
+      moods: Array.isArray(track.moods) ? track.moods : [],
+      imported: Boolean(track.imported),
+    }));
 }
 
-function addTrackToCurrentRecommendation(track) {
-  const recommendation = getCurrentMusicRecommendation();
-  if (!track?.src || recommendation.tracks.some((item) => item.src === track.src)) return false;
-  recommendation.tracks.push({ title: track.title || track.src.split("/").pop(), src: track.src });
-  renderMusicRecommendation(recommendation);
-  return true;
-}
-
-async function requestAiMusicRecommendation(emotion = {}) {
-  const emotionId = emotion.id || "";
-  if (!emotionId || emotionId === "away") return;
-  const now = Date.now();
-  if (musicPlayerState.aiInFlight) return;
-  if (musicPlayerState.lastAiEmotionId === emotionId && now - musicPlayerState.lastAiRequestedAt < 30000) return;
-
-  const recommendation = getCurrentMusicRecommendation();
-  const candidates = getAvailableAiMusicCandidates(recommendation).slice(0, 10);
-  if (!candidates.length || !window.mindStudy?.ai?.askQuestion) return;
-
-  musicPlayerState.aiInFlight = true;
-  musicPlayerState.lastAiEmotionId = emotionId;
-  musicPlayerState.lastAiRequestedAt = now;
+async function loadExistingMusicLibrary() {
   try {
-    const response = await window.mindStudy.ai.askQuestion({
-      question: [
-        "你是 MindStudy 的音乐推荐助手。请根据当前学习状态判断是否向当前歌单加入一首歌。",
-        "只能从候选歌曲中选择，不能编造新歌曲或路径。",
-        "如果建议加入，返回 JSON：{\"add\":true,\"title\":\"候选歌曲标题\",\"reason\":\"一句话原因\"}。",
-        "如果不建议加入，返回 JSON：{\"add\":false,\"reason\":\"一句话原因\"}。",
-        "",
-        `当前状态：${emotion.label || emotionId}`,
-        `状态细节：${emotion.detail || ""}`,
-        `当前歌单：${recommendation.tracks.map((track) => track.title).join("、") || "空"}`,
-        `候选歌曲：${candidates.map((track) => `${track.title}-${track.artist} [适合 ${track.moods.join("/")}]`).join("；")}`,
-      ].join("\n"),
-      documents: [{
-        id: "music-candidates",
-        title: "可添加歌曲",
-        text: candidates.map((track) => `${track.title}-${track.artist}：适合 ${track.moods.join("/")}`).join("\n"),
-        mimeType: "text/plain",
-      }],
-      options: { maxTokens: 260, temperature: 0.2 },
-    });
-    const data = extractJsonFromAiText(response?.answer || "");
-    if (!data?.add) return;
-    const selected = candidates.find((track) => track.title === data.title);
-    if (selected && addTrackToCurrentRecommendation(selected)) {
-      const ui = getMusicUi();
-      if (ui.detail) ui.detail.textContent = `${recommendation.detail} AI 已加入：${selected.title}`;
+    const tracks = await window.mindStudy?.getMusicLibrary?.();
+    if (Array.isArray(tracks) && tracks.length) {
+      musicPlayerState.libraryTracks = tracks;
+      renderMusicRecommendation();
+      loadCurrentMusicTrack({ keepPlaying: musicPlayerState.playing });
+      logMusicTerminal("加载现有歌曲", { count: tracks.length });
     }
   } catch (error) {
-    console.warn("AI music recommendation failed.", error);
+    console.warn("Failed to load existing music library.", error);
+  }
+}
+
+function logMusicTerminal(message, payload = {}) {
+  const data = {
+    at: new Date().toLocaleString("zh-CN", { hour12: false }),
+    message,
+    ...payload,
+  };
+  if (window.mindStudy?.logToTerminal) {
+    window.mindStudy.logToTerminal("music", data);
+  } else {
+    console.log("[music]", data);
+  }
+}
+
+function addCurrentEmotionDuration(now = Date.now()) {
+  const emotionId = musicPlayerState.currentEmotion?.id || "unknown";
+  if (!musicPlayerState.emotionStatStartedAt) {
+    musicPlayerState.emotionStatStartedAt = now;
+    return;
+  }
+  const duration = Math.max(0, now - musicPlayerState.emotionStatStartedAt);
+  if (duration > 0) {
+    const current = musicPlayerState.emotionStats.get(emotionId) || {
+      id: emotionId,
+      label: musicPlayerState.currentEmotion?.label || emotionId,
+      ms: 0,
+    };
+    current.ms += duration;
+    current.label = musicPlayerState.currentEmotion?.label || current.label;
+    musicPlayerState.emotionStats.set(emotionId, current);
+  }
+  musicPlayerState.emotionStatStartedAt = now;
+}
+
+function updateMusicEmotionState(emotion = {}) {
+  const nextId = emotion.id || "focused";
+  const nextLabel = emotion.label || nextId;
+  const nextDetail = emotion.detail || "";
+  const currentId = musicPlayerState.currentEmotion?.id || "";
+  if (currentId !== nextId) addCurrentEmotionDuration();
+  musicPlayerState.currentEmotion = {
+    id: nextId,
+    label: nextLabel,
+    detail: nextDetail,
+  };
+  if (!musicPlayerState.emotionStatStartedAt) musicPlayerState.emotionStatStartedAt = Date.now();
+}
+
+function resetMusicEmotionStats() {
+  musicPlayerState.emotionStats = new Map();
+  musicPlayerState.emotionStatStartedAt = Date.now();
+}
+
+function getCurrentTrackEmotionStats() {
+  addCurrentEmotionDuration();
+  return [...musicPlayerState.emotionStats.values()]
+    .map((item) => ({
+      id: item.id,
+      label: item.label,
+      seconds: Math.round(item.ms / 1000),
+    }))
+    .sort((a, b) => b.seconds - a.seconds);
+}
+
+function parseImportedMusicFile(file) {
+  const name = String(file?.name || "").replace(/\.[^.]+$/, "");
+  const [titlePart, ...artistParts] = name.split("-");
+  return {
+    title: titlePart?.trim() || name || "本地歌曲",
+    artist: artistParts.join("-").trim() || "本地导入",
+  };
+}
+
+function importMusicFiles(files = []) {
+  const imported = [...files]
+    .filter((file) => file?.type?.startsWith("audio/") || /\.mp3$/i.test(file?.name || ""))
+    .map((file) => {
+      const meta = parseImportedMusicFile(file);
+      return {
+        ...meta,
+        src: URL.createObjectURL(file),
+        moods: ["focused", "relaxed", "distracted", "tired", "anxious", "confused"],
+        imported: true,
+      };
+    });
+  if (!imported.length) return;
+  musicPlayerState.importedTracks.push(...imported);
+  renderMusicRecommendation();
+  logMusicTerminal("导入歌曲", {
+    count: imported.length,
+    tracks: imported.map((track) => `${track.title}-${track.artist}`),
+  });
+}
+
+function getFixedMusicRecommendation(id = musicPlayerState.recommendationId || "focused") {
+  const base = getMusicRecommendationById(id);
+  return {
+    ...base,
+    title: `${base.title}`,
+    detail: `${base.detail} 歌单固定，当前歌曲播完后会根据状态选择下一首。`,
+    tracks: getFixedMusicPlaylist(),
+  };
+}
+
+function rememberPlayedMusicTrack(track) {
+  const key = trackKey(track);
+  if (!key) return;
+  musicPlayerState.recentTrackKeys = [
+    key,
+    ...musicPlayerState.recentTrackKeys.filter((item) => item !== key),
+  ].slice(0, Math.max(1, musicPlayerState.aiNextTrackRecentLimit));
+}
+
+function pickLocalNextMusicTrackIndex(emotion = musicPlayerState.currentEmotion) {
+  const recommendation = getCurrentMusicRecommendation();
+  const tracks = recommendation.tracks || [];
+  if (!tracks.length) return -1;
+  const currentKey = trackKey(tracks[musicPlayerState.trackIndex]);
+  const recent = new Set(musicPlayerState.recentTrackKeys);
+  const emotionId = emotion?.id || "focused";
+  const byMood = tracks
+    .map((track, index) => ({ track, index }))
+    .filter((item) => item.track.moods?.includes(emotionId));
+  const pool = (byMood.length ? byMood : tracks.map((track, index) => ({ track, index })))
+    .filter((item) => trackKey(item.track) !== currentKey)
+    .filter((item) => !recent.has(trackKey(item.track)));
+  const fallbackPool = pool.length
+    ? pool
+    : tracks.map((track, index) => ({ track, index })).filter((item) => trackKey(item.track) !== currentKey);
+  const finalPool = fallbackPool.length ? fallbackPool : tracks.map((track, index) => ({ track, index }));
+  return finalPool[Math.floor(Math.random() * finalPool.length)]?.index ?? 0;
+}
+
+function parseAiNextTrackIndex(data, tracks) {
+  const index = Number(data?.index);
+  if (Number.isInteger(index) && index >= 0 && index < tracks.length) return index;
+  const title = String(data?.title || "").trim();
+  if (title) {
+    const matchedIndex = tracks.findIndex((track) => track.title === title || `${track.title}-${track.artist}` === title);
+    if (matchedIndex >= 0) return matchedIndex;
+  }
+  return -1;
+}
+
+async function requestAiNextMusicTrackIndex(emotion = musicPlayerState.currentEmotion) {
+  const recommendation = getCurrentMusicRecommendation();
+  const tracks = recommendation.tracks || [];
+  const currentTrack = tracks[musicPlayerState.trackIndex] || null;
+  const emotionStats = getCurrentTrackEmotionStats();
+  const playedSeconds = musicPlayerState.currentTrackStartedAt
+    ? Math.max(0, Math.round((Date.now() - musicPlayerState.currentTrackStartedAt) / 1000))
+    : 0;
+  if (!musicPlayerState.aiNextTrackEnabled || !tracks.length || !window.mindStudy?.ai?.askMusicRecommendation) {
+    return pickLocalNextMusicTrackIndex(emotion);
+  }
+  if (musicPlayerState.aiInFlight) return pickLocalNextMusicTrackIndex(emotion);
+
+  musicPlayerState.aiInFlight = true;
+  musicPlayerState.lastAiEmotionId = emotion?.id || "";
+  musicPlayerState.lastAiRequestedAt = Date.now();
+  logMusicTerminal("开始请求下一首", {
+    currentEmotion: emotion?.label || emotion?.id || "",
+    playedSeconds,
+    emotionStats,
+    currentTrack: currentTrack ? `${currentTrack.title}-${currentTrack.artist || ""}` : "",
+    playlist: tracks.map((track, index) => `${index}. ${track.title}-${track.artist || ""}`),
+  });
+  try {
+    const playlist = tracks.map((track, index) => ({
+      index,
+      title: track.title,
+      artist: track.artist || "",
+      moods: track.moods || [],
+    }));
+    const recentTracks = musicPlayerState.recentTrackKeys
+      .map((key) => tracks.find((track) => trackKey(track) === key))
+      .filter(Boolean)
+      .map((track) => `${track.title}-${track.artist || ""}`);
+    const response = await window.mindStudy.ai.askMusicRecommendation({
+      question: [
+        "你是 MindStudy 的音乐推荐助手。请根据当前学习状态，从固定歌单中选择下一首歌。",
+        "只能返回 JSON，不要解释，不要编造歌曲。",
+        "返回格式：{\"index\":数字,\"reason\":\"一句话原因\"}。",
+        "",
+        `当前状态：${emotion?.label || emotion?.id || "未知"}`,
+        `状态细节：${emotion.detail || ""}`,
+        `刚播放完：${currentTrack?.title || "无"}`,
+        `本首播放时长：${playedSeconds} 秒`,
+        `本首播放期间状态时长：${emotionStats.map((item) => `${item.label}/${item.id} ${item.seconds}s`).join("，") || "无"}`,
+        `最近播放：${recentTracks.join("、") || "无"}`,
+        `固定歌单：${playlist.map((track) => `${track.index}. ${track.title}-${track.artist} [${track.moods.join("/")}]`).join("；")}`,
+      ].join("\n"),
+      documents: [{
+        id: "fixed-music-playlist",
+        title: "固定歌单",
+        text: playlist.map((track) => `${track.index}. ${track.title}-${track.artist}：适合 ${track.moods.join("/")}`).join("\n"),
+        mimeType: "text/plain",
+      }],
+      options: { maxTokens: 120, temperature: 0.7 },
+    });
+    const data = extractJsonFromAiText(response?.answer || "");
+    const selectedIndex = parseAiNextTrackIndex(data, tracks);
+    return selectedIndex >= 0 ? selectedIndex : pickLocalNextMusicTrackIndex(emotion);
+  } catch (error) {
+    console.warn("AI next music selection failed.", error);
+    return pickLocalNextMusicTrackIndex(emotion);
   } finally {
     musicPlayerState.aiInFlight = false;
   }
@@ -4235,12 +4440,13 @@ function getMusicUi() {
     currentTime: document.querySelector("#music-current-time"),
     duration: document.querySelector("#music-duration"),
     volume: document.querySelector("#music-volume"),
+    importInput: document.querySelector("#music-import-input"),
     panel: document.querySelector(".music-panel"),
   };
 }
 
 function getCurrentMusicRecommendation() {
-  return getMusicRecommendationById(musicPlayerState.recommendationId || "focused");
+  return getFixedMusicRecommendation(musicPlayerState.recommendationId || "focused");
 }
 
 function getCurrentMusicTrack() {
@@ -4290,7 +4496,7 @@ function renderMusicPlaylist(recommendation = getCurrentMusicRecommendation()) {
     const title = document.createElement("strong");
     title.textContent = track.title;
     const meta = document.createElement("span");
-    meta.textContent = recommendation.title;
+    meta.textContent = track.imported ? `本地导入 · ${track.artist || "未知歌手"}` : `${track.artist || "未知歌手"} · ${recommendation.title}`;
     item.append(title, meta);
     ui.playlist.appendChild(item);
   });
@@ -4344,6 +4550,7 @@ function loadCurrentMusicTrack({ keepPlaying = false } = {}) {
     ui.audio.src = track.src;
     ui.audio.dataset.trackSrc = track.src;
     ui.audio.load();
+    resetMusicEmotionStats();
   }
   renderMusicRecommendation();
   if (keepPlaying) playCurrentMusic();
@@ -4351,11 +4558,9 @@ function loadCurrentMusicTrack({ keepPlaying = false } = {}) {
 
 function setMusicRecommendation(recommendation, { autoPlayIfPlaying = true } = {}) {
   if (!recommendation?.id) return;
-  const wasPlaying = musicPlayerState.playing;
   if (musicPlayerState.recommendationId !== recommendation.id) {
     musicPlayerState.recommendationId = recommendation.id;
-    musicPlayerState.trackIndex = 0;
-    loadCurrentMusicTrack({ keepPlaying: autoPlayIfPlaying && wasPlaying });
+    renderMusicRecommendation();
     return;
   }
 }
@@ -4368,6 +4573,12 @@ function playCurrentMusic() {
   ui.audio.play()
     .then(() => {
       musicPlayerState.playing = true;
+      musicPlayerState.currentTrackStartedAt = Date.now();
+      musicPlayerState.emotionStatStartedAt = musicPlayerState.currentTrackStartedAt;
+      logMusicTerminal("下一首开始播放", {
+        track: `${track.title}-${track.artist || ""}`,
+        emotion: musicPlayerState.currentEmotion?.label || musicPlayerState.currentEmotion?.id || "",
+      });
       renderMusicRecommendation();
     })
     .catch(() => {
@@ -4399,6 +4610,19 @@ function shiftEmotionMusicTrack(step) {
   loadCurrentMusicTrack({ keepPlaying: musicPlayerState.playing });
 }
 
+async function playNextMusicTrackAfterEnded() {
+  const currentTrack = getCurrentMusicTrack();
+  rememberPlayedMusicTrack(currentTrack);
+  const nextIndex = await requestAiNextMusicTrackIndex(musicPlayerState.currentEmotion);
+  if (nextIndex < 0) {
+    musicPlayerState.playing = false;
+    renderMusicRecommendation();
+    return;
+  }
+  musicPlayerState.trackIndex = nextIndex;
+  loadCurrentMusicTrack({ keepPlaying: true });
+}
+
 function selectEmotionMusicTrack(index) {
   const recommendation = getCurrentMusicRecommendation();
   const nextIndex = Number(index);
@@ -4423,7 +4647,9 @@ function initEmotionMusicPlayer() {
   });
   ui.audio.addEventListener("loadedmetadata", updateMusicTimeline);
   ui.audio.addEventListener("timeupdate", updateMusicTimeline);
-  ui.audio.addEventListener("ended", () => shiftEmotionMusicTrack(1));
+  ui.audio.addEventListener("ended", () => {
+    playNextMusicTrackAfterEnded();
+  });
   ui.seek?.addEventListener("input", () => {
     musicPlayerState.seeking = true;
   });
@@ -4436,7 +4662,12 @@ function initEmotionMusicPlayer() {
   ui.volume?.addEventListener("input", () => {
     ui.audio.volume = Math.max(0, Math.min(1, Number(ui.volume.value) || 0));
   });
+  ui.importInput?.addEventListener("change", () => {
+    importMusicFiles(ui.importInput.files || []);
+    ui.importInput.value = "";
+  });
   loadCurrentMusicTrack();
+  loadExistingMusicLibrary();
 }
 
 function readEnvNumber(env, key, fallback, min, max) {
@@ -4490,6 +4721,8 @@ async function loadGestureRuntimeConfig() {
     gestureRuntimeConfig.scrollIntervalMs = readEnvNumber(env, "GESTURE_SCROLL_INTERVAL_MS", 180, 16, 1000);
     gestureRuntimeConfig.scrollAmount = readEnvNumber(env, "GESTURE_SCROLL_AMOUNT", 120, 10, 800);
     gestureRuntimeConfig.scrollStableMs = readEnvNumber(env, "GESTURE_SCROLL_STABLE_MS", 220, 0, 1000);
+    musicPlayerState.aiNextTrackEnabled = readEnvBoolean(env, "MUSIC_AI_NEXT_TRACK_ENABLED", true);
+    musicPlayerState.aiNextTrackRecentLimit = readEnvNumber(env, "MUSIC_AI_NEXT_TRACK_RECENT_LIMIT", 3, 1, 20);
     gestureRuntimeConfig.emotionEyeClosedThreshold = readEnvFloat(env, "EMOTION_EYE_CLOSED_THRESHOLD", 0.58, 0, 1);
     gestureRuntimeConfig.emotionTiredEyeClosedMs = readEnvNumber(env, "EMOTION_TIRED_EYE_CLOSED_MS", 1200, 0, 10000);
     gestureRuntimeConfig.emotionYawnThreshold = readEnvFloat(env, "EMOTION_YAWN_THRESHOLD", 0.5, 0, 1);
@@ -4793,8 +5026,12 @@ function updateCameraVisionUi(result) {
 
   updateGestureCards(gesture.id || "none");
   const musicRecommendation = getMusicRecommendationForEmotion(emotion.id, normalizedBrightness);
+  updateMusicEmotionState({
+    id: emotion.id || musicRecommendation.id || "focused",
+    label: emotion.label || musicRecommendation.title,
+    detail: emotion.detail || "",
+  });
   setMusicRecommendation(musicRecommendation);
-  requestAiMusicRecommendation(emotion);
   updateLonglongMood(
     emotion.label || "摄像头识别中",
     emotion.detail || "我会结合表情和手势给出提醒。",
@@ -14182,6 +14419,11 @@ document.addEventListener("click", (event) => {
 
   if (musicTrackButton) {
     selectEmotionMusicTrack(Number(musicTrackButton.dataset.musicTrackIndex));
+    return;
+  }
+
+  if (actionButton?.id === "music-import") {
+    getMusicUi().importInput?.click();
     return;
   }
 
