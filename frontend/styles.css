@@ -709,6 +709,8 @@ h3 {
   overflow-x: scroll;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+  touch-action: pan-x pan-y;
   border-radius: 8px;
   background:
     linear-gradient(#edf2ee 1px, transparent 1px),
@@ -730,9 +732,11 @@ h3 {
 
 .study-generation-card {
   display: grid;
-  gap: 12px;
-  margin: 0 20px 14px;
-  padding: 14px 16px;
+  grid-template-columns: minmax(160px, 1fr) minmax(120px, 28%);
+  align-items: center;
+  gap: 10px;
+  margin: 0 18px 6px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f7f9f6;
@@ -746,7 +750,15 @@ h3 {
 .study-generation-card span {
   margin-top: 4px;
   color: var(--muted);
+  font-size: 13px;
   line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.study-generation-card > div > span {
+  display: none;
 }
 
 .study-generation-track {
@@ -765,20 +777,32 @@ h3 {
 }
 
 .graph-toolbar {
-  margin: 0 20px 12px;
+  margin: 0 18px 6px;
 }
 
 .graph-neo4j-bar,
 .graph-query-row {
-  margin: 0 20px 12px;
+  margin: 0 18px 6px;
 }
 
 .graph-neo4j-bar {
-  justify-content: space-between;
-  padding: 10px 12px;
+  justify-content: flex-end;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfcfa;
+  border-color: transparent;
+  background: transparent;
+}
+
+.expanded-map-panel .graph-neo4j-bar,
+.expanded-map-panel .graph-query-row,
+.expanded-map-panel .graph-toolbar {
+  flex-wrap: nowrap;
+  min-height: 38px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
 }
 
 .graph-query-row input,
@@ -794,8 +818,8 @@ h3 {
 }
 
 .graph-query-row input {
-  min-width: 220px;
-  flex: 1 1 220px;
+  min-width: 180px;
+  flex: 0 0 220px;
 }
 
 .graph-toolbar select,
@@ -821,9 +845,8 @@ h3 {
   position: relative;
   min-width: 1800px;
   width: 1800px;
-  height: 760px;
+  height: 1120px;
   transform-origin: 0 0;
-  transition: transform 0.08s linear;
 }
 
 .knowledge-edge-layer,
@@ -831,7 +854,7 @@ h3 {
   position: absolute;
   inset: 0;
   width: 1800px;
-  height: 760px;
+  height: 1120px;
 }
 
 .knowledge-edge-layer {
@@ -891,6 +914,7 @@ h3 {
 
 .knowledge-map.panning {
   cursor: grabbing;
+  user-select: none;
 }
 
 .node {
@@ -922,6 +946,12 @@ h3 {
   transform: translate(-50%, -50%);
   box-shadow: 0 12px 24px rgba(23, 48, 43, 0.14);
   white-space: normal;
+  cursor: grab;
+  touch-action: none;
+}
+
+.graph-node:active {
+  cursor: grabbing;
 }
 
 .graph-node-label {
@@ -3565,16 +3595,78 @@ h3 {
 
 .map-page {
   grid-template-columns: minmax(0, 1fr) 320px;
+  min-height: 0;
 }
 
 .large-map {
-  height: calc(100vh - 190px);
+  height: calc(100vh - 300px);
   min-height: 580px;
 }
 
 .expanded-map-panel {
   min-width: 0;
   overflow: hidden;
+}
+
+.expanded-map-panel .panel-heading {
+  padding: 14px 18px 8px;
+}
+
+.expanded-map-panel .panel-heading h3 {
+  font-size: 17px;
+}
+
+.expanded-map-panel .tag.muted {
+  min-height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.expanded-map-panel .graph-actions {
+  gap: 8px;
+}
+
+.expanded-map-panel .graph-actions .primary-action,
+.expanded-map-panel .graph-actions .ghost-action,
+.expanded-map-panel .graph-query-row .ghost-action,
+.expanded-map-panel .graph-toolbar .mini-button,
+.expanded-map-panel .graph-neo4j-bar .mini-button {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.expanded-map-panel .graph-neo4j-bar {
+  justify-content: flex-start;
+}
+
+.expanded-map-panel .graph-neo4j-bar .rag-status {
+  max-width: 220px;
+  min-height: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expanded-map-panel .graph-query-row {
+  padding-top: 2px;
+}
+
+.expanded-map-panel .graph-query-row select {
+  flex: 0 0 180px;
+  max-width: 180px;
+}
+
+.expanded-map-panel .graph-toolbar {
+  align-items: center;
+  gap: 8px;
+}
+
+.expanded-map-panel .graph-toolbar select {
+  flex: 0 0 150px;
+}
+
+.expanded-map-panel .graph-zoom-tools {
+  flex: 0 0 auto;
 }
 
 .segmented {
@@ -6251,6 +6343,14 @@ button.review-row:hover {
     align-items: stretch;
   }
 
+  .view[data-view-panel="map"] {
+    overflow: auto;
+  }
+
+  .map-page {
+    overflow: visible;
+  }
+
   .rag-chat-panel,
   .rag-library-panel,
   .coding-input-panel,
@@ -6266,8 +6366,15 @@ button.review-row:hover {
     display: flex;
     min-height: 0;
     flex-direction: column;
-    overflow: auto;
     overscroll-behavior: contain;
+  }
+
+  .expanded-map-panel {
+    overflow: hidden;
+  }
+
+  .mindmap-panel {
+    overflow: auto;
   }
 
   .expanded-map-panel .knowledge-map.large-map,

@@ -125,7 +125,9 @@ const GRAPH_NODE_LIMIT = 64;
 const GRAPH_MINDMAP_BRANCH_LIMIT = 10;
 const GRAPH_MINDMAP_CHILD_LIMIT = 8;
 const GRAPH_CANVAS_WIDTH = 1800;
-const GRAPH_CANVAS_HEIGHT = 760;
+const GRAPH_CANVAS_HEIGHT = 1120;
+const GRAPH_CANVAS_PADDING = 180;
+const GRAPH_NODE_SIZE = 88;
 const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
 const GRAPH_GENERATION_TIMEOUT_MS = 0;
 const GRAPH_SECONDARY_AI_TIMEOUT_MS = 0;
@@ -500,21 +502,27 @@ const calculatorState = {
 const graphPanState = {
   active: false,
   pointerId: null,
+  stage: null,
   startX: 0,
   startY: 0,
-  startViewportX: 0,
-  startViewportY: 0,
+  startScrollLeft: 0,
+  startScrollTop: 0,
 };
 const graphNodeDragState = {
   active: false,
   pointerId: null,
+  stage: null,
   nodeId: "",
   moved: false,
   startX: 0,
   startY: 0,
   startNodeX: 0,
   startNodeY: 0,
+  startScrollLeft: 0,
+  startScrollTop: 0,
 };
+let graphFocusRequest = null;
+let graphFocusQueued = false;
 
 function createId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -7351,10 +7359,93 @@ function getQuizDocumentQuality(documents = []) {
 
 function sanitizeGraphViewport(viewport = {}) {
   return {
-    x: Number.isFinite(Number(viewport.x)) ? Number(viewport.x) : GRAPH_DEFAULT_VIEWPORT.x,
-    y: Number.isFinite(Number(viewport.y)) ? Number(viewport.y) : GRAPH_DEFAULT_VIEWPORT.y,
+    x: Number.isFinite(Number(viewport.x)) ? Number(viewport.x) : 0,
+    y: Number.isFinite(Number(viewport.y)) ? Number(viewport.y) : 0,
     scale: Math.min(1.7, Math.max(0.65, Number(viewport.scale) || GRAPH_DEFAULT_VIEWPORT.scale)),
   };
+}
+
+function getGraphCanvasMetrics(nodes = []) {
+  const measuredNodes = nodes.filter((node) => Number.isFinite(Number(node.x)) && Number.isFinite(Number(node.y)));
+  const maxX = measuredNodes.length ? Math.max(...measuredNodes.map((node) => Number(node.x))) : GRAPH_CANVAS_WIDTH / 2;
+  const maxY = measuredNodes.length ? Math.max(...measuredNodes.map((node) => Number(node.y))) : GRAPH_CANVAS_HEIGHT / 2;
+  return {
+    width: Math.ceil(Math.max(GRAPH_CANVAS_WIDTH, maxX + GRAPH_CANVAS_PADDING)),
+    height: Math.ceil(Math.max(GRAPH_CANVAS_HEIGHT, maxY + GRAPH_CANVAS_PADDING)),
+  };
+}
+
+function requestGraphFocus(nodeId = "") {
+  graphFocusRequest = { nodeId, force: true };
+}
+
+function cssEscape(value = "") {
+  if (window.CSS?.escape) return window.CSS.escape(String(value));
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
+function getGraphDomBounds(stage, selector = ".graph-node") {
+  const nodes = Array.from(stage.querySelectorAll(selector));
+  if (!nodes.length) return null;
+  const stageRect = stage.getBoundingClientRect();
+  return nodes.reduce((bounds, node) => {
+    const rect = node.getBoundingClientRect();
+    const left = rect.left - stageRect.left + stage.scrollLeft;
+    const top = rect.top - stageRect.top + stage.scrollTop;
+    const right = rect.right - stageRect.left + stage.scrollLeft;
+    const bottom = rect.bottom - stageRect.top + stage.scrollTop;
+    return {
+      left: Math.min(bounds.left, left),
+      top: Math.min(bounds.top, top),
+      right: Math.max(bounds.right, right),
+      bottom: Math.max(bounds.bottom, bottom),
+    };
+  }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
+}
+
+function centerGraphBoundsInStage(stage, bounds) {
+  const width = bounds.right - bounds.left;
+  const height = bounds.bottom - bounds.top;
+  const left = width < stage.clientWidth
+    ? bounds.left - (stage.clientWidth - width) / 2
+    : bounds.left - 48;
+  const top = height < stage.clientHeight
+    ? bounds.top - (stage.clientHeight - height) / 2
+    : bounds.top - 48;
+  stage.scrollLeft = Math.max(0, left);
+  stage.scrollTop = Math.max(0, top);
+}
+
+function keepGraphContentVisible() {
+  const stage = document.querySelector("#knowledge-map-stage");
+  if (!stage || graphNodeDragState.active || graphPanState.active) return;
+  const request = graphFocusRequest;
+  graphFocusRequest = null;
+  const selector = request?.nodeId ? `.graph-node[data-node="${cssEscape(request.nodeId)}"]` : ".graph-node.selected";
+  const bounds = getGraphDomBounds(stage, selector) || getGraphDomBounds(stage);
+  if (!bounds) return;
+
+  const view = {
+    left: stage.scrollLeft,
+    top: stage.scrollTop,
+    right: stage.scrollLeft + stage.clientWidth,
+    bottom: stage.scrollTop + stage.clientHeight,
+  };
+  const margin = 48;
+  const isVisible = bounds.right > view.left + margin
+    && bounds.left < view.right - margin
+    && bounds.bottom > view.top + margin
+    && bounds.top < view.bottom - margin;
+  if (request?.force || !isVisible) centerGraphBoundsInStage(stage, bounds);
+}
+
+function scheduleGraphContentVisibilityCheck() {
+  if (graphFocusQueued) return;
+  graphFocusQueued = true;
+  requestAnimationFrame(() => {
+    graphFocusQueued = false;
+    keepGraphContentVisible();
+  });
 }
 
 function sanitizeStudyGraph(graph = {}) {
@@ -8139,11 +8230,8 @@ function focusGraphNode(nodeId) {
   const studyModule = getStudyModule();
   const node = studyModule.graph.nodes.find((item) => item.id === nodeId);
   if (!node) return;
-  const viewport = sanitizeGraphViewport(studyModule.graphViewport);
-  viewport.x = 500 - node.x * viewport.scale;
-  viewport.y = 330 - node.y * viewport.scale;
-  studyModule.graphViewport = viewport;
   studyModule.selectedNodeId = node.id;
+  requestGraphFocus(node.id);
 }
 
 async function loadCourseGraphFromNeo4j() {
@@ -8348,14 +8436,28 @@ function renderKnowledgeModule() {
   const canvas = document.querySelector("#knowledge-map-canvas");
   const nodeLayer = document.querySelector("#knowledge-node-layer");
   const edgeLayer = document.querySelector("#knowledge-edge-layer");
+  const stage = document.querySelector("#knowledge-map-stage");
+  const canvasMetrics = getGraphCanvasMetrics(visibleNodes.length ? visibleNodes : studyModule.graph.nodes);
   if (emptyState) emptyState.classList.toggle("show", !visibleNodes.length);
   if (canvas) {
     const viewport = sanitizeGraphViewport(studyModule.graphViewport);
-    canvas.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`;
+    canvas.style.width = `${canvasMetrics.width}px`;
+    canvas.style.height = `${canvasMetrics.height}px`;
+    canvas.style.minWidth = `${canvasMetrics.width}px`;
+    canvas.style.zoom = viewport.scale;
+    canvas.style.transform = "";
+  }
+  if (nodeLayer) {
+    nodeLayer.style.width = `${canvasMetrics.width}px`;
+    nodeLayer.style.height = `${canvasMetrics.height}px`;
   }
 
   if (edgeLayer) {
-    edgeLayer.setAttribute("viewBox", `0 0 ${GRAPH_CANVAS_WIDTH} ${GRAPH_CANVAS_HEIGHT}`);
+    edgeLayer.setAttribute("viewBox", `0 0 ${canvasMetrics.width} ${canvasMetrics.height}`);
+    edgeLayer.setAttribute("width", String(canvasMetrics.width));
+    edgeLayer.setAttribute("height", String(canvasMetrics.height));
+    edgeLayer.style.width = `${canvasMetrics.width}px`;
+    edgeLayer.style.height = `${canvasMetrics.height}px`;
     edgeLayer.innerHTML = studyModule.graph.edges
       .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
       .map((edge) => {
@@ -8436,12 +8538,14 @@ function renderKnowledgeModule() {
   });
 
   window.lucide?.createIcons();
+  if (stage) scheduleGraphContentVisibilityCheck();
 }
 
 function selectKnowledgeNode(topicId) {
   const studyModule = getStudyModule();
   const topic = getKnowledgeTopic(topicId);
   studyModule.selectedNodeId = topic?.id || studyModule.selectedNodeId;
+  if (topic?.id) requestGraphFocus(topic.id);
   saveWorkspace();
   renderKnowledgeModule();
 }
@@ -10787,6 +10891,8 @@ function zoomGraph(delta) {
   const studyModule = getStudyModule();
   const viewport = sanitizeGraphViewport(studyModule.graphViewport);
   viewport.scale = Math.min(1.7, Math.max(0.65, viewport.scale + delta));
+  viewport.x = 0;
+  viewport.y = 0;
   studyModule.graphViewport = viewport;
   saveWorkspace();
   renderKnowledgeModule();
@@ -10794,36 +10900,38 @@ function zoomGraph(delta) {
 
 function resetGraphView() {
   getStudyModule().graphViewport = { ...GRAPH_DEFAULT_VIEWPORT };
+  requestGraphFocus();
   saveWorkspace();
   renderKnowledgeModule();
 }
 
 function beginGraphPan(event) {
   const stage = event.target.closest?.("#knowledge-map-stage");
-  const node = event.target.closest?.(".graph-node, button, select");
+  const node = event.target.closest?.(".graph-node, button, select, input, textarea, a");
   if (!stage || node || graphNodeDragState.active) return;
+  if (event.button !== undefined && event.button !== 0) return;
 
-  const viewport = sanitizeGraphViewport(getStudyModule().graphViewport);
   graphPanState.active = true;
   graphPanState.pointerId = event.pointerId ?? "mouse";
+  graphPanState.stage = stage;
   graphPanState.startX = event.clientX;
   graphPanState.startY = event.clientY;
-  graphPanState.startViewportX = viewport.x;
-  graphPanState.startViewportY = viewport.y;
+  graphPanState.startScrollLeft = stage.scrollLeft;
+  graphPanState.startScrollTop = stage.scrollTop;
   stage.classList.add("panning");
   stage.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
 }
 
 function updateGraphPan(event) {
   const pointerId = event.pointerId ?? "mouse";
   if (!graphPanState.active || pointerId !== graphPanState.pointerId) return;
 
-  const studyModule = getStudyModule();
-  const viewport = sanitizeGraphViewport(studyModule.graphViewport);
-  viewport.x = graphPanState.startViewportX + event.clientX - graphPanState.startX;
-  viewport.y = graphPanState.startViewportY + event.clientY - graphPanState.startY;
-  studyModule.graphViewport = viewport;
-  renderKnowledgeModule();
+  const stage = graphPanState.stage || document.querySelector("#knowledge-map-stage");
+  if (!stage) return;
+  stage.scrollLeft = graphPanState.startScrollLeft - (event.clientX - graphPanState.startX);
+  stage.scrollTop = graphPanState.startScrollTop - (event.clientY - graphPanState.startY);
+  event.preventDefault();
 }
 
 function finishGraphPan(event) {
@@ -10832,8 +10940,8 @@ function finishGraphPan(event) {
 
   graphPanState.active = false;
   graphPanState.pointerId = null;
-  event.target.closest?.("#knowledge-map-stage")?.classList.remove("panning");
-  saveWorkspace();
+  graphPanState.stage?.classList.remove("panning");
+  graphPanState.stage = null;
 }
 
 function handleGraphWheel(event) {
@@ -10848,15 +10956,20 @@ function beginGraphNodeDrag(event) {
   if (!button) return;
   const topic = getKnowledgeTopic(button.dataset.node);
   if (!topic) return;
+  const stage = button.closest("#knowledge-map-stage");
   graphNodeDragState.active = true;
   graphNodeDragState.pointerId = event.pointerId ?? "mouse";
+  graphNodeDragState.stage = stage;
   graphNodeDragState.nodeId = topic.id;
   graphNodeDragState.moved = false;
   graphNodeDragState.startX = event.clientX;
   graphNodeDragState.startY = event.clientY;
   graphNodeDragState.startNodeX = topic.x;
   graphNodeDragState.startNodeY = topic.y;
+  graphNodeDragState.startScrollLeft = stage?.scrollLeft || 0;
+  graphNodeDragState.startScrollTop = stage?.scrollTop || 0;
   button.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
 }
 
 function updateGraphNodeDrag(event) {
@@ -10865,13 +10978,27 @@ function updateGraphNodeDrag(event) {
   const studyModule = getStudyModule();
   const node = studyModule.graph.nodes.find((item) => item.id === graphNodeDragState.nodeId);
   if (!node) return;
+  const stage = graphNodeDragState.stage || document.querySelector("#knowledge-map-stage");
+  if (stage) {
+    const rect = stage.getBoundingClientRect();
+    const edge = 54;
+    const step = 22;
+    if (event.clientX > rect.right - edge) stage.scrollLeft += step;
+    if (event.clientX < rect.left + edge) stage.scrollLeft -= step;
+    if (event.clientY > rect.bottom - edge) stage.scrollTop += step;
+    if (event.clientY < rect.top + edge) stage.scrollTop -= step;
+  }
   const viewport = sanitizeGraphViewport(studyModule.graphViewport);
-  const dx = (event.clientX - graphNodeDragState.startX) / viewport.scale;
-  const dy = (event.clientY - graphNodeDragState.startY) / viewport.scale;
+  const scrollDx = (stage?.scrollLeft || 0) - graphNodeDragState.startScrollLeft;
+  const scrollDy = (stage?.scrollTop || 0) - graphNodeDragState.startScrollTop;
+  const dx = (event.clientX - graphNodeDragState.startX + scrollDx) / viewport.scale;
+  const dy = (event.clientY - graphNodeDragState.startY + scrollDy) / viewport.scale;
   if (Math.abs(dx) > 2 || Math.abs(dy) > 2) graphNodeDragState.moved = true;
-  node.x = Math.min(GRAPH_CANVAS_WIDTH - 60, Math.max(60, Math.round(graphNodeDragState.startNodeX + dx)));
-  node.y = Math.min(GRAPH_CANVAS_HEIGHT - 60, Math.max(60, Math.round(graphNodeDragState.startNodeY + dy)));
+  const minPosition = GRAPH_NODE_SIZE / 2 + 24;
+  node.x = Math.max(minPosition, Math.round(graphNodeDragState.startNodeX + dx));
+  node.y = Math.max(minPosition, Math.round(graphNodeDragState.startNodeY + dy));
   renderKnowledgeModule();
+  event.preventDefault();
 }
 
 function finishGraphNodeDrag(event) {
@@ -10879,6 +11006,7 @@ function finishGraphNodeDrag(event) {
   if (!graphNodeDragState.active || pointerId !== graphNodeDragState.pointerId) return;
   graphNodeDragState.active = false;
   graphNodeDragState.pointerId = null;
+  graphNodeDragState.stage = null;
   graphNodeDragState.nodeId = "";
   saveWorkspace();
 }
@@ -14162,6 +14290,10 @@ document.addEventListener("click", (event) => {
   }
 
   if (graphNodeButton) {
+    if (graphNodeDragState.moved) {
+      graphNodeDragState.moved = false;
+      return;
+    }
     selectKnowledgeNode(graphNodeButton.dataset.node);
     showView("map");
     return;
