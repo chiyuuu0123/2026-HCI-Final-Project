@@ -68,6 +68,16 @@ const LONGLONG_SLEEP_AUDIO = new Map([
 const LONGLONG_MAIN_POKES = [...LONGLONG_POKE_AUDIO.keys()];
 const LONGLONG_MAIN_TIPS = [...LONGLONG_TIP_AUDIO.keys()];
 const LONGLONG_MAIN_QUOTES = [...LONGLONG_QUOTE_AUDIO.keys()];
+const LONGLONG_COMPANION_IDLE_LINES = [
+  "龙龙在桌面陪你，慢慢来就好。",
+  "先挑最小的一步，龙龙陪你把它做完。",
+  "学习不是冲刺，龙龙负责把节奏扶稳。",
+  "如果脑袋发胀，就先呼吸十秒。",
+  "龙龙把注意力小毯子给你盖好啦。",
+  "今天也别怕资料厚，龙龙陪你一页一页拆。",
+  "做完这一段就喝口水，龙龙给你记着。",
+  "每只龙龙都一定会找到自己的小七哦！",
+];
 const LONGLONG_FIXED_AUDIO = new Map([
   [LONGLONG_THINKING_LINE, "./assets/longlong-voice/ai-thinking.wav"],
   [LONGLONG_ANSWER_LINE, "./assets/longlong-voice/ai-answer.wav"],
@@ -314,6 +324,8 @@ let pdfReaderResizeRenderTimer = null;
 let appZoom = loadAppZoom();
 let appZoomToastTimer = null;
 let longlongSnapshotCache = "";
+let longlongCompanionLineCache = "";
+let longlongCompanionLineUpdatedAt = 0;
 let longlongPosition = loadLonglongPosition();
 let studyTimerSnapshot = {
   seconds: 0,
@@ -1532,6 +1544,25 @@ function getLonglongDefaultBubbleText() {
   return "今天也一起学一会儿吧。";
 }
 
+function getLonglongCompanionBubbleText() {
+  const now = Date.now();
+  if (longlongCompanionLineCache && now - longlongCompanionLineUpdatedAt < 45000) {
+    return longlongCompanionLineCache;
+  }
+  const lines = [
+    getLonglongReminderText(),
+    ...LONGLONG_COMPANION_IDLE_LINES,
+    ...LONGLONG_MAIN_TIPS.slice(0, 6),
+    ...LONGLONG_MAIN_QUOTES,
+  ].filter(Boolean);
+  const nextLine = pickLonglongItem(lines) || "今天也一起学一会儿吧。";
+  longlongCompanionLineCache = nextLine === longlongCompanionLineCache && lines.length > 1
+    ? lines.find((line) => line !== nextLine) || nextLine
+    : nextLine;
+  longlongCompanionLineUpdatedAt = now;
+  return longlongCompanionLineCache;
+}
+
 function updateLonglongMood(mood, detail, music = "") {
   longlongState.mood = mood || longlongState.mood;
   longlongState.moodDetail = detail || longlongState.moodDetail;
@@ -1780,7 +1811,7 @@ function syncLonglongAssistant() {
 
   const snapshot = {
     mood: longlongState.mood,
-    reminder: reminderText,
+    reminder: getLonglongCompanionBubbleText(),
     music: longlongState.music,
     studyTime: studyTimerSnapshot.formatted,
     studySeconds: studyTimerSnapshot.seconds,

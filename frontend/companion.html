@@ -256,6 +256,11 @@
         "龙龙可以看屏幕截图陪你分析",
         "先做最重要的一小步",
         "久坐了就站起来伸展一下",
+        "龙龙在桌面陪你，慢慢来就好",
+        "学习不是冲刺，龙龙负责把节奏扶稳",
+        "如果脑袋发胀，就先呼吸十秒",
+        "龙龙把注意力小毯子给你盖好啦",
+        "做完这一段就喝口水，龙龙给你记着",
       ];
       const pokeTips = [
         "摸摸收到，龙龙继续陪你。",
@@ -308,6 +313,7 @@
       let petGiftOpen = false;
       let currentPetSpriteState = "default";
       let companionMode = "pet";
+      let lastPetIdleTip = "";
       let longlongChatSnapshot = { history: [], memories: [], memoryCount: 0, historyCount: 0 };
       let longlongChatRequestInFlight = false;
       let voiceState = loadVoiceState();
@@ -866,13 +872,13 @@
       }
 
       function setTip(text, { temporary = false, motion = "speaking" } = {}) {
-        tip.textContent = text || latestSnapshot?.reminder || "点我和龙龙聊天";
+        tip.textContent = text || getPetIdleTip();
         showPetMotion(motion);
 
         window.clearTimeout(restoreTipTimer);
         if (temporary) {
           restoreTipTimer = window.setTimeout(() => {
-            tip.textContent = latestSnapshot?.reminder || latestSnapshot?.mood || "今天也一起学一会儿吧";
+            tip.textContent = getPetIdleTip();
           }, 4200);
         }
       }
@@ -918,6 +924,29 @@
 
       function pickRandom(items) {
         return items[Math.floor(Math.random() * items.length)];
+      }
+
+      function isPetStatusLine(text = "") {
+        const value = String(text || "").trim();
+        return /好感/.test(value) && /龙币/.test(value);
+      }
+
+      function getPetIdleTip() {
+        const snapshotLines = [
+          latestSnapshot?.reminder,
+          latestSnapshot?.mood,
+        ].filter((line) => line && !isPetStatusLine(line));
+        const lines = [
+          ...snapshotLines,
+          ...idleTips,
+          ...longlongVoicePack.tip,
+          ...longlongVoicePack.quote,
+        ].filter(Boolean);
+        const currentText = tip.textContent.trim();
+        const candidates = lines.filter((line) => line !== lastPetIdleTip && line !== currentText);
+        const nextLine = pickRandom(candidates.length ? candidates : lines) || "今天也一起学一会儿吧";
+        lastPetIdleTip = nextLine;
+        return nextLine;
       }
 
       function loadVoiceState() {
@@ -1215,7 +1244,9 @@
         if (!snapshot) return;
         latestSnapshot = snapshot;
         if (snapshot.studyTime) applyStudyTimerSnapshot({ formatted: snapshot.studyTime });
-        setTip(snapshot.reminder || snapshot.mood || "点我和龙龙聊天");
+        if (!tip.textContent.trim() || isPetStatusLine(tip.textContent)) {
+          tip.textContent = getPetIdleTip();
+        }
       });
       window.mindStudy?.onCompanionMode?.((mode) => applyMode(mode));
       window.mindStudy?.onCompanionDragMotion?.(handleNativeDragMotion);
@@ -1285,7 +1316,7 @@
 
       window.setInterval(() => {
         if (document.hidden || companionMode === "chat") return;
-        setTip(latestSnapshot?.reminder || pickRandom(idleTips), { temporary: true, motion: "thinking" });
+        setTip(getPetIdleTip(), { temporary: true, motion: "thinking" });
       }, 45000);
     </script>
   </body>
