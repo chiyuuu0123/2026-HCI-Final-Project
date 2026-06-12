@@ -706,7 +706,9 @@ h3 {
   position: relative;
   height: 220px;
   margin: 10px 20px 20px;
-  overflow: hidden;
+  overflow-x: scroll;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 8px;
   background:
     linear-gradient(#edf2ee 1px, transparent 1px),
@@ -816,10 +818,10 @@ h3 {
 }
 
 .knowledge-map-canvas {
-  position: absolute;
-  inset: 0;
-  width: 1000px;
-  height: 680px;
+  position: relative;
+  min-width: 1800px;
+  width: 1800px;
+  height: 760px;
   transform-origin: 0 0;
   transition: transform 0.08s linear;
 }
@@ -828,8 +830,8 @@ h3 {
 .knowledge-node-layer {
   position: absolute;
   inset: 0;
-  width: 1000px;
-  height: 680px;
+  width: 1800px;
+  height: 760px;
 }
 
 .knowledge-edge-layer {
@@ -904,22 +906,50 @@ h3 {
 }
 
 .graph-node {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  width: 88px;
+  height: 88px;
+  min-height: 88px;
+  padding: 10px;
+  border: 3px solid var(--node-border, var(--teal));
+  border-radius: 50%;
+  background: var(--node-fill, #fff);
+  color: var(--node-ink, var(--deep));
+  text-align: center;
   transform: translate(-50%, -50%);
-  max-width: 190px;
-  white-space: nowrap;
+  box-shadow: 0 12px 24px rgba(23, 48, 43, 0.14);
+  white-space: normal;
 }
 
-.node small {
+.graph-node-label {
+  display: -webkit-box;
+  max-width: 68px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.16;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.graph-node small {
   display: inline-flex;
   align-items: center;
-  min-height: 18px;
-  margin-left: 8px;
-  padding: 0 6px;
+  justify-content: center;
+  min-height: 17px;
+  max-width: 64px;
+  margin: 0;
+  padding: 0 5px;
   border-radius: 999px;
-  background: #f0f3ef;
-  color: var(--muted);
-  font-size: 11px;
+  background: var(--node-tag, #f0f3ef);
+  color: var(--node-ink, var(--muted));
+  font-size: 10px;
   font-weight: 800;
+  line-height: 1;
 }
 
 .node.root {
@@ -936,28 +966,23 @@ h3 {
 }
 
 .node.weak {
-  border-color: rgba(223, 105, 93, 0.36);
-  background: var(--coral-soft);
+  box-shadow: 0 0 0 4px rgba(223, 105, 93, 0.16), 0 12px 24px rgba(23, 48, 43, 0.14);
 }
 
 .node.mastered {
-  border-color: rgba(24, 143, 132, 0.34);
-  background: var(--teal-soft);
+  box-shadow: 0 0 0 4px rgba(24, 143, 132, 0.16), 0 12px 24px rgba(23, 48, 43, 0.14);
 }
 
 .node.learning {
-  border-color: rgba(214, 160, 51, 0.36);
-  background: var(--yellow-soft);
+  box-shadow: 0 0 0 4px rgba(214, 160, 51, 0.16), 0 12px 24px rgba(23, 48, 43, 0.14);
 }
 
 .node.selected {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 3px rgba(24, 143, 132, 0.16), 0 10px 26px rgba(23, 48, 43, 0.16);
+  box-shadow: 0 0 0 5px rgba(24, 143, 132, 0.2), 0 14px 28px rgba(23, 48, 43, 0.18);
 }
 
 .node.path-highlight {
-  border-color: var(--coral);
-  box-shadow: 0 0 0 3px rgba(223, 105, 93, 0.18), 0 10px 26px rgba(23, 48, 43, 0.16);
+  box-shadow: 0 0 0 5px rgba(223, 105, 93, 0.22), 0 14px 28px rgba(23, 48, 43, 0.18);
 }
 
 .node-example,
@@ -3547,6 +3572,11 @@ h3 {
   min-height: 580px;
 }
 
+.expanded-map-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .segmented {
   padding: 4px;
   border: 1px solid var(--line);
@@ -3685,7 +3715,7 @@ h3 {
 }
 
 .mindmap-tree {
-  min-width: 980px;
+  min-width: 1500px;
   min-height: 620px;
   padding: 0;
 }
@@ -6226,8 +6256,25 @@ button.review-row:hover {
   .coding-input-panel,
   .coding-output-panel,
   .planner-board,
+  .expanded-map-panel,
   .mindmap-panel {
     height: 100%;
+  }
+
+  .expanded-map-panel,
+  .mindmap-panel {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .expanded-map-panel .knowledge-map.large-map,
+  .mindmap-panel .mindmap-stage {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 360px;
   }
 
   .dashboard-grid > .panel,
@@ -6249,6 +6296,7 @@ button.review-row:hover {
   .coding-form,
   .coding-output,
   .planner-table-wrap,
+  .knowledge-map,
   .mindmap-stage,
   .pdf-viewer,
   .markdown-preview,

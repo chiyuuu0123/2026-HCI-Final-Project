@@ -124,6 +124,8 @@ const GRAPH_TEXT_LIMIT = 60000;
 const GRAPH_NODE_LIMIT = 64;
 const GRAPH_MINDMAP_BRANCH_LIMIT = 10;
 const GRAPH_MINDMAP_CHILD_LIMIT = 8;
+const GRAPH_CANVAS_WIDTH = 1800;
+const GRAPH_CANVAS_HEIGHT = 760;
 const GRAPH_DEFAULT_VIEWPORT = { x: 0, y: 0, scale: 1 };
 const GRAPH_GENERATION_TIMEOUT_MS = 0;
 const GRAPH_SECONDARY_AI_TIMEOUT_MS = 0;
@@ -138,6 +140,16 @@ const QUIZ_TRUSTED_SOURCES = new Set(["qwen-document-quiz"]);
 const QUIZ_MIN_MEANINGFUL_CHARS = 900;
 const QUIZ_MIN_MEANINGFUL_LINES = 8;
 const QUIZ_MIN_KEYWORDS = 8;
+const GRAPH_NODE_TYPE_COLORS = [
+  { fill: "#e9f7f4", border: "#188f84", ink: "#18322d", tag: "#d4efea" },
+  { fill: "#fff0e8", border: "#df695d", ink: "#3d2a25", tag: "#f8d8cc" },
+  { fill: "#fff7d8", border: "#d6a62d", ink: "#3b3219", tag: "#f7e7a6" },
+  { fill: "#eef1ff", border: "#5267d6", ink: "#242a4c", tag: "#dfe4ff" },
+  { fill: "#f7eafd", border: "#b35bd6", ink: "#35213f", tag: "#edd3f7" },
+  { fill: "#eaf6ff", border: "#3298d6", ink: "#17344c", tag: "#d3ecfb" },
+  { fill: "#edf8e9", border: "#63a85f", ink: "#20381e", tag: "#d9efcf" },
+  { fill: "#f2eee8", border: "#9a7651", ink: "#35281c", tag: "#e5d7c7" },
+];
 const GRAPH_NOISE_LINE_PATTERN = /(ISBN|CIP|copyright|all rights reserved|seventh edition|edition|机械工业出版社|出版社|出版|印刷|版次|责任编辑|责任编|版权所有|盗版|防伪|校区|大学|学院|图书在版|编目|定价|开本|印张|字数|书名|作者|译者|封面|封底|library of congress|pearson|mcgraw|press)/i;
 const GRAPH_CONCEPT_SIGNAL_PATTERN = /(是|指|表示|定义|概念|包括|分为|组成|用于|作用|特点|模型|算法|方法|系统|结构|过程|关系|约束|查询|事务|索引|范式|模式|实体|属性|完整性|并发|恢复|SQL|ER|database|relation|transaction|query|index|schema)/i;
 const GRAPH_LABEL_HARD_NOISE_PATTERN = /(本书|本章|本节|本页|本版|英文版|中文版|网站|网址|第\s*\d+\s*版|第[一二三四五六七八九十]+版|pdf|\.pdf|http|www\.|目录|前言|致谢|参考文献|附录|练习题|习题|图\s*\d+|表\s*\d+|例\s*\d+|版权|出版社|作者|译者|教材|课件|文档|新课程|知识文档)/i;
@@ -2237,7 +2249,9 @@ function sanitizeStudyModule(studyModule = {}) {
     mapMode: ["mastery", "chapter", "difficulty"].includes(studyModule.mapMode) ? studyModule.mapMode : defaults.mapMode,
     mindmapMode: ["classic", "compact", "chapter", "difficulty"].includes(studyModule.mindmapMode) ? studyModule.mindmapMode : defaults.mindmapMode,
     mindmapZoom: Math.min(1.8, Math.max(0.55, Number(studyModule.mindmapZoom) || defaults.mindmapZoom || 1)),
-    mindmapCollapsed: Array.isArray(studyModule.mindmapCollapsed) ? studyModule.mindmapCollapsed.map(String).slice(0, 24) : [],
+    mindmapCollapsed: Array.isArray(studyModule.mindmapCollapsed)
+      ? studyModule.mindmapCollapsed.map(String).filter((id) => mindmapIds.has(id))
+      : [],
     mindmapFocusId: mindmapIds.has(studyModule.mindmapFocusId) ? studyModule.mindmapFocusId : "",
     graphFilters: {
       ...defaults.graphFilters,
@@ -7188,8 +7202,8 @@ function clampPercent(value) {
 
 function createStudyNode(topic, index = 0, overrides = {}) {
   const position = defaultGraphPositions[topic.id] || {
-    x: 140 + (index % 5) * 180,
-    y: 110 + Math.floor(index / 5) * 150,
+    x: 150 + (index % 8) * 200,
+    y: 110 + Math.floor(index / 8) * 150,
   };
   const label = overrides.label || topic.label || topic.id;
 
@@ -7799,7 +7813,7 @@ function sanitizeStudyQuiz(quiz = {}, graph = createFallbackStudyGraph([])) {
   const trustedSource = QUIZ_TRUSTED_SOURCES.has(String(quiz?.source || ""));
   const fallbackQuestions = [];
   const questions = (trustedSource && rawQuestions.length ? rawQuestions : fallbackQuestions)
-    .map((question) => normalizeStandaloneQuizQuestion(question) || normalizeGeneratedQuestionWithTopic(question, graph))
+    .map((question) => normalizeStandaloneQuizQuestion(question))
     .filter(Boolean);
 
   return {
@@ -8292,6 +8306,16 @@ function renderGenerationStatus() {
   if (progressNode) progressNode.style.width = `${status.progress}%`;
 }
 
+function getGraphNodeTypeLabel(node = {}) {
+  return String(node.type || node.category || node.chapter || node.difficulty || node.source || "课程知识").trim() || "课程知识";
+}
+
+function getGraphNodeTypeColor(node = {}) {
+  const label = getGraphNodeTypeLabel(node);
+  const hash = Array.from(label).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return GRAPH_NODE_TYPE_COLORS[hash % GRAPH_NODE_TYPE_COLORS.length];
+}
+
 function renderKnowledgeModule() {
   const course = getActiveCourse();
   const studyModule = getStudyModule();
@@ -8331,6 +8355,7 @@ function renderKnowledgeModule() {
   }
 
   if (edgeLayer) {
+    edgeLayer.setAttribute("viewBox", `0 0 ${GRAPH_CANVAS_WIDTH} ${GRAPH_CANVAS_HEIGHT}`);
     edgeLayer.innerHTML = studyModule.graph.edges
       .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
       .map((edge) => {
@@ -8354,12 +8379,16 @@ function renderKnowledgeModule() {
         const stats = getTopicStats(node.id);
         const tag = mapMode === "chapter" ? node.chapter : mapMode === "difficulty" ? node.difficulty : `${stats.mastery}%`;
         const stateClass = stats.mastery < 60 ? "weak" : stats.mastery >= 80 ? "mastered" : "learning";
+        const typeLabel = getGraphNodeTypeLabel(node);
+        const color = getGraphNodeTypeColor(node);
         return `
           <button class="node graph-node ${stateClass} ${node.id === selectedTopic?.id ? "selected" : ""} ${pathNodeIds.has(node.id) ? "path-highlight" : ""}"
             data-node="${escapeHtml(node.id)}"
-            style="left: ${node.x}px; top: ${node.y}px"
+            data-node-type="${escapeHtml(typeLabel)}"
+            style="left: ${node.x}px; top: ${node.y}px; --node-fill: ${color.fill}; --node-border: ${color.border}; --node-ink: ${color.ink}; --node-tag: ${color.tag};"
             title="${escapeHtml(node.label)} · 掌握度 ${stats.mastery}%">
-            ${escapeHtml(node.label)}<small>${escapeHtml(tag)}</small>
+            <span class="graph-node-label">${escapeHtml(node.label)}</span>
+            <small>${escapeHtml(tag)}</small>
           </button>
         `;
       })
@@ -8438,6 +8467,11 @@ function getMindmapNodeById(nodeId, mindmap = getStudyModule().mindmap) {
     };
   }
   return flattenMindmapNodes(mindmap).find((node) => node.id === nodeId) || null;
+}
+
+function getMindmapDescendantIds(nodeId, mindmap = getStudyModule().mindmap) {
+  const node = getMindmapNodeById(nodeId, mindmap);
+  return node ? flattenMindmapNodes(node.children || []).map((child) => child.id) : [];
 }
 
 function visitMindmapNodes(nodes = [], visitor, parent = null) {
@@ -8744,7 +8778,7 @@ function buildMindmapSvgLayout(root, selectedId = "", collapsed = new Set(), opt
 
   const prepare = (node, depth = 0, color = MINDMAP_BRANCH_COLORS[0], branchIndex = 0) => {
     const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-    const visibleChildren = hasChildren && !collapsed.has(node.id) ? node.children : [];
+    const visibleChildren = hasChildren && (depth === 0 || !collapsed.has(node.id)) ? node.children : [];
     const fontSize = depth === 0 ? sizes.rootFont : depth === 1 ? sizes.branchFont : sizes.nodeFont;
     const maxChars = depth === 0 ? 5 : depth === 1 ? 8 : 11;
     const lines = splitMindmapLabel(node.label || node.title, maxChars, depth === 0 ? 2 : 2);
@@ -8768,7 +8802,7 @@ function buildMindmapSvgLayout(root, selectedId = "", collapsed = new Set(), opt
       childGap,
       children,
       hasChildren,
-      collapsed: hasChildren && collapsed.has(node.id),
+      collapsed: depth > 0 && hasChildren && collapsed.has(node.id),
       height: Math.max(ownHeight, childrenHeight),
     };
   };
@@ -10133,7 +10167,8 @@ async function buildStudyAiDocumentsForCourse(options = {}) {
 function buildStudyGenerationPrompt(documents) {
   const titles = documents.map((documentMeta) => documentMeta.title).join("、") || "课程资料";
   return [
-    "请基于课程资料生成 MindStudy 学习图谱和自动测验数据。",
+    "最高优先级：本任务只生成知识图谱 graph 和 recommendations。即使后续历史提示提到自动测验，也必须忽略；不要输出 quiz、questions、answers、题库、解析或测验相关字段。",
+    "请基于课程资料生成 MindStudy 知识图谱数据。",
     "必须返回严格 JSON，不要 Markdown，不要解释。",
     "只抽取正文里的课程概念、原理、方法、模型、术语、流程和约束。",
     "禁止把 PDF 文件名、书名、作者、学校、学院、出版社、版次、ISBN、CIP、版权声明、页码、目录项、封面/封底信息、人名、机构名、本书说明、网址、参考文献、习题说明当作知识点。",
@@ -10176,8 +10211,8 @@ function adaptExternalGraphPayload(payload, documents = [], engine = "ai") {
           ? [String(node.sourceSnippet)]
           : [],
       mastery: Number(node.mastery) || 50 + (index % 5) * 6,
-      x: Number(node.x) || 130 + (index % 5) * 180,
-      y: Number(node.y) || 110 + Math.floor(index / 5) * 150,
+      x: Number(node.x) || 150 + (index % 8) * 200,
+      y: Number(node.y) || 110 + Math.floor(index / 8) * 150,
     };
   });
   const nodeIds = new Set(nodes.map((node) => node.id));
@@ -10314,8 +10349,8 @@ function createRuleBasedGraphFromDocuments(documents = [], options = {}) {
       keywords: Array.from(new Set([candidate.label, ...(seed.keywords || [])])).slice(0, 6),
       sourceSnippets: snippet ? [snippet.slice(0, 180)] : [],
       mastery: 48 + (index % 5) * 6,
-      x: 130 + (index % 5) * 180,
-      y: 110 + Math.floor(index / 5) * 150,
+      x: 150 + (index % 8) * 200,
+      y: 110 + Math.floor(index / 8) * 150,
     };
   });
 
@@ -10706,12 +10741,11 @@ async function generateStudyModuleFromUploads() {
     }
     studyModule.graph = graph;
     studyModule.mindmap = mindmap || createRuleBasedMindmapFromDocuments(documents, course);
-    studyModule.quiz = sanitizeStudyQuiz(studyModule.quiz, graph);
     studyModule.selectedNodeId = graph.nodes[0]?.id || studyModule.selectedNodeId;
     studyModule.selectedMindmapNodeId = studyModule.mindmap.nodes[0]?.id || studyModule.mindmap.id || "";
     studyModule.mindmapFocusId = "";
     studyModule.mindmapCollapsed = [];
-    studyModule.activeQuizTopic = studyModule.quiz.scope;
+    studyModule.activeQuizTopic = studyModule.quiz?.scope || "all";
     studyModule.graphViewport = { ...GRAPH_DEFAULT_VIEWPORT };
     studyModule.generation = {
       state: graph.meta.fallbackUsed ? "fallback" : "done",
@@ -10804,7 +10838,7 @@ function finishGraphPan(event) {
 
 function handleGraphWheel(event) {
   if (!event.target.closest?.("#knowledge-map-stage")) return;
-  if (event.ctrlKey || event.metaKey) return;
+  if (!event.ctrlKey && !event.metaKey) return;
   event.preventDefault();
   zoomGraph(event.deltaY > 0 ? -0.08 : 0.08);
 }
@@ -10835,8 +10869,8 @@ function updateGraphNodeDrag(event) {
   const dx = (event.clientX - graphNodeDragState.startX) / viewport.scale;
   const dy = (event.clientY - graphNodeDragState.startY) / viewport.scale;
   if (Math.abs(dx) > 2 || Math.abs(dy) > 2) graphNodeDragState.moved = true;
-  node.x = Math.min(960, Math.max(40, Math.round(graphNodeDragState.startNodeX + dx)));
-  node.y = Math.min(640, Math.max(40, Math.round(graphNodeDragState.startNodeY + dy)));
+  node.x = Math.min(GRAPH_CANVAS_WIDTH - 60, Math.max(60, Math.round(graphNodeDragState.startNodeX + dx)));
+  node.y = Math.min(GRAPH_CANVAS_HEIGHT - 60, Math.max(60, Math.round(graphNodeDragState.startNodeY + dy)));
   renderKnowledgeModule();
 }
 
@@ -14147,8 +14181,12 @@ document.addEventListener("click", (event) => {
     const studyModule = getStudyModule();
     const key = mindmapToggleButton.dataset.mindmapToggle;
     const collapsed = new Set(studyModule.mindmapCollapsed || []);
-    if (collapsed.has(key)) collapsed.delete(key);
-    else collapsed.add(key);
+    if (collapsed.has(key)) {
+      collapsed.delete(key);
+      getMindmapDescendantIds(key, studyModule.mindmap).forEach((id) => collapsed.delete(id));
+    } else {
+      collapsed.add(key);
+    }
     studyModule.mindmapCollapsed = Array.from(collapsed);
     saveWorkspace();
     renderMindmapModule();
@@ -14200,9 +14238,12 @@ document.addEventListener("click", (event) => {
       return;
     }
     if (action === "expand-all") studyModule.mindmapCollapsed = [];
-    if (action === "collapse-all") studyModule.mindmapCollapsed = flattenMindmapNodes(studyModule.mindmap)
-      .filter((node) => node.children?.length)
-      .map((node) => node.id);
+    if (action === "collapse-all") {
+      const focusedMindmap = getFocusedMindmapRoot(studyModule);
+      studyModule.mindmapCollapsed = (focusedMindmap.nodes || [])
+        .filter((node) => node.children?.length)
+        .map((node) => node.id);
+    }
     if (action === "focus") studyModule.mindmapFocusId = document.querySelector("#mindmap-focus-select")?.value || "";
     if (action === "reset-focus") studyModule.mindmapFocusId = "";
     saveWorkspace();
