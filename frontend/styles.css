@@ -3968,6 +3968,31 @@ h3 {
   padding: 16px 28px 0;
 }
 
+.quiz-count-control {
+  display: inline-grid;
+  grid-template-columns: auto 54px;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.quiz-count-control input {
+  width: 54px;
+  height: 28px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 8px;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
 .question {
   padding: 28px 28px 4px;
   font-size: 28px;
@@ -4057,6 +4082,7 @@ h3 {
 }
 
 .quiz-short-answer,
+.quiz-fill-answer,
 .match-row select {
   width: 100%;
   border: 1px solid var(--line);
@@ -4071,6 +4097,11 @@ h3 {
   min-height: 130px;
   padding: 14px;
   resize: vertical;
+}
+
+.quiz-fill-answer {
+  min-height: 48px;
+  padding: 0 14px;
 }
 
 .quiz-sample-answer {

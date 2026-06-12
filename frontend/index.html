@@ -702,7 +702,7 @@
               <div class="study-generation-card" id="study-generation-card">
                 <div>
                   <strong id="study-generation-title">等待生成</strong>
-                  <span id="study-generation-detail">导入资料后可用 Qwen / 本地规则生成课程图谱和题目。</span>
+                  <span id="study-generation-detail">导入资料后可用 Qwen / 本地规则生成课程图谱。测验需在自动测验页独立生成。</span>
                 </div>
                 <div class="study-generation-track">
                   <span id="study-generation-progress" style="width: 0%"></span>
@@ -913,6 +913,22 @@
                   <option value="中等">中等</option>
                   <option value="较难">较难</option>
                 </select>
+                <label class="quiz-count-control">
+                  <span>单选</span>
+                  <input data-quiz-count="choice" type="number" min="0" max="12" value="4" />
+                </label>
+                <label class="quiz-count-control">
+                  <span>判断</span>
+                  <input data-quiz-count="judge" type="number" min="0" max="12" value="3" />
+                </label>
+                <label class="quiz-count-control">
+                  <span>填空</span>
+                  <input data-quiz-count="fill" type="number" min="0" max="12" value="3" />
+                </label>
+                <label class="quiz-count-control">
+                  <span>简答</span>
+                  <input data-quiz-count="essay" type="number" min="0" max="8" value="2" />
+                </label>
                 <button class="primary-action" data-quiz-action="generate-filtered">
                   <i data-lucide="wand-sparkles"></i>
                   <span>生成题组</span>

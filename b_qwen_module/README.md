@@ -1,4 +1,4 @@
-# B Qwen Module
+﻿# B Qwen Module
 
 This folder is the isolated work area for member B.
 
@@ -34,7 +34,7 @@ Current local config file:
 
 Default model choices:
 
-- `qwen3-vl-32b-thinking` for normal AI, RAG, knowledge graph generation, multimodal tasks, and short-answer semantic grading.
+- `qwen3.6-plus` for normal AI, RAG, knowledge graph generation, multimodal tasks, and short-answer semantic grading.
 - `QWEN_MULTIMODAL_MODEL` can override the vision-capable model without touching UI code.
 
 Advanced override:
@@ -53,8 +53,8 @@ Optional overrides:
 
 ```powershell
 $env:DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
-$env:QWEN_MODEL="qwen3-vl-32b-thinking"
-$env:QWEN_MULTIMODAL_MODEL="qwen3-vl-32b-thinking"
+$env:QWEN_MODEL="qwen3.6-plus"
+$env:QWEN_MULTIMODAL_MODEL="qwen3.6-plus"
 ```
 
 For users outside mainland China, change the base URL to the international
@@ -85,7 +85,7 @@ details isolated behind Electron IPC.
     { id: "doc-2", title: "lecture.pdf", mimeType: "application/pdf", extension: "PDF", base64: "..." }
   ],
   options: {
-    model: "qwen3-vl-32b-thinking"
+    model: "qwen3.6-plus"
   }
 }
 ```
@@ -102,7 +102,7 @@ sends those chunks to Qwen.
     { id: "doc-1", title: "chapter1.md", text: "..." }
   ],
   options: {
-    model: "qwen3-vl-32b-thinking"
+    model: "qwen3.6-plus"
   }
 }
 ```
@@ -167,3 +167,4 @@ the same client, so the calling surface stays small.
 OCR can be slow on first use because Tesseract language data may need to be
 downloaded and cached. Page-range learning is the recommended path for large
 scanned PDFs.
+

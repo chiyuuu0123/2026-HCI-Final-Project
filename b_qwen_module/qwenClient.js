@@ -1,8 +1,8 @@
 "use strict";
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const DEFAULT_MODEL = "qwen3-vl-32b-thinking";
-const DEFAULT_MULTIMODAL_MODEL = "qwen3-vl-32b-thinking";
+const DEFAULT_MODEL = "qwen3.6-plus";
+const DEFAULT_MULTIMODAL_MODEL = "qwen3.6-plus";
 const DEFAULT_ASR_MODEL = "qwen3-asr-flash";
 
 function safeJsonParse(text) {

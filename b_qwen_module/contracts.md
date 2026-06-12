@@ -1,4 +1,4 @@
-# B Module Contracts
+﻿# B Module Contracts
 
 These shapes are kept small so the other team members do not need to know the
 Qwen request details.
@@ -34,7 +34,7 @@ PDF documents may also be passed without pre-extracted text:
   question: "How does the system work?",
   documents: [Document],
   options: {
-    model: "qwen3-vl-32b-thinking",
+    model: "qwen3.6-plus",
     maxContextChars: 12000,
     maxChunks: 6,
     temperature: 0.2,
@@ -53,7 +53,7 @@ the vision-capable default model.
   documents: [Document],
   topic: "overall summary",
   options: {
-    model: "qwen3-vl-32b-thinking",
+    model: "qwen3.6-plus",
     maxContextChars: 12000,
     maxChunks: 8
   }
@@ -77,7 +77,7 @@ the vision-capable default model.
     selectedChunks: 6,
     sourceDocuments: 1
   },
-  model: "qwen3-vl-32b-thinking",
+  model: "qwen3.6-plus",
   usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
 }
 ```
@@ -132,3 +132,4 @@ Returns:
   recognizedAt: 1710000000000
 }
 ```
+
