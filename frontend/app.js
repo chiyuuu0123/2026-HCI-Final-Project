@@ -128,6 +128,11 @@ const knowledgeTopics = [
 ];
 
 const STUDY_MODULE_VERSION = 2;
+const STUDY_REVIEW_REPORT_LIMIT = 12;
+const STUDY_REVIEW_FOCUS_SAMPLE_LIMIT = 720;
+const STUDY_REVIEW_FOCUS_SAMPLE_INTERVAL_MS = 60 * 1000;
+const STUDY_REVIEW_DAY_MS = 24 * 60 * 60 * 1000;
+const STUDY_REVIEW_SCHEDULES = new Set(["manual", "daily", "weekly"]);
 const GRAPH_QUALITY_MIN_NODES = 8;
 const GRAPH_QUALITY_MIN_EDGES = 5;
 const GRAPH_TEXT_LIMIT = 60000;
@@ -333,6 +338,7 @@ let studyTimerSnapshot = {
   label: "今日学习 00:00:00",
   dailySeconds: {},
 };
+let studyReviewFocusSampleAt = 0;
 let longlongBondState = {
   affection: 0,
   coins: 0,
@@ -1947,6 +1953,15 @@ function createFallbackMindmap(course = {}) {
   };
 }
 
+function createDefaultStudyReview() {
+  return {
+    schedule: "manual",
+    lastGeneratedAt: 0,
+    reports: [],
+    focusSamples: [],
+  };
+}
+
 function createDefaultStudyModule(options = {}) {
   const useSeedGraph = options.seedGraph !== false;
   const graph = useSeedGraph ? createFallbackStudyGraph([]) : createEmptyStudyGraph(options.course);
@@ -1995,6 +2010,7 @@ function createDefaultStudyModule(options = {}) {
       trend: [],
     },
     recommendations: [],
+    review: createDefaultStudyReview(),
   };
 }
 
@@ -2267,6 +2283,60 @@ function sanitizeRagKnowledge(ragKnowledge = {}) {
   };
 }
 
+function sanitizeStudyReview(review = {}) {
+  const schedule = STUDY_REVIEW_SCHEDULES.has(review.schedule) ? review.schedule : "manual";
+  const reports = Array.isArray(review.reports)
+    ? review.reports
+        .map((report) => {
+          if (!report || typeof report !== "object") return null;
+          const createdAt = Number(report.createdAt) || Date.now();
+          const to = Number(report.to) || createdAt;
+          const from = Number(report.from) || 0;
+          return {
+            id: String(report.id || createId("review")),
+            mode: STUDY_REVIEW_SCHEDULES.has(report.mode) ? report.mode : "manual",
+            from: Math.max(0, from),
+            to: Math.max(0, to),
+            title: String(report.title || "阶段回顾").slice(0, 120),
+            summary: String(report.summary || "").slice(0, 1200),
+            metrics: report.metrics && typeof report.metrics === "object" ? { ...report.metrics } : {},
+            highlights: Array.isArray(report.highlights) ? report.highlights.map(String).filter(Boolean).slice(0, 8) : [],
+            nextActions: Array.isArray(report.nextActions) ? report.nextActions.map(String).filter(Boolean).slice(0, 8) : [],
+            createdAt,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, STUDY_REVIEW_REPORT_LIMIT)
+    : [];
+  const focusSamples = Array.isArray(review.focusSamples)
+    ? review.focusSamples
+        .map((sample) => {
+          if (!sample || typeof sample !== "object") return null;
+          const createdAt = Number(sample.createdAt) || 0;
+          if (!createdAt) return null;
+          return {
+            id: String(sample.id || createId("focus")),
+            createdAt,
+            emotionId: String(sample.emotionId || sample.emotion || "unknown").slice(0, 48),
+            label: String(sample.label || sample.emotion || "未知").slice(0, 48),
+            detail: String(sample.detail || "").slice(0, 160),
+            focusScore: clampPercent(Number(sample.focusScore) || 0),
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .slice(-STUDY_REVIEW_FOCUS_SAMPLE_LIMIT)
+    : [];
+
+  return {
+    schedule,
+    lastGeneratedAt: Math.max(0, Number(review.lastGeneratedAt) || 0),
+    reports,
+    focusSamples,
+  };
+}
+
 function sanitizeStudyModule(studyModule = {}) {
   const defaults = createDefaultStudyModule();
   const graph = sanitizeStudyGraph(studyModule.graph || defaults.graph);
@@ -2329,6 +2399,7 @@ function sanitizeStudyModule(studyModule = {}) {
       trend: Array.isArray(studyModule.progress?.trend) ? studyModule.progress.trend.slice(-14) : [],
     },
     recommendations: Array.isArray(studyModule.recommendations) ? studyModule.recommendations.slice(0, 8) : defaults.recommendations,
+    review: sanitizeStudyReview(studyModule.review || defaults.review),
   };
 }
 
@@ -5068,6 +5139,7 @@ function updateCameraVisionUi(result) {
     emotion.detail || "我会结合表情和手势给出提醒。",
     musicRecommendation.summary,
   );
+  recordStudyReviewFocusSample(emotion, focusScore);
 }
 
 function rememberGestureAction(message) {
@@ -10333,6 +10405,336 @@ function bindQuizActionButtons(root = document) {
   });
 }
 
+function getStudyReviewModeLabel(mode) {
+  return {
+    manual: "手动回顾",
+    daily: "每日回顾",
+    weekly: "每周回顾",
+  }[mode] || "手动回顾";
+}
+
+function getStudyReviewScheduleLabel(schedule) {
+  return {
+    manual: "手动总结",
+    daily: "每天一次",
+    weekly: "每周一次",
+  }[schedule] || "手动总结";
+}
+
+function getStudyReviewPeriodMs(schedule) {
+  if (schedule === "daily") return STUDY_REVIEW_DAY_MS;
+  if (schedule === "weekly") return STUDY_REVIEW_DAY_MS * 7;
+  return 0;
+}
+
+function getStudyReviewDateTime(dateKey, endOfDay = false) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || ""));
+  if (!match) return 0;
+  const [, year, month, day] = match.map(Number);
+  return new Date(year, month - 1, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0).getTime();
+}
+
+function formatStudyReviewDate(timestamp) {
+  const date = new Date(Number(timestamp) || 0);
+  if (Number.isNaN(date.getTime())) return "未知";
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatStudyReviewRange(from, to) {
+  const fromText = formatStudyReviewDate(from);
+  const toText = formatStudyReviewDate(to);
+  return fromText === toText ? toText : `${fromText} - ${toText}`;
+}
+
+function isStudyReviewTimeInRange(timestamp, from, to) {
+  const value = Number(timestamp) || 0;
+  return value >= from && value <= to;
+}
+
+function getStudyReviewFirstActivityAt(course, studyModule) {
+  const timestamps = [Number(course?.createdAt) || 0];
+  (course?.documents || []).forEach((documentMeta) => {
+    timestamps.push(Number(documentMeta.createdAt || documentMeta.learnedAt || documentMeta.updatedAt) || 0);
+  });
+  (course?.ragKnowledge?.documents || []).forEach((documentMeta) => {
+    timestamps.push(Number(documentMeta.learnedAt || documentMeta.createdAt || documentMeta.updatedAt) || 0);
+  });
+  (studyModule.attempts || []).forEach((attempt) => {
+    timestamps.push(Number(attempt.answeredAt) || 0);
+  });
+  (studyModule.mistakes || []).forEach((mistake) => {
+    timestamps.push(Number(mistake.createdAt || mistake.reviewedAt) || 0);
+  });
+  (studyModule.review?.focusSamples || []).forEach((sample) => {
+    timestamps.push(Number(sample.createdAt) || 0);
+  });
+  Object.entries(studyTimerSnapshot.dailySeconds || {}).forEach(([dateKey, seconds]) => {
+    if (Number(seconds) > 0) timestamps.push(getStudyReviewDateTime(dateKey));
+  });
+
+  return Math.min(...timestamps.filter((value) => Number.isFinite(value) && value > 0)) || Date.now();
+}
+
+function getStudyReviewWindow(studyModule) {
+  const course = getActiveCourse();
+  const review = sanitizeStudyReview(studyModule.review);
+  const lastReportAt = review.reports.reduce((latest, report) => Math.max(latest, Number(report.to || report.createdAt) || 0), 0);
+  const from = review.lastGeneratedAt || lastReportAt || getStudyReviewFirstActivityAt(course, studyModule);
+  const to = Date.now();
+  return {
+    from: Math.min(from, to),
+    to,
+  };
+}
+
+function getStudyReviewAttemptsInRange(attempts, from, to) {
+  return (attempts || []).filter((attempt) => isStudyReviewTimeInRange(attempt.answeredAt, from, to));
+}
+
+function getStudyReviewDailyEntries(from, to) {
+  return Object.entries(studyTimerSnapshot.dailySeconds || {})
+    .map(([dateKey, seconds]) => ({
+      dateKey,
+      seconds: Math.max(0, Math.floor(Number(seconds) || 0)),
+      start: getStudyReviewDateTime(dateKey),
+      end: getStudyReviewDateTime(dateKey, true),
+    }))
+    .filter((entry) => entry.seconds > 0 && entry.end >= from && entry.start <= to)
+    .sort((a, b) => a.start - b.start);
+}
+
+function getStudyReviewDocumentsInRange(course, from, to) {
+  const records = [];
+  const addRecord = (documentMeta, source) => {
+    if (!documentMeta) return;
+    const learnedAt = Number(documentMeta.learnedAt || documentMeta.createdAt || documentMeta.updatedAt) || 0;
+    if (!isStudyReviewTimeInRange(learnedAt, from, to)) return;
+    const title = String(documentMeta.title || documentMeta.name || documentMeta.fileName || "未命名资料").trim();
+    records.push({
+      title,
+      source,
+      learnedAt,
+      pageCount: Math.max(0, Number(documentMeta.pageCount || documentMeta.pages) || 0),
+      chunkCount: Math.max(0, Number(documentMeta.chunkCount || documentMeta.chunks?.length) || 0),
+    });
+  };
+
+  (course?.documents || []).forEach((documentMeta) => addRecord(documentMeta, "资料导入"));
+  (course?.ragKnowledge?.documents || []).forEach((documentMeta) => addRecord(documentMeta, "知识库学习"));
+
+  const seen = new Set();
+  return records.filter((record) => {
+    const key = record.title.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getStudyReviewFocusSummary(review, from, to) {
+  const samples = (review.focusSamples || []).filter((sample) => isStudyReviewTimeInRange(sample.createdAt, from, to));
+  if (!samples.length) {
+    return {
+      sampleCount: 0,
+      averageFocus: null,
+      dominantEmotion: "暂无",
+      lowFocusCount: 0,
+      lowFocusRatio: 0,
+    };
+  }
+
+  const averageFocus = Math.round(samples.reduce((sum, sample) => sum + (Number(sample.focusScore) || 0), 0) / samples.length);
+  const emotionCounts = new Map();
+  samples.forEach((sample) => {
+    const label = sample.label || sample.emotionId || "未知";
+    emotionCounts.set(label, (emotionCounts.get(label) || 0) + 1);
+  });
+  const dominantEmotion = [...emotionCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "暂无";
+  const lowFocusCount = samples.filter((sample) => Number(sample.focusScore) < 60).length;
+
+  return {
+    sampleCount: samples.length,
+    averageFocus,
+    dominantEmotion,
+    lowFocusCount,
+    lowFocusRatio: lowFocusCount / samples.length,
+  };
+}
+
+function getStudyReviewQuizSummary(attempts) {
+  const total = attempts.length;
+  const correct = attempts.filter((attempt) => attempt.correct).length;
+  const wrong = total - correct;
+  const accuracy = total ? Math.round((correct / total) * 100) : null;
+  const topics = new Map();
+
+  attempts.forEach((attempt) => {
+    const topic = String(attempt.topic || attempt.source || "资料综合").trim() || "资料综合";
+    const current = topics.get(topic) || { topic, total: 0, correct: 0, wrong: 0, accuracy: null };
+    current.total += 1;
+    if (attempt.correct) current.correct += 1;
+    else current.wrong += 1;
+    current.accuracy = Math.round((current.correct / current.total) * 100);
+    topics.set(topic, current);
+  });
+
+  const topicList = [...topics.values()].sort((a, b) => b.total - a.total || a.topic.localeCompare(b.topic));
+  const weakTopics = [...topics.values()].sort((a, b) => (a.accuracy ?? 101) - (b.accuracy ?? 101) || b.wrong - a.wrong);
+
+  return {
+    total,
+    correct,
+    wrong,
+    accuracy,
+    topics: topicList,
+    weakTopics,
+  };
+}
+
+function buildStudyReviewReport(mode = "manual") {
+  const course = getActiveCourse();
+  const studyModule = getStudyModule();
+  studyModule.review = sanitizeStudyReview(studyModule.review);
+  const { from, to } = getStudyReviewWindow(studyModule);
+  const attempts = getStudyReviewAttemptsInRange(studyModule.attempts, from, to);
+  const quiz = getStudyReviewQuizSummary(attempts);
+  const dailyEntries = getStudyReviewDailyEntries(from, to);
+  const studySeconds = dailyEntries.reduce((sum, entry) => sum + entry.seconds, 0);
+  const activeDays = dailyEntries.length;
+  const documents = getStudyReviewDocumentsInRange(course, from, to);
+  const focus = getStudyReviewFocusSummary(studyModule.review, from, to);
+  const newMistakes = (studyModule.mistakes || []).filter((mistake) => isStudyReviewTimeInRange(mistake.createdAt, from, to)).length;
+  const reviewedMistakes = (studyModule.mistakes || []).filter((mistake) => isStudyReviewTimeInRange(mistake.reviewedAt, from, to)).length;
+  const chunkCount = documents.reduce((sum, documentMeta) => sum + documentMeta.chunkCount, 0);
+  const weakTopic = quiz.weakTopics[0];
+  const rangeText = formatStudyReviewRange(from, to);
+  const studyText = studySeconds ? formatStudyDurationText(studySeconds) : "暂无计时";
+  const documentNames = documents.map((documentMeta) => documentMeta.title).filter(Boolean);
+  const topicNames = quiz.topics.slice(0, 4).map((topic) => topic.topic);
+  const highlights = [
+    studySeconds
+      ? `累计学习 ${studyText}，共有 ${activeDays} 天形成学习记录。`
+      : "本阶段暂无计时记录，建议用专注计时保留更真实的学习轨迹。",
+    documentNames.length
+      ? `学习资料：${documentNames.slice(0, 4).join("、")}${documentNames.length > 4 ? ` 等 ${documentNames.length} 份` : ""}。`
+      : `本阶段没有新增学习资料，当前课程资料库共有 ${(course?.documents || []).length} 份文件。`,
+    quiz.total
+      ? `完成 ${quiz.total} 道测验，正确率 ${quiz.accuracy}%（${quiz.correct} 对 / ${quiz.wrong} 错）。`
+      : "本阶段还没有测验记录，无法评估掌握准确度。",
+    focus.sampleCount
+      ? `专注均值 ${focus.averageFocus}，主要情绪/状态为 ${focus.dominantEmotion}。`
+      : "暂无专注与情绪采样；开启状态识别后，回顾会自动纳入专注变化。",
+  ];
+  const nextActions = [];
+
+  if (weakTopic?.total) {
+    nextActions.push(`优先补强“${weakTopic.topic}”：本阶段正确率 ${weakTopic.accuracy}%、错 ${weakTopic.wrong} 题。`);
+  }
+  if (quiz.total && quiz.accuracy < 70) {
+    nextActions.push("下一轮先少量高频复习错题，再生成新题，避免只做新题造成遗漏。");
+  }
+  if (documents.length && !quiz.total) {
+    nextActions.push("资料已经进入学习链路，建议立刻生成 5-10 道小测验检验理解。");
+  }
+  if (focus.sampleCount && focus.lowFocusRatio >= 0.35) {
+    nextActions.push("低专注样本偏多，下一阶段可把单次学习切成 25-35 分钟并安排短休息。");
+  }
+  if (!focus.sampleCount) {
+    nextActions.push("如需追踪情绪和专注走势，可以在学习时开启摄像头状态识别。");
+  }
+  if (!nextActions.length) {
+    nextActions.push("保持当前节奏，下一阶段可以增加错题复盘和跨资料综合提问。");
+  }
+
+  return {
+    id: createId("review"),
+    mode,
+    from,
+    to,
+    title: `${getStudyReviewModeLabel(mode)}：${rangeText}`,
+    summary: `本阶段（${rangeText}）${studySeconds ? `累计学习 ${studyText}` : "还没有形成有效计时记录"}；${quiz.total ? `完成 ${quiz.total} 道测验，正确率 ${quiz.accuracy}%` : "暂无测验记录"}；${documents.length ? `学习 ${documents.length} 份资料` : "没有新增资料"}；${focus.sampleCount ? `专注均值 ${focus.averageFocus}，主要状态 ${focus.dominantEmotion}` : "暂无专注情绪样本"}。`,
+    metrics: {
+      studySeconds,
+      activeDays,
+      attemptCount: quiz.total,
+      correct: quiz.correct,
+      wrong: quiz.wrong,
+      accuracy: quiz.accuracy,
+      newMistakes,
+      reviewedMistakes,
+      documentCount: documents.length,
+      chunkCount,
+      averageFocus: focus.averageFocus,
+      dominantEmotion: focus.dominantEmotion,
+      focusSampleCount: focus.sampleCount,
+      lowFocusCount: focus.lowFocusCount,
+      topics: topicNames,
+    },
+    highlights,
+    nextActions,
+    createdAt: Date.now(),
+  };
+}
+
+function hasStudyReviewActivity(report) {
+  const metrics = report?.metrics || {};
+  return Boolean(
+    Number(metrics.studySeconds) ||
+      Number(metrics.attemptCount) ||
+      Number(metrics.documentCount) ||
+      Number(metrics.focusSampleCount),
+  );
+}
+
+function storeStudyReviewReport(report) {
+  const studyModule = getStudyModule();
+  studyModule.review = sanitizeStudyReview(studyModule.review);
+  studyModule.review.reports = [report, ...studyModule.review.reports].slice(0, STUDY_REVIEW_REPORT_LIMIT);
+  studyModule.review.lastGeneratedAt = report.to || report.createdAt || Date.now();
+  saveWorkspace();
+}
+
+function generateStudyReview(mode = "manual") {
+  const report = buildStudyReviewReport(mode);
+  storeStudyReviewReport(report);
+  renderReportModule();
+}
+
+function maybeGenerateScheduledStudyReview(studyModule) {
+  const reportView = document.querySelector('[data-view-panel="report"]');
+  if (!reportView?.classList.contains("active")) return false;
+  studyModule.review = sanitizeStudyReview(studyModule.review);
+  const schedule = studyModule.review.schedule;
+  const periodMs = getStudyReviewPeriodMs(schedule);
+  if (!periodMs) return false;
+  const lastGeneratedAt = Number(studyModule.review.lastGeneratedAt) || 0;
+  const now = Date.now();
+  if (lastGeneratedAt && now - lastGeneratedAt < periodMs) return false;
+
+  const report = buildStudyReviewReport(schedule);
+  if (!hasStudyReviewActivity(report)) return false;
+  storeStudyReviewReport(report);
+  return true;
+}
+
+function recordStudyReviewFocusSample(emotion = {}, focusScore = 0) {
+  const now = Date.now();
+  if (now - studyReviewFocusSampleAt < STUDY_REVIEW_FOCUS_SAMPLE_INTERVAL_MS) return;
+  const studyModule = getStudyModule();
+  studyModule.review = sanitizeStudyReview(studyModule.review);
+  studyModule.review.focusSamples.push({
+    id: createId("focus"),
+    createdAt: now,
+    emotionId: String(emotion.id || "unknown"),
+    label: String(emotion.label || emotion.id || "未知"),
+    detail: String(emotion.detail || ""),
+    focusScore: clampPercent(focusScore),
+  });
+  studyModule.review.focusSamples = sanitizeStudyReview(studyModule.review).focusSamples;
+  studyReviewFocusSampleAt = now;
+  saveWorkspace();
+}
+
 function getReportStats() {
   const studyModule = getStudyModule();
   const attempts = studyModule.attempts;
@@ -10400,25 +10802,32 @@ function updateStudyRecommendations() {
 
 function renderReportModule() {
   const studyModule = getStudyModule();
+  maybeGenerateScheduledStudyReview(studyModule);
+  studyModule.review = sanitizeStudyReview(studyModule.review);
   const stats = getReportStats();
   const weakest = stats.weakTopics[0];
+  const latestReport = studyModule.review.reports[0];
   const reportTitle = document.querySelector("#report-title");
   const studyTime = document.querySelector("#report-study-time");
   const accuracy = document.querySelector("#report-accuracy");
   const mistakes = document.querySelector("#report-mistakes");
   const trendChart = document.querySelector("#report-trend-chart");
   const reviewPanel = document.querySelector("#report-review-panel");
+  const reviewSchedule = document.querySelector("#study-review-schedule");
+  const reviewCurrent = document.querySelector("#study-review-current");
+  const reviewHistory = document.querySelector("#study-review-history");
   const mistakeCount = document.querySelector("#mistake-book-count");
   const mistakeList = document.querySelector("#mistake-book-list");
 
   if (reportTitle) {
     reportTitle.textContent = stats.attempts.length
-      ? `已完成 ${stats.attempts.length} 次练习，建议优先补强${weakest?.label || "薄弱知识点"}。`
+      ? `已完成 ${stats.attempts.length} 次练习，建议优先补强 ${weakest?.label || "薄弱知识点"}。`
       : "还没有新的答题记录，建议先导入资料并生成一组自动测验。";
   }
   if (studyTime) studyTime.textContent = `${stats.studyHours}h`;
   if (accuracy) accuracy.textContent = `${stats.accuracy}%`;
   if (mistakes) mistakes.textContent = String(studyModule.mistakes.filter((mistake) => !mistake.reviewed).length);
+  if (reviewSchedule && reviewSchedule.value !== studyModule.review.schedule) reviewSchedule.value = studyModule.review.schedule;
 
   if (trendChart) {
     const now = new Date();
@@ -10432,6 +10841,105 @@ function renderReportModule() {
     trendChart.innerHTML = dayValues
       .map((value) => `<span style="--h: ${Math.max(18, Math.round((value / maxValue) * 100))}%" title="${value} 次练习"></span>`)
       .join("");
+  }
+
+  if (reviewCurrent) {
+    if (latestReport) {
+      const metricItems = [
+        {
+          label: "学习时长",
+          value: formatStudyDurationText(Number(latestReport.metrics.studySeconds) || 0),
+          detail: `${Number(latestReport.metrics.activeDays) || 0} 天有记录`,
+        },
+        {
+          label: "测验准确度",
+          value: latestReport.metrics.attemptCount ? `${Number(latestReport.metrics.accuracy) || 0}%` : "暂无",
+          detail: `${Number(latestReport.metrics.correct) || 0} 对 / ${Number(latestReport.metrics.wrong) || 0} 错`,
+        },
+        {
+          label: "资料覆盖",
+          value: `${Number(latestReport.metrics.documentCount) || 0} 份`,
+          detail: latestReport.metrics.chunkCount ? `${Number(latestReport.metrics.chunkCount) || 0} 个知识段` : "本阶段资料",
+        },
+        {
+          label: "专注均值",
+          value: latestReport.metrics.averageFocus != null ? `${Number(latestReport.metrics.averageFocus) || 0}` : "暂无",
+          detail: latestReport.metrics.focusSampleCount ? `主要状态 ${latestReport.metrics.dominantEmotion || "暂无"}` : "没有样本",
+        },
+      ];
+
+      reviewCurrent.innerHTML = `
+        <div class="study-review-current-head">
+          <div>
+            <span class="tag muted">${escapeHtml(getStudyReviewModeLabel(latestReport.mode))}</span>
+            <h4>${escapeHtml(latestReport.title)}</h4>
+          </div>
+          <small>${escapeHtml(formatStudyReviewDate(latestReport.createdAt))}</small>
+        </div>
+        <p class="study-review-summary">${escapeHtml(latestReport.summary)}</p>
+        <div class="study-review-metrics">
+          ${metricItems
+            .map(
+              (item) => `
+                <div class="study-review-metric">
+                  <strong>${escapeHtml(item.value)}</strong>
+                  <span>${escapeHtml(item.label)}</span>
+                  <small>${escapeHtml(item.detail)}</small>
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+        <div class="study-review-columns">
+          <div class="study-review-column">
+            <span class="tag muted">本阶段要点</span>
+            <div class="study-review-list">
+              ${latestReport.highlights.length
+                ? latestReport.highlights
+                    .map((item) => `<div class="study-review-line">${escapeHtml(item)}</div>`)
+                    .join("")
+                : `<div class="study-review-empty">暂无要点</div>`}
+            </div>
+          </div>
+          <div class="study-review-column">
+            <span class="tag muted">下一步</span>
+            <div class="study-review-list">
+              ${latestReport.nextActions.length
+                ? latestReport.nextActions
+                    .map((item) => `<div class="study-review-line">${escapeHtml(item)}</div>`)
+                    .join("")
+                : `<div class="study-review-empty">暂无建议</div>`}
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      reviewCurrent.innerHTML = `
+        <div class="study-review-empty-block">
+          <strong>还没有阶段回顾</strong>
+          <span>点击“立即总结”，就会把从开始使用到现在的学习时长、测验和专注情况整理出来。</span>
+        </div>
+      `;
+    }
+  }
+
+  if (reviewHistory) {
+    const history = studyModule.review.reports.slice(1, 6);
+    reviewHistory.innerHTML = history.length
+      ? history
+          .map(
+            (report) => `
+              <article class="study-review-history-item">
+                <div>
+                  <strong>${escapeHtml(report.title)}</strong>
+                  <small>${escapeHtml(formatStudyReviewDate(report.createdAt))} · ${escapeHtml(getStudyReviewModeLabel(report.mode))}</small>
+                </div>
+                <span>${escapeHtml(report.summary)}</span>
+              </article>
+            `,
+          )
+          .join("")
+      : `<div class="study-review-empty-block"><strong>暂无历史回顾</strong><span>生成第二次总结后，这里会显示前后对照。</span></div>`;
   }
 
   if (reviewPanel) {
@@ -10456,7 +10964,7 @@ function renderReportModule() {
             </button>
           `,
         )
-        .join("")}
+      .join("")}
     `;
   }
 
@@ -14215,6 +14723,14 @@ document.addEventListener("change", (event) => {
     rememberRagSettings();
   }
 
+  if (event.target.matches("#study-review-schedule")) {
+    const studyModule = getStudyModule();
+    studyModule.review = sanitizeStudyReview(studyModule.review);
+    studyModule.review.schedule = STUDY_REVIEW_SCHEDULES.has(event.target.value) ? event.target.value : "manual";
+    saveWorkspace();
+    renderReportModule();
+  }
+
   if (event.target.matches("#graph-chapter-filter, #graph-difficulty-filter, #graph-mastery-filter")) {
     const studyModule = getStudyModule();
     studyModule.graphFilters.chapter = document.querySelector("#graph-chapter-filter")?.value || "all";
@@ -14440,6 +14956,7 @@ document.addEventListener("click", (event) => {
   const quizAnswerButton = event.target.closest("[data-quiz-answer]");
   const quizMultiButton = event.target.closest("[data-quiz-multi]");
   const quizActionButton = event.target.closest("[data-quiz-action]");
+  const studyReviewButton = event.target.closest("[data-study-review-action]");
   const reportReviewButton = event.target.closest("[data-report-review-topic]");
   const studyActionButton = event.target.closest("[data-study-action]");
   const graphActionButton = event.target.closest("[data-graph-action]");
@@ -14653,6 +15170,12 @@ document.addEventListener("click", (event) => {
     if (action === "reset-focus") studyModule.mindmapFocusId = "";
     saveWorkspace();
     renderMindmapModule();
+    return;
+  }
+
+  if (studyReviewButton) {
+    const action = studyReviewButton.dataset.studyReviewAction;
+    if (action === "generate") generateStudyReview("manual");
     return;
   }
 

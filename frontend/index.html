@@ -1028,6 +1028,35 @@
                 <span>掌握度 58%</span>
               </div>
             </section>
+            <section class="panel study-review-panel" id="study-review-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="tag muted">阶段回顾</span>
+                  <h3>学习报告与自我总结</h3>
+                </div>
+                <div class="study-review-toolbar">
+                  <label class="study-review-schedule">
+                    <span>回顾频率</span>
+                    <select id="study-review-schedule" aria-label="学习回顾频率">
+                      <option value="manual">手动总结</option>
+                      <option value="daily">每天一次</option>
+                      <option value="weekly">每周一次</option>
+                    </select>
+                  </label>
+                  <button class="primary-action compact" data-study-review-action="generate">
+                    <i data-lucide="refresh-cw"></i>
+                    <span>立即总结</span>
+                  </button>
+                </div>
+              </div>
+              <div class="study-review-current" id="study-review-current">
+                <div class="study-review-empty-block">
+                  <strong>还没有阶段回顾</strong>
+                  <span>点击“立即总结”，会自动整理学习时长、资料、测验、错题和专注状态。</span>
+                </div>
+              </div>
+              <div class="study-review-history" id="study-review-history"></div>
+            </section>
             <section class="panel mistake-book-panel" id="mistake-book-panel">
               <div class="panel-heading">
                 <div>
