@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$RuntimeDir = Join-Path $env:LOCALAPPDATA "MSNeo4j"
+$RuntimeDir = Join-Path $env:LOCALAPPDATA "LongMindStudyNeo4j"
 
 $runtimeProcesses = Get-CimInstance Win32_Process |
   Where-Object { $_.CommandLine -and $_.CommandLine.Contains($RuntimeDir) }
@@ -18,5 +18,5 @@ if ($processes) {
 }
 
 if ($runtimeProcesses) {
-  Write-Host "MindStudy Neo4j runtime stopped."
+  Write-Host "LongMindStudy Neo4j runtime stopped."
 }

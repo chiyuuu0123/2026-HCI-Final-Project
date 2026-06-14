@@ -1,7 +1,8 @@
 {
-  "name": "mindstudy-desktop",
+  "name": "longmindstudy-longlong-multimodal-study-companion",
   "version": "0.1.0",
-  "description": "MindStudy desktop prototype for multimodal AI study companion.",
+  "productName": "LongMindStudy-龙龙多模态智能学习伙伴",
+  "description": "LongMindStudy-龙龙多模态智能学习伙伴 desktop prototype.",
   "main": "electron/main.js",
   "private": true,
   "scripts": {

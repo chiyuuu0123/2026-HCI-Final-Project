@@ -1,10 +1,12 @@
-const STORAGE_KEY = "mindstudy.courseLibrary.v1";
-const PLANNER_STORAGE_KEY = "mindstudy.planner.v1";
-const APP_ZOOM_STORAGE_KEY = "mindstudy.appZoom.v1";
+const STORAGE_KEY = "longmindstudy.courseLibrary.v1";
+const PLANNER_STORAGE_KEY = "longmindstudy.planner.v1";
+const PRODUCT_NAME = "LongMindStudy-龙龙多模态智能学习伙伴";
+const ONBOARDING_STORAGE_KEY = "longmindstudy.onboarding.v1";
+const APP_ZOOM_STORAGE_KEY = "longmindstudy.appZoom.v1";
 const APP_ZOOM_MIN = 0.75;
 const APP_ZOOM_MAX = 1.4;
 const APP_ZOOM_STEP = 0.05;
-const LONGLONG_POSITION_STORAGE_KEY = "mindstudy.longlongPosition.v1";
+const LONGLONG_POSITION_STORAGE_KEY = "longmindstudy.longlongPosition.v1";
 const LONGLONG_DEFAULT_SPRITE = "./assets/longlong-guide.gif";
 const LONGLONG_ANIMATION_SPRITES = {
   default: LONGLONG_DEFAULT_SPRITE,
@@ -78,9 +80,137 @@ const LONGLONG_COMPANION_IDLE_LINES = [
   "做完这一段就喝口水，龙龙给你记着。",
   "每只龙龙都一定会找到自己的小七哦！",
 ];
+const LONGLONG_ONBOARDING_STEPS = [
+  {
+    label: "学习工作台",
+    title: "先看这块大日历",
+    body: "工作台最重要的是这块大日历。龙龙会把重要日期、学习热度和当天安排放在这里，你一进来先看日历，就能知道今天该往哪儿走。",
+    voice: "第一站是学习工作台。先看这块大日历。龙龙会把重要日期、学习热度和当天安排放在这里，你一进来先看日历，就能知道今天该往哪儿走。",
+    audio: "./assets/longlong-voice/onboarding-01.wav",
+    features: ["重要日期", "学习热度", "今日安排"],
+    view: "dashboard",
+    target: ".dashboard-calendar-panel",
+  },
+  {
+    label: "资料阅读",
+    title: "把课程资料变成可学习的现场",
+    body: "你可以导入 PDF 和 Markdown，阅读、批注、摘录重点，也可以在双栏里一边看原文一边让 AI 分析、翻译或整理。龙龙会尽量把厚厚的资料拆成能入口的小块。",
+    voice: "第二站是资料阅读。你可以导入 PDF 和 Markdown，阅读、批注、摘录重点，也可以一边看原文一边让 AI 分析、翻译或整理。龙龙会把厚厚的资料拆成能入口的小块。",
+    audio: "./assets/longlong-voice/onboarding-02.wav",
+    features: ["PDF 批注", "Markdown 阅读", "双栏 AI 辅助"],
+    view: "reader",
+    target: ".doc-toolbar",
+  },
+  {
+    label: "资料问答",
+    title: "围绕自己的资料直接提问",
+    body: "RAG 问答负责围绕课程资料回答问题。先让系统学习当前资料，再把你的问题丢给龙龙，它会尽量把依据和入口讲清楚。",
+    voice: "第三站是资料问答。RAG 问答会围绕课程资料回答问题。先让系统学习当前资料，再把你的问题丢给龙龙，它会尽量把依据和入口讲清楚。",
+    audio: "./assets/longlong-voice/onboarding-03.wav",
+    features: ["资料入库", "课程问答", "来源追踪"],
+    view: "rag",
+    target: ".rag-question-form",
+  },
+  {
+    label: "阿龙在 Coding",
+    title: "把题目和代码交给阿龙",
+    body: "阿龙在 Coding 可以分析代码复杂度、可行性、边界风险和优化方向。只粘贴题目也可以，它会直接给出一版推荐解法。",
+    voice: "第四站是阿龙在 Coding。你可以把题目和代码交给阿龙，它会分析复杂度、可行性、边界风险和优化方向。只粘贴题目也可以，阿龙会给出一版推荐解法。",
+    audio: "./assets/longlong-voice/onboarding-04.wav",
+    features: ["题目求解", "代码分析", "优化建议"],
+    view: "coding",
+    target: ".coding-form",
+  },
+  {
+    label: "科学计算器",
+    title: "像按卡西欧一样快速算",
+    body: "科学计算器保留了标准按键、角度模式、Ans 和常用函数。遇到公式、三角函数、指数对数或阶乘计算，可以直接在这里完成。",
+    voice: "第五站是科学计算器。这里像按卡西欧一样使用，保留标准按键、角度模式、Ans 和常用函数。公式、三角函数、指数对数都可以在这里算。",
+    audio: "./assets/longlong-voice/onboarding-05.wav",
+    features: ["标准按键", "函数计算", "Ans 结果"],
+    view: "calculator",
+    target: ".calculator-device",
+  },
+  {
+    label: "TodoList",
+    title: "把今天要做的事排成队",
+    body: "TodoList 可以记录学习任务、日程和优先级。龙龙会记住你今天学了多久，适时提醒你收束下一步，也会在你离开主窗口时变成桌宠继续陪着。",
+    voice: "第六站是 TodoList。这里可以记录学习任务、日程和优先级。龙龙会记住你今天学了多久，适时提醒你收束下一步，也会在你离开主窗口时变成桌宠继续陪着。",
+    audio: "./assets/longlong-voice/onboarding-06.wav",
+    features: ["任务队列", "优先级", "学习计时"],
+    view: "planner",
+    target: ".planner-toolbar",
+  },
+  {
+    label: "知识结构",
+    title: "把概念关系摊开来看",
+    body: "知识图谱会把概念和关系铺开，适合找前置知识、薄弱点和章节之间的路。看不懂一整片也没关系，先顺着一条关系线走。",
+    voice: "第七站是知识图谱。知识图谱会把概念和关系铺开，适合找前置知识、薄弱点和章节之间的路。看不懂一整片也没关系，先顺着一条关系线走。",
+    audio: "./assets/longlong-voice/onboarding-07.wav",
+    features: ["概念节点", "关系路径", "Neo4j 存储"],
+    view: "map",
+    target: ".graph-query-row",
+  },
+  {
+    label: "思维导图",
+    title: "把知识整理成层级分支",
+    body: "思维导图适合复习前快速拉出章节结构。你可以聚焦某个主题、展开或收起分支，也可以把当前导图导出成文本。",
+    voice: "第八站是思维导图。它适合复习前快速拉出章节结构。你可以聚焦某个主题、展开或收起分支，也可以把当前导图导出成文本。",
+    audio: "./assets/longlong-voice/onboarding-08.wav",
+    features: ["主题聚焦", "分支展开", "导图导出"],
+    view: "mindmap",
+    target: ".mindmap-toolbar",
+  },
+  {
+    label: "练习自测",
+    title: "让复习有回声",
+    body: "自动测验会根据资料生成题目，你可以选择练习模式、范围和难度。做错的内容会进入后续复盘，让复习不再只靠感觉。",
+    voice: "第九站是自动测验。系统会根据资料生成题目，你可以选择练习模式、范围和难度。做错的内容会进入后续复盘，让复习不再只靠感觉。",
+    audio: "./assets/longlong-voice/onboarding-09.wav",
+    features: ["模式选择", "范围难度", "错题沉淀"],
+    view: "quiz",
+    target: ".quiz-generator-bar",
+  },
+  {
+    label: "学习报告",
+    title: "把学习结果沉淀下来",
+    body: "学习报告会汇总学习时长、正确率、错题和推荐复习内容。复盘时先看这里，龙龙会帮你把下一轮学习重点收拢出来。",
+    voice: "第十站是学习报告。这里会汇总学习时长、正确率、错题和推荐复习内容。复盘时先看这里，龙龙会帮你把下一轮学习重点收拢出来。",
+    audio: "./assets/longlong-voice/onboarding-10.wav",
+    features: ["学习时长", "错题复盘", "推荐复习"],
+    view: "report",
+    target: ".report-summary",
+  },
+  {
+    label: "多模态状态",
+    title: "看见状态，再调节节奏",
+    body: "状态与音乐页不会自动打开摄像头。需要时你可以手动开启，龙龙再根据情绪、光线和播放历史推荐音乐；点阵识别也可以随时关闭。",
+    voice: "第十一站是状态与音乐。这个页面不会自动打开摄像头。需要时你可以手动开启，龙龙再根据情绪、光线和播放历史推荐音乐；点阵识别也可以随时关闭。",
+    audio: "./assets/longlong-voice/onboarding-11.wav",
+    features: ["手动开摄像头", "情绪识别", "状态音乐联动"],
+    view: "focus",
+    target: ".camera-controls",
+  },
+  {
+    label: "龙龙聊天",
+    title: "有问题就叫龙龙",
+    body: "主窗口和桌宠都能和龙龙聊天。摸摸、提醒、语录、送礼和记忆库会统一到龙龙的人设里。龙龙不保证替你学完，但龙龙会认真陪你开工。",
+    voice: "最后一站是龙龙聊天。主窗口和桌宠都能和龙龙聊天。摸摸、提醒、语录、送礼和记忆库会统一到龙龙的人设里。龙龙不保证替你学完，但龙龙会认真陪你开工。",
+    audio: "./assets/longlong-voice/onboarding-12.wav",
+    features: ["统一聊天", "记忆库", "摸摸与语音"],
+    view: "dashboard",
+    target: "#longlong-assistant",
+  },
+];
+const LONGLONG_ONBOARDING_AUDIO = new Map(
+  LONGLONG_ONBOARDING_STEPS
+    .filter((step) => step.voice && step.audio)
+    .map((step) => [step.voice, step.audio]),
+);
 const LONGLONG_FIXED_AUDIO = new Map([
   [LONGLONG_THINKING_LINE, "./assets/longlong-voice/ai-thinking.wav"],
   [LONGLONG_ANSWER_LINE, "./assets/longlong-voice/ai-answer.wav"],
+  ...LONGLONG_ONBOARDING_AUDIO,
   ...LONGLONG_POKE_AUDIO,
   ...LONGLONG_TIP_AUDIO,
   ...LONGLONG_QUOTE_AUDIO,
@@ -205,7 +335,7 @@ const readerPanels = {
   insight: document.querySelector(".insight-panel"),
 };
 
-const READER_LAYOUT_STORAGE_KEY = "mindstudy.readerLayout.v1";
+const READER_LAYOUT_STORAGE_KEY = "longmindstudy.readerLayout.v1";
 const runtimeFiles = new Map();
 const documentState = {
   current: null,
@@ -488,6 +618,8 @@ let longlongBondNoticeTimer = null;
 let longlongCoinSyncKey = "";
 let longlongBubbleTimer = null;
 let longlongActionsHideTimer = null;
+let onboardingStepIndex = 0;
+let onboardingVoiceTimer = null;
 let longlongChatSnapshot = { history: [], memories: [], memoryCount: 0, historyCount: 0 };
 let longlongChatRequestInFlight = false;
 const longlongDragState = {
@@ -762,6 +894,12 @@ function getLonglongElements() {
     actions: document.querySelector(".longlong-actions"),
     bubble: document.querySelector("#longlong-bubble"),
     studyTimePill: document.querySelector("#longlong-time-pill"),
+    nowCard: document.querySelector("#longlong-now-card"),
+    nowTrack: document.querySelector("#longlong-now-track"),
+    nowMood: document.querySelector("#longlong-now-mood"),
+    nowPrev: document.querySelector("#longlong-music-prev"),
+    nowToggle: document.querySelector("#longlong-music-toggle"),
+    nowNext: document.querySelector("#longlong-music-next"),
     coins: document.querySelector("#longlong-coins"),
     chatPopover: document.querySelector("#longlong-chat-popover"),
     chatList: document.querySelector("#longlong-chat-list"),
@@ -782,6 +920,241 @@ function getLonglongElements() {
 
 function pickLonglongItem(items = []) {
   return items[Math.floor(Math.random() * items.length)] || "";
+}
+
+function getOnboardingElements() {
+  return {
+    root: document.querySelector("#onboarding-tour"),
+    card: document.querySelector(".onboarding-card"),
+    spotlight: document.querySelector("#onboarding-spotlight"),
+    stepLabel: document.querySelector("#onboarding-step-label"),
+    title: document.querySelector("#onboarding-title"),
+    body: document.querySelector("#onboarding-body"),
+    features: document.querySelector("#onboarding-feature-list"),
+    progress: document.querySelector("#onboarding-progress-bar"),
+    counter: document.querySelector("#onboarding-counter"),
+    prevButton: document.querySelector('[data-onboarding-action="prev"]'),
+    nextButton: document.querySelector("#onboarding-next"),
+  };
+}
+
+function hasSeenOnboardingTour() {
+  try {
+    return localStorage.getItem(ONBOARDING_STORAGE_KEY) === "done";
+  } catch (error) {
+    return false;
+  }
+}
+
+function markOnboardingTourSeen() {
+  try {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, "done");
+  } catch (error) {
+    // 本地存储不可用时，本次会话仍然可以完整走完导览。
+  }
+}
+
+function getCurrentOnboardingStep() {
+  return LONGLONG_ONBOARDING_STEPS[onboardingStepIndex] || LONGLONG_ONBOARDING_STEPS[0];
+}
+
+function clampNumber(value, min, max) {
+  if (max < min) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function getOnboardingTarget(step = getCurrentOnboardingStep()) {
+  if (!step?.target) return document.querySelector("[data-view-panel='dashboard'] .hero-panel");
+  return document.querySelector(step.target);
+}
+
+function updateOnboardingSpotlight() {
+  const elements = getOnboardingElements();
+  if (!elements.root || elements.root.hidden || !elements.card || !elements.spotlight) return;
+
+  const target = getOnboardingTarget();
+  if (!target) {
+    elements.spotlight.hidden = true;
+    elements.card.style.left = "50%";
+    elements.card.style.top = "50%";
+    elements.card.style.transform = "translate(-50%, -50%)";
+    return;
+  }
+
+  elements.spotlight.hidden = false;
+  const rect = target.getBoundingClientRect();
+  const margin = 8;
+  const spotlightWidth = Math.min(window.innerWidth - 20, rect.width + margin * 2);
+  const spotlightHeight = Math.min(window.innerHeight - 20, rect.height + margin * 2);
+  const spotlightLeft = clampNumber(rect.left - margin, 10, window.innerWidth - spotlightWidth - 10);
+  const spotlightTop = clampNumber(rect.top - margin, 10, window.innerHeight - spotlightHeight - 10);
+  elements.spotlight.style.left = `${spotlightLeft}px`;
+  elements.spotlight.style.top = `${spotlightTop}px`;
+  elements.spotlight.style.width = `${spotlightWidth}px`;
+  elements.spotlight.style.height = `${spotlightHeight}px`;
+  elements.spotlight.style.transform = "none";
+
+  const cardRect = elements.card.getBoundingClientRect();
+  const cardWidth = cardRect.width || 430;
+  const cardHeight = cardRect.height || 260;
+  const gap = 18;
+  const safe = 14;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const placements = [
+    {
+      side: "right",
+      area: Math.max(0, viewportWidth - rect.right - gap) * viewportHeight,
+      fits: rect.right + gap + cardWidth <= viewportWidth - safe,
+      left: rect.right + gap,
+      top: rect.top + rect.height / 2 - cardHeight / 2,
+    },
+    {
+      side: "left",
+      area: Math.max(0, rect.left - gap) * viewportHeight,
+      fits: rect.left - gap - cardWidth >= safe,
+      left: rect.left - cardWidth - gap,
+      top: rect.top + rect.height / 2 - cardHeight / 2,
+    },
+    {
+      side: "bottom",
+      area: viewportWidth * Math.max(0, viewportHeight - rect.bottom - gap),
+      fits: rect.bottom + gap + cardHeight <= viewportHeight - safe,
+      left: rect.left + rect.width / 2 - cardWidth / 2,
+      top: rect.bottom + gap,
+    },
+    {
+      side: "top",
+      area: viewportWidth * Math.max(0, rect.top - gap),
+      fits: rect.top - gap - cardHeight >= safe,
+      left: rect.left + rect.width / 2 - cardWidth / 2,
+      top: rect.top - cardHeight - gap,
+    },
+  ];
+  const placement = placements.find((item) => item.fits) || placements.sort((a, b) => b.area - a.area)[0];
+  let left = placement.left;
+  let top = placement.top;
+  if (viewportWidth < 760 && placement.side !== "top") {
+    left = (viewportWidth - cardWidth) / 2;
+  }
+  left = clampNumber(left, safe, viewportWidth - cardWidth - safe);
+  top = clampNumber(top, safe, viewportHeight - cardHeight - safe);
+
+  elements.card.style.left = `${left}px`;
+  elements.card.style.top = `${top}px`;
+  elements.card.style.transform = "none";
+}
+
+function focusOnboardingStepTarget() {
+  const step = getCurrentOnboardingStep();
+  if (step?.view) showView(step.view);
+  window.requestAnimationFrame(() => {
+    const target = getOnboardingTarget(step);
+    target?.scrollIntoView?.({ block: "center", inline: "center", behavior: "smooth" });
+    window.setTimeout(updateOnboardingSpotlight, 220);
+  });
+}
+
+function renderOnboardingTour({ speak = false } = {}) {
+  const elements = getOnboardingElements();
+  const step = getCurrentOnboardingStep();
+  if (!elements.root || !step) return;
+
+  focusOnboardingStepTarget();
+
+  const total = LONGLONG_ONBOARDING_STEPS.length;
+  if (elements.stepLabel) elements.stepLabel.textContent = step.label;
+  if (elements.title) elements.title.textContent = step.title;
+  if (elements.body) elements.body.textContent = step.body;
+  if (elements.counter) elements.counter.textContent = `${onboardingStepIndex + 1} / ${total}`;
+  if (elements.progress) elements.progress.style.width = `${((onboardingStepIndex + 1) / total) * 100}%`;
+  if (elements.prevButton) elements.prevButton.disabled = onboardingStepIndex === 0;
+  if (elements.nextButton) {
+    const isLast = onboardingStepIndex === total - 1;
+    const label = document.createElement("span");
+    label.textContent = isLast ? "开始使用" : "下一步";
+    const icon = document.createElement("i");
+    icon.setAttribute("data-lucide", isLast ? "check" : "arrow-right");
+    elements.nextButton.replaceChildren(label, icon);
+  }
+
+  if (elements.features) {
+    elements.features.replaceChildren();
+    (step.features || []).forEach((feature) => {
+      const chip = document.createElement("span");
+      chip.textContent = feature;
+      elements.features.appendChild(chip);
+    });
+  }
+
+  window.lucide?.createIcons();
+  if (speak) playOnboardingVoice();
+}
+
+function playOnboardingVoice() {
+  const step = getCurrentOnboardingStep();
+  if (!step) return;
+  window.clearTimeout(onboardingVoiceTimer);
+  onboardingVoiceTimer = window.setTimeout(() => {
+    playLonglongFixedLine(step.voice || step.body);
+  }, 160);
+}
+
+function openOnboardingTour({ force = false } = {}) {
+  const elements = getOnboardingElements();
+  if (!elements.root) return;
+  if (!force && hasSeenOnboardingTour()) return;
+
+  onboardingStepIndex = 0;
+  elements.root.hidden = false;
+  document.body.classList.add("onboarding-open");
+  renderOnboardingTour({ speak: true });
+}
+
+function closeOnboardingTour({ remember = true } = {}) {
+  const elements = getOnboardingElements();
+  if (!elements.root) return;
+
+  elements.root.hidden = true;
+  document.body.classList.remove("onboarding-open");
+  window.clearTimeout(onboardingVoiceTimer);
+  if (longlongFixedAudio) {
+    longlongFixedAudio.pause();
+    longlongFixedAudio.src = "";
+  }
+  if (remember) markOnboardingTourSeen();
+}
+
+function handleOnboardingAction(action) {
+  if (action === "start") {
+    openOnboardingTour({ force: true });
+    return;
+  }
+
+  if (action === "skip") {
+    closeOnboardingTour({ remember: true });
+    return;
+  }
+
+  if (action === "replay") {
+    playOnboardingVoice();
+    return;
+  }
+
+  if (action === "prev") {
+    onboardingStepIndex = Math.max(0, onboardingStepIndex - 1);
+    renderOnboardingTour({ speak: true });
+    return;
+  }
+
+  if (action === "next") {
+    if (onboardingStepIndex >= LONGLONG_ONBOARDING_STEPS.length - 1) {
+      closeOnboardingTour({ remember: true });
+      return;
+    }
+    onboardingStepIndex += 1;
+    renderOnboardingTour({ speak: true });
+  }
 }
 
 function setLonglongBubbleText(text, { temporary = true } = {}) {
@@ -1412,6 +1785,7 @@ function getLonglongMoveSprite(deltaX, deltaY) {
 }
 
 function beginLonglongDrag(event, mode = "pointer") {
+  if (event.target.closest?.(".longlong-now-controls button")) return;
   const avatar = event.target.closest?.(".longlong-avatar");
   const root = getLonglongElements().root;
   if (!avatar || !root) return;
@@ -1799,6 +2173,7 @@ function syncLonglongAssistant() {
   if (elements.moodDetail) elements.moodDetail.textContent = longlongState.moodDetail;
   renderStudyTimerSnapshot();
   renderLonglongBondState();
+  renderLonglongMusicStatus();
   if (elements.music) elements.music.textContent = longlongState.music;
   setAiMarkdownContent(elements.ragOutput, longlongState.ragAnswer);
   if (elements.reminders) {
@@ -1817,8 +2192,12 @@ function syncLonglongAssistant() {
 
   const snapshot = {
     mood: longlongState.mood,
+    moodDetail: musicPlayerState.currentEmotion?.detail || longlongState.moodDetail,
     reminder: getLonglongCompanionBubbleText(),
-    music: longlongState.music,
+    music: getCurrentMusicStatusText(),
+    musicPlaying: musicPlayerState.playing,
+    musicCanControl: Boolean(getCurrentMusicTrack()),
+    musicCanSkip: (getCurrentMusicRecommendation().tracks || []).length > 1,
     studyTime: studyTimerSnapshot.formatted,
     studySeconds: studyTimerSnapshot.seconds,
   };
@@ -2978,7 +3357,7 @@ async function getAiStatus() {
       source: "missing",
       model: "",
       baseUrl: "",
-      error: "当前环境没有 MindStudy AI 接口。",
+      error: "当前环境没有 LongMindStudy AI 接口。",
     };
   }
 
@@ -4363,6 +4742,8 @@ function updateMusicEmotionState(emotion = {}) {
     detail: nextDetail,
   };
   if (!musicPlayerState.emotionStatStartedAt) musicPlayerState.emotionStatStartedAt = Date.now();
+  renderLonglongMusicStatus();
+  syncLonglongAssistant();
 }
 
 function resetMusicEmotionStats() {
@@ -4497,7 +4878,7 @@ async function requestAiNextMusicTrackIndex(emotion = musicPlayerState.currentEm
       .map((track) => `${track.title}-${track.artist || ""}`);
     const response = await window.mindStudy.ai.askMusicRecommendation({
       question: [
-        "你是 MindStudy 的音乐推荐助手。请根据当前学习状态，从固定歌单中选择下一首歌。",
+        "你是 LongMindStudy 的音乐推荐助手。请根据当前学习状态，从固定歌单中选择下一首歌。",
         "只能返回 JSON，不要解释，不要编造歌曲。",
         "返回格式：{\"index\":数字,\"reason\":\"一句话原因\"}。",
         "",
@@ -4556,6 +4937,44 @@ function getCurrentMusicTrack() {
   if (!recommendation.tracks.length) return null;
   const index = Math.max(0, Math.min(musicPlayerState.trackIndex, recommendation.tracks.length - 1));
   return recommendation.tracks[index] || recommendation.tracks[0];
+}
+
+function getCurrentMusicStatusText() {
+  const track = getCurrentMusicTrack();
+  if (!track) return "等待音乐";
+  const artist = track.artist ? ` - ${track.artist}` : "";
+  return `${track.title}${artist}`;
+}
+
+function setLonglongMusicToggleIcon(isPlaying) {
+  const elements = getLonglongElements();
+  if (!elements.nowToggle) return;
+  if (elements.nowToggle.dataset.playing === String(isPlaying)) return;
+  elements.nowToggle.dataset.playing = String(isPlaying);
+  elements.nowToggle.replaceChildren();
+  const icon = document.createElement("i");
+  icon.setAttribute("data-lucide", isPlaying ? "pause" : "play");
+  elements.nowToggle.appendChild(icon);
+  elements.nowToggle.setAttribute("aria-pressed", isPlaying ? "true" : "false");
+  elements.nowToggle.title = isPlaying ? "暂停音乐" : "播放音乐";
+  window.lucide?.createIcons();
+}
+
+function renderLonglongMusicStatus() {
+  const elements = getLonglongElements();
+  const recommendation = getCurrentMusicRecommendation();
+  const track = getCurrentMusicTrack();
+  const emotion = musicPlayerState.currentEmotion || {};
+  const moodText = emotion.label
+    ? `${emotion.label}${emotion.detail ? `：${emotion.detail}` : ""}`
+    : "等待状态识别";
+
+  if (elements.nowTrack) elements.nowTrack.textContent = getCurrentMusicStatusText();
+  if (elements.nowMood) elements.nowMood.textContent = moodText;
+  if (elements.nowPrev) elements.nowPrev.disabled = recommendation.tracks.length <= 1;
+  if (elements.nowNext) elements.nowNext.disabled = recommendation.tracks.length <= 1;
+  if (elements.nowToggle) elements.nowToggle.disabled = !track;
+  setLonglongMusicToggleIcon(musicPlayerState.playing);
 }
 
 function formatMusicTime(seconds) {
@@ -4632,6 +5051,8 @@ function renderMusicRecommendation(recommendation = getCurrentMusicRecommendatio
   setMusicPlayIcon(musicPlayerState.playing);
   renderMusicPlaylist(recommendation);
   updateMusicTimeline();
+  renderLonglongMusicStatus();
+  syncLonglongAssistant();
 }
 
 function loadCurrentMusicTrack({ keepPlaying = false } = {}) {
@@ -4661,10 +5082,18 @@ function loadCurrentMusicTrack({ keepPlaying = false } = {}) {
 function setMusicRecommendation(recommendation, { autoPlayIfPlaying = true } = {}) {
   if (!recommendation?.id) return;
   if (musicPlayerState.recommendationId !== recommendation.id) {
+    const keepPlaying = autoPlayIfPlaying && musicPlayerState.playing;
     musicPlayerState.recommendationId = recommendation.id;
-    renderMusicRecommendation();
+    const emotionMatchedIndex = pickLocalNextMusicTrackIndex({
+      id: recommendation.id,
+      label: recommendation.title,
+      detail: recommendation.detail,
+    });
+    if (emotionMatchedIndex >= 0) musicPlayerState.trackIndex = emotionMatchedIndex;
+    loadCurrentMusicTrack({ keepPlaying });
     return;
   }
+  renderLonglongMusicStatus();
 }
 
 function playCurrentMusic() {
@@ -4731,6 +5160,20 @@ function selectEmotionMusicTrack(index) {
   if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= recommendation.tracks.length) return;
   musicPlayerState.trackIndex = nextIndex;
   loadCurrentMusicTrack({ keepPlaying: musicPlayerState.playing });
+}
+
+function handleEmotionMusicControl(action) {
+  if (action === "prev") {
+    shiftEmotionMusicTrack(-1);
+    return;
+  }
+  if (action === "next") {
+    shiftEmotionMusicTrack(1);
+    return;
+  }
+  if (action === "toggle") {
+    toggleEmotionMusicPlayback();
+  }
 }
 
 function initEmotionMusicPlayer() {
@@ -4838,7 +5281,7 @@ async function loadGestureRuntimeConfig() {
     gestureRuntimeConfig.emotionRelaxedBrowMax = readEnvFloat(env, "EMOTION_RELAXED_BROW_MAX", 0.22, 0, 1);
     gestureRuntimeConfig.emotionRelaxedEyeClosedMax = readEnvFloat(env, "EMOTION_RELAXED_EYE_CLOSED_MAX", 0.35, 0, 1);
     gestureRuntimeConfig.emotionRelaxedJawOpenMax = readEnvFloat(env, "EMOTION_RELAXED_JAW_OPEN_MAX", 0.28, 0, 1);
-    window.MindStudyVision?.configure?.({
+    window.LongMindStudyVision?.configure?.({
       frameIntervalMs: gestureRuntimeConfig.visionFrameIntervalMs,
       gestureVoteWindowMs: gestureRuntimeConfig.gestureVoteWindowMs,
       emotionVoteWindowMs: gestureRuntimeConfig.emotionVoteWindowMs,
@@ -5185,11 +5628,11 @@ function handleMouseControlGesture(gesture) {
 }
 
 async function updateVisionRecognition(video) {
-  if (!window.MindStudyVision?.analyzeFrame || cameraState.visionInFlight) return;
+  if (!window.LongMindStudyVision?.analyzeFrame || cameraState.visionInFlight) return;
 
   cameraState.visionInFlight = true;
   try {
-    const result = await window.MindStudyVision.analyzeFrame(video, {
+    const result = await window.LongMindStudyVision.analyzeFrame(video, {
       brightness: cameraState.lastBrightness,
     });
     if (result) {
@@ -5260,8 +5703,8 @@ async function startCamera() {
 
     await loadGestureRuntimeConfig();
     setCameraStatus("active");
-    if (window.MindStudyVision?.warmup) {
-      window.MindStudyVision.warmup()
+    if (window.LongMindStudyVision?.warmup) {
+      window.LongMindStudyVision.warmup()
         .then(() => {
           cameraState.visionReady = true;
           const currentUi = getCameraUi();
@@ -6813,7 +7256,7 @@ function showView(viewName) {
     panel.classList.toggle("active", panel.dataset.viewPanel === viewName);
   });
 
-  title.textContent = viewTitles[viewName] || "MindStudy";
+  title.textContent = viewTitles[viewName] || PRODUCT_NAME;
 
   if (viewName === "reader") {
     renderDocumentLibrary();
@@ -11048,7 +11491,7 @@ function buildStudyGenerationPrompt(documents) {
   const titles = documents.map((documentMeta) => documentMeta.title).join("、") || "课程资料";
   return [
     "最高优先级：本任务只生成知识图谱 graph 和 recommendations。即使后续历史提示提到自动测验，也必须忽略；不要输出 quiz、questions、answers、题库、解析或测验相关字段。",
-    "请基于课程资料生成 MindStudy 知识图谱数据。",
+    "请基于课程资料生成 LongMindStudy 知识图谱数据。",
     "必须返回严格 JSON，不要 Markdown，不要解释。",
     "只抽取正文里的课程概念、原理、方法、模型、术语、流程和约束。",
     "禁止把 PDF 文件名、书名、作者、学校、学院、出版社、版次、ISBN、CIP、版权声明、页码、目录项、封面/封底信息、人名、机构名、本书说明、网址、参考文献、习题说明当作知识点。",
@@ -12260,7 +12703,7 @@ function showReaderError(message) {
         <h3>检查文件</h3>
       </div>
     </div>
-    <p class="summary-text">如果文件被移动或删除，请重新导入一次。MindStudy 保存的是本机路径，不会复制原文件。</p>
+    <p class="summary-text">如果文件被移动或删除，请重新导入一次。LongMindStudy 保存的是本机路径，不会复制原文件。</p>
   `;
 }
 
@@ -13312,7 +13755,7 @@ async function updateAiReadingOutput(mode) {
 
 function buildDocumentMarkdown() {
   const doc = documentState.current;
-  if (!doc) return "# MindStudy 学习笔记\n\n当前没有导入资料。\n";
+  if (!doc) return "# LongMindStudy 学习笔记\n\n当前没有导入资料。\n";
 
   const notes = document.querySelector("#document-notes")?.value || doc.meta.notes || "";
 
@@ -14102,8 +14545,8 @@ async function exportAnnotatedPdf() {
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const { width } = firstPage.getSize();
   const safeNote = doc.meta.notes
-    ? `MindStudy annotated copy. Note length: ${doc.meta.notes.length} chars.`
-    : "MindStudy annotated copy.";
+    ? `LongMindStudy annotated copy. Note length: ${doc.meta.notes.length} chars.`
+    : "LongMindStudy annotated copy.";
 
   firstPage.drawText(safeNote, {
     x: 36,
@@ -14117,12 +14560,12 @@ async function exportAnnotatedPdf() {
 
   const editedBytes = await pdfDoc.save();
   const baseName = doc.meta.name.replace(/\.pdf$/i, "");
-  await saveBinaryFile(`${baseName}-MindStudy-annotated.pdf`, editedBytes, [
+  await saveBinaryFile(`${baseName}-LongMindStudy-annotated.pdf`, editedBytes, [
     { name: "PDF", extensions: ["pdf"] },
   ]);
 
   if (doc.meta.notes) {
-    await saveTextFile(`${baseName}-MindStudy-notes.md`, buildDocumentMarkdown());
+    await saveTextFile(`${baseName}-LongMindStudy-notes.md`, buildDocumentMarkdown());
   }
 }
 
@@ -14304,7 +14747,7 @@ async function exportEditedPptx() {
 
   const editedBytes = await zip.generateAsync({ type: "uint8array" });
   const baseName = doc.meta.name.replace(/\.pptx$/i, "");
-  await saveBinaryFile(`${baseName}-MindStudy-edited.pptx`, editedBytes, [
+  await saveBinaryFile(`${baseName}-LongMindStudy-edited.pptx`, editedBytes, [
     { name: "PowerPoint", extensions: ["pptx"] },
   ]);
 }
@@ -14357,7 +14800,7 @@ async function saveMarkdownCopy() {
   doc.meta.editedText = content;
   saveWorkspace();
   const baseName = doc.meta.name.replace(/\.md$/i, "");
-  await saveTextFile(`${baseName}-MindStudy-edited.md`, content);
+  await saveTextFile(`${baseName}-LongMindStudy-edited.md`, content);
 }
 
 function closeModal() {
@@ -14963,7 +15406,13 @@ document.addEventListener("click", (event) => {
   const graphZoomButton = event.target.closest("[data-graph-zoom]");
   const mistakeReviewButton = event.target.closest("[data-mistake-review]");
   const musicTrackButton = event.target.closest("[data-music-track-index]");
+  const onboardingButton = event.target.closest("[data-onboarding-action]");
   const actionButton = event.target.closest("button");
+
+  if (onboardingButton) {
+    handleOnboardingAction(onboardingButton.dataset.onboardingAction);
+    return;
+  }
 
   if (musicTrackButton) {
     selectEmotionMusicTrack(Number(musicTrackButton.dataset.musicTrackIndex));
@@ -14972,6 +15421,21 @@ document.addEventListener("click", (event) => {
 
   if (actionButton?.id === "music-import") {
     getMusicUi().importInput?.click();
+    return;
+  }
+
+  if (actionButton?.id === "longlong-music-prev") {
+    shiftEmotionMusicTrack(-1);
+    return;
+  }
+
+  if (actionButton?.id === "longlong-music-next") {
+    shiftEmotionMusicTrack(1);
+    return;
+  }
+
+  if (actionButton?.id === "longlong-music-toggle") {
+    toggleEmotionMusicPlayback();
     return;
   }
 
@@ -15385,10 +15849,11 @@ window.addEventListener("DOMContentLoaded", () => {
   window.lucide?.createIcons();
   syncAiStatusButtons();
   syncLonglongAssistant();
+  window.mindStudy?.onEmotionMusicControl?.(handleEmotionMusicControl);
+  window.setTimeout(() => openOnboardingTour(), 520);
   refreshNeo4jStatus();
   scheduleLonglongSleep();
-  showView("focus");
-  startCamera();
+  showView("dashboard");
 
   window.mindStudy?.getAppInfo?.().then((info) => {
     document.body.dataset.platform = info.platform;
@@ -15413,6 +15878,7 @@ document.addEventListener("input", (event) => {
 window.addEventListener("resize", () => {
   applyLonglongPosition();
   positionOpenLonglongPopovers();
+  updateOnboardingSpotlight();
   rerenderCurrentPdfAfterReaderResize(220);
 });
 window.addEventListener("beforeunload", stopCamera);

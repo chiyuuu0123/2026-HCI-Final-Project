@@ -21,7 +21,7 @@ Do not write the key into source files.
 
 Recommended for normal use:
 
-1. Open MindStudy.
+1. Open LongMindStudy.
 2. Click the `API Key` button in the AI assistant panel.
 3. Paste the DashScope / Qwen key and save it.
 
@@ -29,7 +29,7 @@ The key is saved in Electron's user data directory, not in this Git repository.
 Current local config file:
 
 ```text
-%APPDATA%\mindstudy-desktop\qwen-config.json
+%APPDATA%\longmindstudy-desktop\qwen-config.json
 ```
 
 Default model choices:
@@ -167,4 +167,3 @@ the same client, so the calling surface stays small.
 OCR can be slow on first use because Tesseract language data may need to be
 downloaded and cached. Page-range learning is the recommended path for large
 scanned PDFs.
-

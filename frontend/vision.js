@@ -510,7 +510,7 @@ function configure(options = {}) {
   return { ...visionRuntimeConfig, emotion: { ...emotionRuntimeConfig } };
 }
 
-window.MindStudyVision = {
+window.LongMindStudyVision = {
   analyzeFrame,
   configure,
   warmup,

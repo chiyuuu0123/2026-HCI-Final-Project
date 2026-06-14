@@ -27,7 +27,7 @@ function getNeo4jConfig() {
   return {
     uri: process.env.NEO4J_URI || localEnv.NEO4J_URI || "bolt://localhost:7687",
     username: process.env.NEO4J_USERNAME || localEnv.NEO4J_USERNAME || "neo4j",
-    password: process.env.NEO4J_PASSWORD || localEnv.NEO4J_PASSWORD || "mindstudy-local-neo4j",
+    password: process.env.NEO4J_PASSWORD || localEnv.NEO4J_PASSWORD || "longmindstudy-local-neo4j",
     browserUrl: process.env.NEO4J_BROWSER_URL || localEnv.NEO4J_BROWSER_URL || "http://localhost:7474",
   };
 }

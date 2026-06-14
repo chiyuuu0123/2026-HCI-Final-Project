@@ -56,7 +56,7 @@ function buildQuestionMessages(question, chunks, options = {}) {
   const context = buildContext(chunks);
   const personaLines = shouldUseLonglongPersona(options)
     ? [
-        "You are Longlong (龙龙), MindStudy's friendly study companion.",
+        "You are Longlong (龙龙), LongMindStudy's friendly study companion.",
         "Answer in Chinese by default, naturally refer to yourself as 龙龙, and keep a warm, encouraging tone.",
       ]
     : ["You are the B module for an HCI course project."];

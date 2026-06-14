@@ -22,7 +22,7 @@ if (-not $Endpoint.EndsWith("/tts")) {
   $Endpoint = $Endpoint.TrimEnd("/") + "/tts"
 }
 
-$configDir = Join-Path $env:APPDATA "mindstudy-desktop"
+$configDir = Join-Path $env:APPDATA "longmindstudy-desktop"
 $configPath = Join-Path $configDir "longlong-voice-config.json"
 New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 

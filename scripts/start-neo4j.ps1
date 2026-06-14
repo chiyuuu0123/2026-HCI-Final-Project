@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $LocalDir = Join-Path $Root ".local"
 $EnvFile = Join-Path $LocalDir "neo4j.env"
-$RuntimeDir = Join-Path $env:LOCALAPPDATA "MSNeo4j"
+$RuntimeDir = Join-Path $env:LOCALAPPDATA "LongMindStudyNeo4j"
 $RuntimeJavaHome = Join-Path $RuntimeDir "java17"
 
 function Get-Neo4jDesktopPath {
@@ -88,7 +88,7 @@ function Ensure-LocalNeo4jEnv {
   }
 
   if (-not (Test-Path $EnvFile)) {
-    $password = if ($env:NEO4J_PASSWORD) { $env:NEO4J_PASSWORD } else { "mindstudy-local-neo4j" }
+    $password = if ($env:NEO4J_PASSWORD) { $env:NEO4J_PASSWORD } else { "longmindstudy-local-neo4j" }
     $username = if ($env:NEO4J_USERNAME) { $env:NEO4J_USERNAME } else { "neo4j" }
     $uri = if ($env:NEO4J_URI) { $env:NEO4J_URI } else { "bolt://localhost:7687" }
     $browserUrl = if ($env:NEO4J_BROWSER_URL) { $env:NEO4J_BROWSER_URL } else { "http://localhost:7474" }
@@ -137,7 +137,7 @@ for ($attempt = 1; $attempt -le 15; $attempt += 1) {
   Start-Sleep -Seconds 2
 }
 
-Write-Host "No running DBMS found in Neo4j Desktop. Starting MindStudy local DBMS from Neo4j Desktop bundled runtime..."
+Write-Host "No running DBMS found in Neo4j Desktop. Starting LongMindStudy local DBMS from Neo4j Desktop bundled runtime..."
 
 $neo4jZip = Get-Neo4jDesktopNeo4jZip
 $javaHome = Get-Neo4jDesktopJavaHome
@@ -168,7 +168,7 @@ if (-not $neo4jHome) {
 }
 
 $envValues = Read-LocalNeo4jEnv
-$password = if ($env:NEO4J_PASSWORD) { $env:NEO4J_PASSWORD } elseif ($envValues.ContainsKey("NEO4J_PASSWORD")) { $envValues["NEO4J_PASSWORD"] } else { "mindstudy-local-neo4j" }
+$password = if ($env:NEO4J_PASSWORD) { $env:NEO4J_PASSWORD } elseif ($envValues.ContainsKey("NEO4J_PASSWORD")) { $envValues["NEO4J_PASSWORD"] } else { "longmindstudy-local-neo4j" }
 $confPath = Join-Path $neo4jHome "conf\neo4j.conf"
 $authPath = Join-Path $neo4jHome "data\dbms\auth.ini"
 
@@ -213,7 +213,7 @@ $env:JAVA_HOME = $javaHome
 $env:NEO4J_ACCEPT_LICENSE_AGREEMENT = "yes"
 Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$neo4jHome\bin\neo4j.bat`" console" -WorkingDirectory $neo4jHome -WindowStyle Hidden
 
-Write-Host "Waiting for MindStudy Neo4j runtime on bolt://localhost:7687..."
+Write-Host "Waiting for LongMindStudy Neo4j runtime on bolt://localhost:7687..."
 for ($attempt = 1; $attempt -le 60; $attempt += 1) {
   if (Test-Neo4jConnection) {
     Write-Host "Neo4j is ready at bolt://localhost:7687."
@@ -222,4 +222,4 @@ for ($attempt = 1; $attempt -le 60; $attempt += 1) {
   Start-Sleep -Seconds 2
 }
 
-throw "MindStudy Neo4j runtime started, but Bolt did not become ready. Check .local\neo4j-desktop-runtime logs."
+throw "LongMindStudy Neo4j runtime started, but Bolt did not become ready. Check .local\neo4j-desktop-runtime logs."

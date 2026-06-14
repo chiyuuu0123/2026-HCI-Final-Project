@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("mindStudy", {
   getCompanionBounds: () => ipcRenderer.invoke("companion:get-bounds"),
   moveCompanionTo: (bounds) => ipcRenderer.send("companion:move-to", bounds),
   askLonglongCompanion: (request) => ipcRenderer.invoke("companion:ask-longlong", request),
+  synthesizeLonglongVoice: (request) => ipcRenderer.invoke("longlong-voice:synthesize", request),
   getLonglongChatState: () => ipcRenderer.invoke("longlong-chat:get"),
   clearLonglongChat: () => ipcRenderer.invoke("longlong-chat:clear"),
   addLonglongMemory: (text) => ipcRenderer.invoke("longlong-memory:add", text),
@@ -19,6 +20,7 @@ contextBridge.exposeInMainWorld("mindStudy", {
   claimLonglongStudyCoins: (request) => ipcRenderer.invoke("longlong-bond:claim-study-coins", request),
   buyLonglongGift: (giftId) => ipcRenderer.invoke("longlong-bond:buy-gift", giftId),
   updateCompanionSnapshot: (snapshot) => ipcRenderer.send("companion:update-snapshot", snapshot),
+  controlEmotionMusic: (action) => ipcRenderer.send("music:control", action),
   hideCompanion: () => ipcRenderer.send("companion:hide"),
   getStudyTimer: () => ipcRenderer.invoke("study-timer:get"),
   onStudyTimerUpdate: (callback) => {
@@ -40,6 +42,11 @@ contextBridge.exposeInMainWorld("mindStudy", {
     const listener = (event, motion) => callback(motion);
     ipcRenderer.on("companion:drag-motion", listener);
     return () => ipcRenderer.removeListener("companion:drag-motion", listener);
+  },
+  onEmotionMusicControl: (callback) => {
+    const listener = (event, action) => callback(action);
+    ipcRenderer.on("music:control", listener);
+    return () => ipcRenderer.removeListener("music:control", listener);
   },
   onLonglongBondUpdate: (callback) => {
     const listener = (event, snapshot) => callback(snapshot);

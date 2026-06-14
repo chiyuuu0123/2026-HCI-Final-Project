@@ -22,15 +22,19 @@ const {
 } = require("../b_qwen_module");
 
 const isWindows = process.platform === "win32";
+const appDisplayName = "LongMindStudy-龙龙多模态智能学习伙伴";
+const appStorageName = "longmindstudy-desktop";
 const maxImportBytes = 80 * 1024 * 1024;
 const supportedExtensions = new Set([".pdf", ".md"]);
-const companionPetSize = { width: 248, height: 312 };
+const companionPetSize = { width: 248, height: 392 };
 const companionChatSize = { width: 440, height: 568 };
 const longlongVoiceProvider = "gpt-sovits";
 const longlongVoiceTextLimit = 420;
 const longlongVoiceStartupTimeoutMs = 30000;
 const longlongStudyCoinSeconds = 10 * 60;
 const longlongDailyCoinCap = 18;
+app.setName(appDisplayName);
+app.setPath("userData", path.join(app.getPath("appData"), appStorageName));
 const longlongBondLevels = [
   { threshold: 0, name: "初识", detail: "龙龙刚刚探头" },
   { threshold: 20, name: "熟悉", detail: "龙龙开始认得你的脚步" },
@@ -1310,7 +1314,7 @@ function buildCodingAssistantMessages(request = {}) {
   }
 
   const system = [
-    "你是 MindStudy 的龙龙，正在作为“阿龙在 Coding”助手陪用户写代码。",
+    "你是 LongMindStudy 的龙龙，正在作为“阿龙在 Coding”助手陪用户写代码。",
     "回答中要自然自称“龙龙”，语气亲和、耐心，但不要影响技术判断的准确性。",
     "请用中文回答，面向正在刷题或写项目的学生。",
     "如果用户提供了代码，重点分析代码意图、可行性、潜在 bug、时间复杂度、空间复杂度和优化建议。",
@@ -1416,7 +1420,7 @@ function buildLonglongChatMessages(request = {}, screenContext = null, screenErr
   }
 
   const system = [
-    "你是 MindStudy 的桌宠 AI 助手龙龙。",
+    "你是 LongMindStudy 的桌宠 AI 助手龙龙。",
     "你必须自然自称“龙龙”，像一直陪在用户身边的学习搭子一样说话，亲和、简洁、有行动建议。",
     "你可以参考随消息提供的龙龙记忆库，但不要虚构记忆库里没有的信息；如果记忆可能过时，要轻轻确认。",
     "如果用户的问题和屏幕内容相关，请直接观察随消息提供的屏幕截图图像回答；看不清或无法判断时要坦诚说明。",
@@ -1782,7 +1786,7 @@ async function searchBingKnowledge(query, maxResults, timeoutMs, signal) {
       signal: abortable.signal,
       headers: {
         Accept: "text/html",
-        "User-Agent": "Mozilla/5.0 MindStudy/0.1",
+        "User-Agent": "Mozilla/5.0 LongMindStudy/0.1",
       },
     });
     const html = await response.text();
@@ -1977,7 +1981,7 @@ function createMainWindow() {
     minWidth: 1080,
     minHeight: 760,
     backgroundColor: "#f5f7f3",
-    title: "MindStudy",
+    title: appDisplayName,
     show: false,
     titleBarStyle: isWindows ? "default" : "hiddenInset",
     webPreferences: {
@@ -2259,7 +2263,7 @@ function wakeMainWindow() {
 function buildMenu() {
   const template = [
     {
-      label: "MindStudy",
+      label: appDisplayName,
       submenu: [
         { role: "about" },
         { type: "separator" },
@@ -2348,7 +2352,7 @@ async function readMusicLibrary() {
 }
 
 ipcMain.handle("app:get-info", () => ({
-  name: app.getName(),
+  name: appDisplayName,
   version: app.getVersion(),
   platform: process.platform,
 }));
@@ -2459,6 +2463,10 @@ ipcMain.handle("b:ai:ask-coding", async (event, request) => {
 
 ipcMain.handle("companion:ask-longlong", async (event, request) => {
   return askLonglongCompanion(request);
+});
+
+ipcMain.handle("longlong-voice:synthesize", async (event, request = {}) => {
+  return synthesizeLonglongVoice(request);
 });
 
 ipcMain.handle("longlong-chat:get", () => {
@@ -2651,11 +2659,23 @@ ipcMain.on("companion:hide", () => {
   hideCompanionWindow({ destroy: true });
 });
 
+ipcMain.on("music:control", (event, action) => {
+  const normalizedAction = String(action || "");
+  if (!["prev", "next", "toggle"].includes(normalizedAction)) return;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("music:control", normalizedAction);
+  }
+});
+
 ipcMain.on("companion:update-snapshot", (event, snapshot) => {
   companionSnapshot = {
     mood: String(snapshot?.mood || "陪你学习中").slice(0, 40),
-    reminder: String(snapshot?.reminder || "点我回到 MindStudy").slice(0, 80),
+    moodDetail: String(snapshot?.moodDetail || "").slice(0, 80),
+    reminder: String(snapshot?.reminder || `点我回到 ${appDisplayName}`).slice(0, 80),
     music: String(snapshot?.music || "白噪音 + 轻钢琴").slice(0, 40),
+    musicPlaying: Boolean(snapshot?.musicPlaying),
+    musicCanControl: Boolean(snapshot?.musicCanControl),
+    musicCanSkip: Boolean(snapshot?.musicCanSkip),
     studyTime: String(snapshot?.studyTime || "").slice(0, 16),
     studySeconds: Math.max(0, Math.floor(Number(snapshot?.studySeconds) || 0)),
   };

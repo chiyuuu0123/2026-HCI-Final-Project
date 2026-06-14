@@ -6,7 +6,7 @@ const { QwenClient } = require("./qwenClient");
 
 const DEFAULT_NEO4J_URI = "bolt://localhost:7687";
 const DEFAULT_NEO4J_USERNAME = "neo4j";
-const DEFAULT_NEO4J_PASSWORD = "mindstudy-local-neo4j";
+const DEFAULT_NEO4J_PASSWORD = "longmindstudy-local-neo4j";
 const GRAPH_TEXT_LIMIT = 60000;
 const GRAPH_NODE_LIMIT = 64;
 const RELATION_TYPE_MAP = {
@@ -136,7 +136,7 @@ function normalizeCourse(course = {}) {
   const id = asText(course.id || course.courseId, "default-course");
   return {
     id,
-    name: asText(course.name, "MindStudy Course"),
+    name: asText(course.name, "LongMindStudy Course"),
     description: asText(course.description, ""),
   };
 }
@@ -226,7 +226,7 @@ function buildGraphPrompt(course, documents) {
     .map((documentMeta, index) => `[D${index + 1}] ${documentMeta.title}\n${documentMeta.text.slice(0, Math.floor(GRAPH_TEXT_LIMIT / Math.max(1, documents.length)))}`)
     .join("\n\n---\n\n");
   return [
-    "你是 MindStudy 的课程知识图谱抽取器。",
+    "你是 LongMindStudy 的课程知识图谱抽取器。",
     "请基于课程资料抽取真实可学习的概念节点和概念关系。",
     "必须返回严格 JSON，不要 Markdown，不要解释。",
     "只抽取正文里的课程概念、原理、方法、模型、术语、流程和约束。",
@@ -330,10 +330,10 @@ class KnowledgeGraphService {
 
   async ensureSchema() {
     await this.runWrite(async (session) => {
-      await session.run("CREATE CONSTRAINT mindstudy_course_id IF NOT EXISTS FOR (c:Course) REQUIRE c.id IS UNIQUE");
-      await session.run("CREATE CONSTRAINT mindstudy_document_id IF NOT EXISTS FOR (d:Document) REQUIRE d.id IS UNIQUE");
-      await session.run("CREATE CONSTRAINT mindstudy_concept_id IF NOT EXISTS FOR (c:Concept) REQUIRE c.id IS UNIQUE");
-      await session.run("CREATE CONSTRAINT mindstudy_source_chunk_id IF NOT EXISTS FOR (s:SourceChunk) REQUIRE s.id IS UNIQUE");
+      await session.run("CREATE CONSTRAINT longmindstudy_course_id IF NOT EXISTS FOR (c:Course) REQUIRE c.id IS UNIQUE");
+      await session.run("CREATE CONSTRAINT longmindstudy_document_id IF NOT EXISTS FOR (d:Document) REQUIRE d.id IS UNIQUE");
+      await session.run("CREATE CONSTRAINT longmindstudy_concept_id IF NOT EXISTS FOR (c:Concept) REQUIRE c.id IS UNIQUE");
+      await session.run("CREATE CONSTRAINT longmindstudy_source_chunk_id IF NOT EXISTS FOR (s:SourceChunk) REQUIRE s.id IS UNIQUE");
     });
   }
 
@@ -363,7 +363,7 @@ class KnowledgeGraphService {
     }
     const response = await this.qwenClient.chat({
       messages: [
-        { role: "system", content: "Return strict JSON only. You extract course knowledge graphs for MindStudy." },
+        { role: "system", content: "Return strict JSON only. You extract course knowledge graphs for LongMindStudy." },
         { role: "user", content: buildGraphPrompt(course, documents) },
       ],
       temperature: request.options?.temperature ?? 0.12,

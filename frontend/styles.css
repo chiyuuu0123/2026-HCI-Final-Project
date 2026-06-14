@@ -110,6 +110,32 @@ html.css-app-zoom .app-shell {
   height: 56px;
 }
 
+.tour-help-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7fbf8;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.tour-help-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.tour-help-button svg {
+  width: 18px;
+  height: 18px;
+}
+
 .brand-mark {
   display: grid;
   place-items: center;
@@ -5901,6 +5927,179 @@ button.review-row:hover {
   opacity: 1;
 }
 
+.onboarding-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 6200;
+  padding: 24px;
+  background: transparent;
+  pointer-events: none;
+}
+
+body.onboarding-open {
+  overflow: hidden;
+}
+
+.onboarding-backdrop[hidden] {
+  display: none;
+}
+
+.onboarding-card {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(430px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid rgba(24, 143, 132, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 46px rgba(12, 22, 19, 0.18);
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  transition:
+    left 180ms ease,
+    top 180ms ease,
+    transform 180ms ease;
+}
+
+.onboarding-spotlight {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 180px;
+  height: 120px;
+  border: 2px solid #f2bf4d;
+  border-radius: 8px;
+  background: rgba(255, 250, 231, 0.08);
+  box-shadow:
+    0 0 0 5px rgba(242, 191, 77, 0.18),
+    0 14px 38px rgba(12, 22, 19, 0.16);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition:
+    left 180ms ease,
+    top 180ms ease,
+    width 180ms ease,
+    height 180ms ease;
+}
+
+.onboarding-close {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+}
+
+.onboarding-layout {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+}
+
+.onboarding-dragon {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 16px 12px;
+  border-radius: 8px;
+  background: #f7f9f6;
+  border: 1px solid var(--line);
+}
+
+.onboarding-dragon img {
+  width: 132px;
+  height: 132px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 18px 22px rgba(18, 32, 28, 0.2));
+}
+
+.onboarding-dragon span {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.onboarding-copy {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-right: 26px;
+}
+
+.onboarding-copy h2 {
+  margin: 0;
+  color: var(--deep);
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.onboarding-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.onboarding-feature-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.onboarding-feature-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 1px solid rgba(24, 143, 132, 0.2);
+  border-radius: 999px;
+  background: rgba(236, 255, 251, 0.88);
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.onboarding-progress {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf1ec;
+}
+
+.onboarding-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--teal), #e0a82e);
+  transition: width 180ms ease;
+}
+
+.onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.onboarding-footer > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .vision-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6537,6 +6736,80 @@ button.review-row:hover {
   transition: transform 160ms ease;
 }
 
+.longlong-now-card {
+  display: grid;
+  gap: 6px;
+  width: min(206px, 100%);
+  padding: 8px;
+  border: 1px solid rgba(24, 143, 132, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 30px rgba(18, 32, 28, 0.14);
+  cursor: default;
+}
+
+.longlong-now-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  color: #29443d;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.longlong-now-row svg {
+  width: 15px;
+  height: 15px;
+  color: var(--teal);
+}
+
+.longlong-now-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.longlong-now-controls {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+}
+
+.longlong-now-controls button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(24, 143, 132, 0.2);
+  border-radius: 8px;
+  background: rgba(236, 255, 251, 0.96);
+  color: var(--teal);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.longlong-now-controls button:hover:not(:disabled) {
+  background: #fff7dc;
+  transform: translateY(-1px);
+}
+
+.longlong-now-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.longlong-now-controls svg {
+  width: 15px;
+  height: 15px;
+}
+
 .longlong-avatar .longlong-bubble {
   display: block;
   max-width: 190px;
@@ -6710,6 +6983,16 @@ button.review-row:hover {
     padding: 18px 12px;
   }
 
+  .brand {
+    flex-direction: column;
+    height: auto;
+    gap: 8px;
+  }
+
+  .tour-help-button {
+    margin-left: 0;
+  }
+
   .nav-item {
     justify-content: center;
     width: 52px;
@@ -6842,6 +7125,7 @@ button.review-row:hover {
   .longlong-assistant {
     right: 14px;
     bottom: 14px;
+    width: min(224px, calc(100vw - 28px));
   }
 }
 
@@ -6981,6 +7265,49 @@ button.review-row:hover {
     overflow-x: auto;
   }
 
+  .onboarding-backdrop {
+    padding: 14px;
+  }
+
+  .onboarding-card {
+    width: min(100%, calc(100vw - 28px));
+    padding: 18px;
+  }
+
+  .onboarding-layout {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .onboarding-dragon {
+    grid-template-columns: auto minmax(0, 1fr);
+    justify-items: start;
+    padding: 10px;
+  }
+
+  .onboarding-dragon img {
+    width: 82px;
+    height: 82px;
+  }
+
+  .onboarding-copy {
+    padding-right: 0;
+  }
+
+  .onboarding-copy h2 {
+    font-size: 22px;
+  }
+
+  .onboarding-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .onboarding-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
   .longlong-panel {
     max-height: none;
   }
@@ -6988,6 +7315,10 @@ button.review-row:hover {
   .longlong-avatar img {
     width: 88px;
     height: 88px;
+  }
+
+  .longlong-now-card {
+    width: min(196px, 100%);
   }
 
   .hero-panel {
