@@ -5645,6 +5645,52 @@ button.review-row:hover {
   height: auto;
 }
 
+.music-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f3f8f6;
+}
+
+.music-mode-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 38px;
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.music-mode-button svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.music-mode-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-mode-button.active {
+  background: #fff;
+  color: var(--deep);
+  box-shadow: 0 8px 18px rgba(20, 70, 65, 0.1);
+}
+
 .music-recommend-detail {
   margin: 10px 0 0;
   color: var(--muted);

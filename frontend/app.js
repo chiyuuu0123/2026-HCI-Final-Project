@@ -3,6 +3,7 @@ const PLANNER_STORAGE_KEY = "longmindstudy.planner.v1";
 const PRODUCT_NAME = "LongMindStudy-龙龙多模态智能学习伙伴";
 const ONBOARDING_STORAGE_KEY = "longmindstudy.onboarding.v1";
 const APP_ZOOM_STORAGE_KEY = "longmindstudy.appZoom.v1";
+const MUSIC_PLAYBACK_MODE_STORAGE_KEY = "longmindstudy.musicPlaybackMode.v1";
 const APP_ZOOM_MIN = 0.75;
 const APP_ZOOM_MAX = 1.4;
 const APP_ZOOM_STEP = 0.05;
@@ -621,6 +622,7 @@ const musicPlayerState = {
   trackIndex: 0,
   playing: false,
   seeking: false,
+  playbackMode: "emotion",
   currentEmotion: { id: "focused", label: "专注", detail: "" },
   currentTrackStartedAt: 0,
   emotionStatStartedAt: 0,
@@ -634,6 +636,7 @@ const musicPlayerState = {
   aiNextTrackEnabled: true,
   aiNextTrackRecentLimit: 3,
 };
+const MUSIC_PLAYBACK_MODES = new Set(["emotion", "random", "single"]);
 let longlongBondNoticeTimer = null;
 let longlongCoinSyncKey = "";
 let longlongBubbleTimer = null;
@@ -4817,9 +4820,37 @@ function getFixedMusicRecommendation(id = musicPlayerState.recommendationId || "
   return {
     ...base,
     title: `${base.title}`,
-    detail: `${base.detail} 歌单固定，当前歌曲播完后会根据状态选择下一首。`,
+    detail: `${base.detail} ${getMusicPlaybackModeHint()}`,
     tracks: getFixedMusicPlaylist(),
   };
+}
+
+function normalizeMusicPlaybackMode(mode) {
+  const value = String(mode || "").trim();
+  return MUSIC_PLAYBACK_MODES.has(value) ? value : "emotion";
+}
+
+function getMusicPlaybackModeHint(mode = musicPlayerState.playbackMode) {
+  const normalizedMode = normalizeMusicPlaybackMode(mode);
+  if (normalizedMode === "random") return "随机模式：当前歌曲播放完后随机选择下一首。";
+  if (normalizedMode === "single") return "单曲循环：当前歌曲播放完后继续播放这一首。";
+  return "情绪模式：状态变化只更新推荐，当前歌曲播放完后再按当时状态选择下一首。";
+}
+
+function loadMusicPlaybackMode() {
+  try {
+    return normalizeMusicPlaybackMode(localStorage.getItem(MUSIC_PLAYBACK_MODE_STORAGE_KEY));
+  } catch {
+    return "emotion";
+  }
+}
+
+function saveMusicPlaybackMode(mode) {
+  try {
+    localStorage.setItem(MUSIC_PLAYBACK_MODE_STORAGE_KEY, normalizeMusicPlaybackMode(mode));
+  } catch {
+    // Local storage can be unavailable in restricted browser contexts.
+  }
 }
 
 function rememberPlayedMusicTrack(track) {
@@ -4842,6 +4873,24 @@ function pickLocalNextMusicTrackIndex(emotion = musicPlayerState.currentEmotion)
     .map((track, index) => ({ track, index }))
     .filter((item) => item.track.moods?.includes(emotionId));
   const pool = (byMood.length ? byMood : tracks.map((track, index) => ({ track, index })))
+    .filter((item) => trackKey(item.track) !== currentKey)
+    .filter((item) => !recent.has(trackKey(item.track)));
+  const fallbackPool = pool.length
+    ? pool
+    : tracks.map((track, index) => ({ track, index })).filter((item) => trackKey(item.track) !== currentKey);
+  const finalPool = fallbackPool.length ? fallbackPool : tracks.map((track, index) => ({ track, index }));
+  return finalPool[Math.floor(Math.random() * finalPool.length)]?.index ?? 0;
+}
+
+function pickRandomNextMusicTrackIndex() {
+  const recommendation = getCurrentMusicRecommendation();
+  const tracks = recommendation.tracks || [];
+  if (!tracks.length) return -1;
+  if (tracks.length === 1) return 0;
+  const currentKey = trackKey(tracks[musicPlayerState.trackIndex]);
+  const recent = new Set(musicPlayerState.recentTrackKeys);
+  const pool = tracks
+    .map((track, index) => ({ track, index }))
     .filter((item) => trackKey(item.track) !== currentKey)
     .filter((item) => !recent.has(trackKey(item.track)));
   const fallbackPool = pool.length
@@ -4944,6 +4993,7 @@ function getMusicUi() {
     duration: document.querySelector("#music-duration"),
     volume: document.querySelector("#music-volume"),
     importInput: document.querySelector("#music-import-input"),
+    modeButtons: document.querySelectorAll("[data-music-playback-mode]"),
     panel: document.querySelector(".music-panel"),
   };
 }
@@ -5057,6 +5107,22 @@ function setMusicPlayIcon(isPlaying) {
   window.lucide?.createIcons();
 }
 
+function renderMusicPlaybackMode() {
+  const ui = getMusicUi();
+  ui.modeButtons?.forEach((button) => {
+    const isActive = normalizeMusicPlaybackMode(button.dataset.musicPlaybackMode) === musicPlayerState.playbackMode;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function setMusicPlaybackMode(mode, { persist = true } = {}) {
+  const nextMode = normalizeMusicPlaybackMode(mode);
+  musicPlayerState.playbackMode = nextMode;
+  if (persist) saveMusicPlaybackMode(nextMode);
+  renderMusicRecommendation();
+}
+
 function renderMusicRecommendation(recommendation = getCurrentMusicRecommendation()) {
   const ui = getMusicUi();
   const track = getCurrentMusicTrack();
@@ -5069,6 +5135,7 @@ function renderMusicRecommendation(recommendation = getCurrentMusicRecommendatio
   ui.panel?.classList.toggle("is-playing", musicPlayerState.playing);
   ui.panel?.classList.toggle("is-paused", !musicPlayerState.playing);
   setMusicPlayIcon(musicPlayerState.playing);
+  renderMusicPlaybackMode();
   renderMusicPlaylist(recommendation);
   updateMusicTimeline();
   renderLonglongMusicStatus();
@@ -5099,18 +5166,11 @@ function loadCurrentMusicTrack({ keepPlaying = false } = {}) {
   if (keepPlaying) playCurrentMusic();
 }
 
-function setMusicRecommendation(recommendation, { autoPlayIfPlaying = true } = {}) {
+function setMusicRecommendation(recommendation) {
   if (!recommendation?.id) return;
   if (musicPlayerState.recommendationId !== recommendation.id) {
-    const keepPlaying = autoPlayIfPlaying && musicPlayerState.playing;
     musicPlayerState.recommendationId = recommendation.id;
-    const emotionMatchedIndex = pickLocalNextMusicTrackIndex({
-      id: recommendation.id,
-      label: recommendation.title,
-      detail: recommendation.detail,
-    });
-    if (emotionMatchedIndex >= 0) musicPlayerState.trackIndex = emotionMatchedIndex;
-    loadCurrentMusicTrack({ keepPlaying });
+    renderMusicRecommendation();
     return;
   }
   renderLonglongMusicStatus();
@@ -5163,8 +5223,22 @@ function shiftEmotionMusicTrack(step) {
 
 async function playNextMusicTrackAfterEnded() {
   const currentTrack = getCurrentMusicTrack();
+  if (musicPlayerState.playbackMode === "single") {
+    const ui = getMusicUi();
+    if (!currentTrack || !ui.audio) {
+      musicPlayerState.playing = false;
+      renderMusicRecommendation();
+      return;
+    }
+    ui.audio.currentTime = 0;
+    resetMusicEmotionStats();
+    playCurrentMusic();
+    return;
+  }
   rememberPlayedMusicTrack(currentTrack);
-  const nextIndex = await requestAiNextMusicTrackIndex(musicPlayerState.currentEmotion);
+  const nextIndex = musicPlayerState.playbackMode === "random"
+    ? pickRandomNextMusicTrackIndex()
+    : await requestAiNextMusicTrackIndex(musicPlayerState.currentEmotion);
   if (nextIndex < 0) {
     musicPlayerState.playing = false;
     renderMusicRecommendation();
@@ -5201,6 +5275,7 @@ function initEmotionMusicPlayer() {
   if (!ui.audio) return;
   musicPlayerState.recommendationId = "focused";
   musicPlayerState.trackIndex = 0;
+  musicPlayerState.playbackMode = loadMusicPlaybackMode();
   ui.audio.volume = 0.55;
   ui.audio.addEventListener("play", () => {
     musicPlayerState.playing = true;
@@ -15426,6 +15501,7 @@ document.addEventListener("click", (event) => {
   const graphZoomButton = event.target.closest("[data-graph-zoom]");
   const mistakeReviewButton = event.target.closest("[data-mistake-review]");
   const musicTrackButton = event.target.closest("[data-music-track-index]");
+  const musicModeButton = event.target.closest("[data-music-playback-mode]");
   const onboardingButton = event.target.closest("[data-onboarding-action]");
   const actionButton = event.target.closest("button");
 
@@ -15436,6 +15512,11 @@ document.addEventListener("click", (event) => {
 
   if (musicTrackButton) {
     selectEmotionMusicTrack(Number(musicTrackButton.dataset.musicTrackIndex));
+    return;
+  }
+
+  if (musicModeButton) {
+    setMusicPlaybackMode(musicModeButton.dataset.musicPlaybackMode);
     return;
   }
 
