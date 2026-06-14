@@ -82,6 +82,16 @@ const LONGLONG_COMPANION_IDLE_LINES = [
 ];
 const LONGLONG_ONBOARDING_STEPS = [
   {
+    label: "开场",
+    title: "龙龙先带你认路",
+    body: "欢迎来到 LongMindStudy。接下来龙龙会沿着左侧导航，把每个栏目都带你看一遍；你只要跟着黄色框走，就能知道每个地方什么时候用。",
+    voice: "欢迎来到 LongMindStudy。接下来龙龙会沿着左侧导航，把每个栏目都带你看一遍。你只要跟着黄色框走，就能知道每个地方什么时候用。",
+    audio: "./assets/longlong-voice/onboarding-opening.wav",
+    features: ["左侧导航", "逐站介绍", "随时可重开"],
+    view: "dashboard",
+    target: ".side-nav",
+  },
+  {
     label: "学习工作台",
     title: "先看这块大日历",
     body: "工作台最重要的是这块大日历。龙龙会把重要日期、学习热度和当天安排放在这里，你一进来先看日历，就能知道今天该往哪儿走。",
@@ -99,7 +109,7 @@ const LONGLONG_ONBOARDING_STEPS = [
     audio: "./assets/longlong-voice/onboarding-02.wav",
     features: ["PDF 批注", "Markdown 阅读", "双栏 AI 辅助"],
     view: "reader",
-    target: ".doc-toolbar",
+    target: ".document-panel",
   },
   {
     label: "资料问答",
@@ -119,7 +129,7 @@ const LONGLONG_ONBOARDING_STEPS = [
     audio: "./assets/longlong-voice/onboarding-04.wav",
     features: ["题目求解", "代码分析", "优化建议"],
     view: "coding",
-    target: ".coding-form",
+    target: "#coding-problem",
   },
   {
     label: "科学计算器",
@@ -129,7 +139,7 @@ const LONGLONG_ONBOARDING_STEPS = [
     audio: "./assets/longlong-voice/onboarding-05.wav",
     features: ["标准按键", "函数计算", "Ans 结果"],
     view: "calculator",
-    target: ".calculator-device",
+    target: ".calculator-screen",
   },
   {
     label: "TodoList",
@@ -149,7 +159,7 @@ const LONGLONG_ONBOARDING_STEPS = [
     audio: "./assets/longlong-voice/onboarding-07.wav",
     features: ["概念节点", "关系路径", "Neo4j 存储"],
     view: "map",
-    target: ".graph-query-row",
+    target: ".graph-actions",
   },
   {
     label: "思维导图",
@@ -159,7 +169,7 @@ const LONGLONG_ONBOARDING_STEPS = [
     audio: "./assets/longlong-voice/onboarding-08.wav",
     features: ["主题聚焦", "分支展开", "导图导出"],
     view: "mindmap",
-    target: ".mindmap-toolbar",
+    target: ".mindmap-stage",
   },
   {
     label: "练习自测",
@@ -189,7 +199,7 @@ const LONGLONG_ONBOARDING_STEPS = [
     audio: "./assets/longlong-voice/onboarding-11.wav",
     features: ["手动开摄像头", "情绪识别", "状态音乐联动"],
     view: "focus",
-    target: ".camera-controls",
+    target: ".camera-stage",
   },
   {
     label: "龙龙聊天",
@@ -199,7 +209,17 @@ const LONGLONG_ONBOARDING_STEPS = [
     audio: "./assets/longlong-voice/onboarding-12.wav",
     features: ["统一聊天", "记忆库", "摸摸与语音"],
     view: "dashboard",
-    target: "#longlong-assistant",
+    target: ".longlong-avatar",
+  },
+  {
+    label: "结束语",
+    title: "路线走完啦",
+    body: "新手路线到这里就结束了。以后忘了某个功能在哪儿，点左上角这个问号，龙龙会再带你走一遍；现在可以从工作台的大日历开始安排今天的学习了。",
+    voice: "新手路线到这里就结束了。以后忘了某个功能在哪儿，点左上角这个问号，龙龙会再带你走一遍。现在可以从工作台的大日历开始安排今天的学习了。",
+    audio: "./assets/longlong-voice/onboarding-ending.wav",
+    features: ["问号重开", "回到工作台", "开始学习"],
+    view: "dashboard",
+    target: ".tour-help-button",
   },
 ];
 const LONGLONG_ONBOARDING_AUDIO = new Map(

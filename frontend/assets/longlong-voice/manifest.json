@@ -536,11 +536,24 @@
   "generatedPacks": {
     "onboarding": {
       "name": "LongMindStudy onboarding voice pack",
-      "generatedAt": "2026-06-14T03:09:21.294Z",
+      "generatedAt": "2026-06-14T07:52:33.343Z",
       "generator": "LonglongVoiceService GPT-SoVITS fixed wav export",
       "files": [
         {
+          "file": "onboarding-opening.wav",
+          "label": "开场",
+          "order": 1,
+          "text": "欢迎来到 LongMindStudy。接下来龙龙会沿着左侧导航，把每个栏目都带你看一遍。你只要跟着黄色框走，就能知道每个地方什么时候用。",
+          "role": "onboarding",
+          "size": 1002284,
+          "sampleRate": 32000,
+          "channels": 1,
+          "bits": 16
+        },
+        {
           "file": "onboarding-01.wav",
+          "label": "学习工作台",
+          "order": 2,
           "text": "第一站是学习工作台。先看这块大日历。龙龙会把重要日期、学习热度和当天安排放在这里，你一进来先看日历，就能知道今天该往哪儿走。",
           "role": "onboarding",
           "size": 1077804,
@@ -550,6 +563,8 @@
         },
         {
           "file": "onboarding-02.wav",
+          "label": "资料阅读",
+          "order": 3,
           "text": "第二站是资料阅读。你可以导入 PDF 和 Markdown，阅读、批注、摘录重点，也可以一边看原文一边让 AI 分析、翻译或整理。龙龙会把厚厚的资料拆成能入口的小块。",
           "role": "onboarding",
           "size": 1322284,
@@ -559,6 +574,8 @@
         },
         {
           "file": "onboarding-03.wav",
+          "label": "资料问答",
+          "order": 4,
           "text": "第三站是资料问答。RAG 问答会围绕课程资料回答问题。先让系统学习当前资料，再把你的问题丢给龙龙，它会尽量把依据和入口讲清楚。",
           "role": "onboarding",
           "size": 1163564,
@@ -568,6 +585,8 @@
         },
         {
           "file": "onboarding-04.wav",
+          "label": "阿龙在 Coding",
+          "order": 5,
           "text": "第四站是阿龙在 Coding。你可以把题目和代码交给阿龙，它会分析复杂度、可行性、边界风险和优化方向。只粘贴题目也可以，阿龙会给出一版推荐解法。",
           "role": "onboarding",
           "size": 1149484,
@@ -577,6 +596,8 @@
         },
         {
           "file": "onboarding-05.wav",
+          "label": "科学计算器",
+          "order": 6,
           "text": "第五站是科学计算器。这里像按卡西欧一样使用，保留标准按键、角度模式、Ans 和常用函数。公式、三角函数、指数对数都可以在这里算。",
           "role": "onboarding",
           "size": 1260844,
@@ -586,6 +607,8 @@
         },
         {
           "file": "onboarding-06.wav",
+          "label": "TodoList",
+          "order": 7,
           "text": "第六站是 TodoList。这里可以记录学习任务、日程和优先级。龙龙会记住你今天学了多久，适时提醒你收束下一步，也会在你离开主窗口时变成桌宠继续陪着。",
           "role": "onboarding",
           "size": 1164844,
@@ -595,6 +618,8 @@
         },
         {
           "file": "onboarding-07.wav",
+          "label": "知识结构",
+          "order": 8,
           "text": "第七站是知识图谱。知识图谱会把概念和关系铺开，适合找前置知识、薄弱点和章节之间的路。看不懂一整片也没关系，先顺着一条关系线走。",
           "role": "onboarding",
           "size": 1090604,
@@ -604,6 +629,8 @@
         },
         {
           "file": "onboarding-08.wav",
+          "label": "思维导图",
+          "order": 9,
           "text": "第八站是思维导图。它适合复习前快速拉出章节结构。你可以聚焦某个主题、展开或收起分支，也可以把当前导图导出成文本。",
           "role": "onboarding",
           "size": 1002284,
@@ -613,6 +640,8 @@
         },
         {
           "file": "onboarding-09.wav",
+          "label": "练习自测",
+          "order": 10,
           "text": "第九站是自动测验。系统会根据资料生成题目，你可以选择练习模式、范围和难度。做错的内容会进入后续复盘，让复习不再只靠感觉。",
           "role": "onboarding",
           "size": 1075244,
@@ -622,6 +651,8 @@
         },
         {
           "file": "onboarding-10.wav",
+          "label": "学习报告",
+          "order": 11,
           "text": "第十站是学习报告。这里会汇总学习时长、正确率、错题和推荐复习内容。复盘时先看这里，龙龙会帮你把下一轮学习重点收拢出来。",
           "role": "onboarding",
           "size": 981804,
@@ -631,6 +662,8 @@
         },
         {
           "file": "onboarding-11.wav",
+          "label": "多模态状态",
+          "order": 12,
           "text": "第十一站是状态与音乐。这个页面不会自动打开摄像头。需要时你可以手动开启，龙龙再根据情绪、光线和播放历史推荐音乐；点阵识别也可以随时关闭。",
           "role": "onboarding",
           "size": 1201964,
@@ -640,9 +673,22 @@
         },
         {
           "file": "onboarding-12.wav",
+          "label": "龙龙聊天",
+          "order": 13,
           "text": "最后一站是龙龙聊天。主窗口和桌宠都能和龙龙聊天。摸摸、提醒、语录、送礼和记忆库会统一到龙龙的人设里。龙龙不保证替你学完，但龙龙会认真陪你开工。",
           "role": "onboarding",
           "size": 1233964,
+          "sampleRate": 32000,
+          "channels": 1,
+          "bits": 16
+        },
+        {
+          "file": "onboarding-ending.wav",
+          "label": "结束语",
+          "order": 14,
+          "text": "新手路线到这里就结束了。以后忘了某个功能在哪儿，点左上角这个问号，龙龙会再带你走一遍。现在可以从工作台的大日历开始安排今天的学习了。",
+          "role": "onboarding",
+          "size": 1030444,
           "sampleRate": 32000,
           "channels": 1,
           "bits": 16
