@@ -11338,6 +11338,77 @@ function updateStudyRecommendations() {
   }));
 }
 
+function formatReportTrendDayLabel(date) {
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function formatReportStudyTimeShort(seconds) {
+  const minutes = Math.max(0, Math.round((Number(seconds) || 0) / 60));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = minutes / 60;
+  return `${hours % 1 === 0 ? hours.toFixed(0) : hours.toFixed(1)}h`;
+}
+
+function renderReportTrendChart(dayItems) {
+  const maxStudySeconds = 16 * 3600;
+  const accuracyValues = dayItems.map((item) => (item.practiceCount ? item.accuracy : 48));
+  const timeAxis = ["16h", "12h", "10h", "8h", "6h", "4h", "2h"];
+  const points = accuracyValues
+    .map((value, index) => {
+      const x = dayItems.length <= 1 ? 0 : (index / (dayItems.length - 1)) * 700;
+      const y = 168 - (clampPercent(value) / 100) * 168;
+      return `${x.toFixed(1)},${Math.max(4, Math.min(164, y)).toFixed(1)}`;
+    })
+    .join(" ");
+
+  return `
+    <div class="trend-axis-labels" aria-hidden="true">
+      ${timeAxis.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}
+    </div>
+    <div class="trend-axis-labels trend-rate-axis" aria-hidden="true">
+      <span>100%</span>
+      <span>75%</span>
+      <span>50%</span>
+      <span>25%</span>
+      <span>0</span>
+    </div>
+    <div class="trend-bars">
+      ${dayItems
+        .map(
+          (item) => {
+            const barHeight = Math.min(100, Math.round((item.studySeconds / maxStudySeconds) * 100));
+            return `
+            <div class="trend-bar-wrap" style="--h: ${item.studySeconds ? Math.max(7, barHeight) : 0}%" tabindex="0" aria-label="${escapeHtml(item.label)} 学习 ${escapeHtml(item.studyDurationText)} 正确率 ${item.accuracy}%">
+              <span class="trend-bar"></span>
+              <div class="trend-tooltip" role="status">
+                <strong>${escapeHtml(item.label)}</strong>
+                <span>学习时长：${escapeHtml(item.studyDurationText)}</span>
+                <span>练习次数：${item.practiceCount} 次</span>
+                <span>正确率：${item.accuracy}%</span>
+                <small>${item.correctCount} 题正确 / ${item.wrongCount} 题待复盘</small>
+              </div>
+            </div>
+          `;
+          },
+        )
+        .join("")}
+    </div>
+    <svg class="trend-line-svg" viewBox="0 0 700 168" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points="${points}"></polyline>
+      ${points
+        .split(" ")
+        .map((point) => {
+          const [cx, cy] = point.split(",");
+          return `<circle cx="${cx}" cy="${cy}" r="5"></circle>`;
+        })
+        .join("")}
+    </svg>
+    <div class="trend-labels">
+      ${dayItems.map((item) => `<span>${escapeHtml(item.label)}</span>`).join("")}
+    </div>
+  `;
+}
+
 function renderReportModule() {
   const studyModule = getStudyModule();
   maybeGenerateScheduledStudyReview(studyModule);
@@ -11365,20 +11436,39 @@ function renderReportModule() {
   if (studyTime) studyTime.textContent = `${stats.studyHours}h`;
   if (accuracy) accuracy.textContent = `${stats.accuracy}%`;
   if (mistakes) mistakes.textContent = String(studyModule.mistakes.filter((mistake) => !mistake.reviewed).length);
+  document.querySelectorAll(".report-number-card").forEach((card, index) => {
+    const activeMistakes = studyModule.mistakes.filter((mistake) => !mistake.reviewed).length;
+    const progress = index === 0
+      ? Math.min(100, Math.round((Number(stats.studyHours) / 8) * 100))
+      : index === 1
+        ? stats.accuracy
+        : Math.min(100, Math.max(18, activeMistakes * 8));
+    card.style.setProperty("--progress", `${Math.max(12, progress)}%`);
+  });
   if (reviewSchedule && reviewSchedule.value !== studyModule.review.schedule) reviewSchedule.value = studyModule.review.schedule;
 
   if (trendChart) {
     const now = new Date();
-    const dayValues = Array.from({ length: 7 }, (_, index) => {
+    const dayItems = Array.from({ length: 7 }, (_, index) => {
       const day = new Date(now);
       day.setDate(now.getDate() - (6 - index));
       const key = day.toISOString().slice(0, 10);
-      return stats.attempts.filter((attempt) => new Date(attempt.answeredAt).toISOString().slice(0, 10) === key).length;
+      const attempts = stats.attempts.filter((attempt) => new Date(attempt.answeredAt).toISOString().slice(0, 10) === key);
+      const correct = attempts.filter((attempt) => attempt.correct).length;
+      const recordedSeconds = getStudySecondsForDate(key);
+      const fallbackSeconds = attempts.length ? attempts.length * 3 * 60 : 0;
+      const studySeconds = Math.max(recordedSeconds, fallbackSeconds);
+      return {
+        label: formatReportTrendDayLabel(day),
+        studySeconds,
+        studyDurationText: formatStudyDurationText(studySeconds),
+        practiceCount: attempts.length,
+        correctCount: correct,
+        wrongCount: attempts.length - correct,
+        accuracy: attempts.length ? Math.round((correct / attempts.length) * 100) : Math.max(42, stats.accuracy || 56),
+      };
     });
-    const maxValue = Math.max(3, ...dayValues);
-    trendChart.innerHTML = dayValues
-      .map((value) => `<span style="--h: ${Math.max(18, Math.round((value / maxValue) * 100))}%" title="${value} 次练习"></span>`)
-      .join("");
+    trendChart.innerHTML = renderReportTrendChart(dayItems);
   }
 
   if (reviewCurrent) {

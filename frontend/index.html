@@ -981,20 +981,43 @@
         <section class="view" data-view-panel="report">
           <div class="report-grid">
             <section class="panel report-summary">
-              <span class="tag muted">学习报告</span>
-              <h2 id="report-title">本周复习状态良好，建议补强评估方法。</h2>
+              <div class="report-summary-head">
+                <div>
+                  <span class="tag muted">学习报告</span>
+                  <h2 id="report-title">本周复习状态良好，建议补强评估方法。</h2>
+                </div>
+                <div class="report-period-card">
+                  <span>本周节奏</span>
+                  <strong>7 天趋势</strong>
+                </div>
+              </div>
               <div class="report-numbers">
-                <div>
-                  <strong id="report-study-time">6.8h</strong>
-                  <span>累计学习</span>
+                <div class="report-number-card accent-teal">
+                  <i data-lucide="clock-3"></i>
+                  <div>
+                    <span>累计学习</span>
+                    <strong id="report-study-time">6.8h</strong>
+                    <small>学习投入</small>
+                  </div>
+                  <em></em>
                 </div>
-                <div>
-                  <strong id="report-accuracy">84%</strong>
-                  <span>平均正确率</span>
+                <div class="report-number-card accent-indigo">
+                  <i data-lucide="target"></i>
+                  <div>
+                    <span>平均正确率</span>
+                    <strong id="report-accuracy">84%</strong>
+                    <small>测验表现</small>
+                  </div>
+                  <em></em>
                 </div>
-                <div>
-                  <strong id="report-mistakes">14</strong>
-                  <span>错题总数</span>
+                <div class="report-number-card accent-coral">
+                  <i data-lucide="book-open-check"></i>
+                  <div>
+                    <span>待复习错题</span>
+                    <strong id="report-mistakes">14</strong>
+                    <small>复盘任务</small>
+                  </div>
+                  <em></em>
                 </div>
               </div>
             </section>
@@ -1004,15 +1027,21 @@
                   <span class="tag muted">趋势</span>
                   <h3>近 7 天学习曲线</h3>
                 </div>
+                <div class="report-chart-legend">
+                  <span><b class="legend-bar"></b>学习时长</span>
+                  <span><b class="legend-line"></b>正确率走势</span>
+                </div>
               </div>
-              <div class="trend-chart" id="report-trend-chart">
-                <span style="--h: 30%"></span>
-                <span style="--h: 44%"></span>
-                <span style="--h: 52%"></span>
-                <span style="--h: 40%"></span>
-                <span style="--h: 70%"></span>
-                <span style="--h: 82%"></span>
-                <span style="--h: 64%"></span>
+              <div class="report-trend-chart" id="report-trend-chart">
+                <div class="trend-bars">
+                  <span class="trend-bar" style="--h: 30%"></span>
+                  <span class="trend-bar" style="--h: 44%"></span>
+                  <span class="trend-bar" style="--h: 52%"></span>
+                  <span class="trend-bar" style="--h: 40%"></span>
+                  <span class="trend-bar" style="--h: 70%"></span>
+                  <span class="trend-bar" style="--h: 82%"></span>
+                  <span class="trend-bar" style="--h: 64%"></span>
+                </div>
               </div>
             </section>
             <section class="panel review-panel" id="report-review-panel">
