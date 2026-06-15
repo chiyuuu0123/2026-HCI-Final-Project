@@ -19,7 +19,9 @@
     "start": "electron .",
     "start:app": "electron .",
     "dev": "npm run start:app",
-    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check frontend/vision.js && node --check b_qwen_module/ocrImageExtractor.js && node --check b_qwen_module/qwenClient.js && node --check b_qwen_module/knowledgeGraphService.js && node --check scripts/copy-assets.js && node --check scripts/check-neo4j.js"
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check frontend/app.js && node --check frontend/vision.js && node --check b_qwen_module/ocrImageExtractor.js && node --check b_qwen_module/qwenClient.js && node --check b_qwen_module/knowledgeGraphService.js && node --check scripts/copy-assets.js && node --check scripts/check-neo4j.js",
+    "pack": "npm run prepare:assets && electron-builder --dir",
+    "dist": "npm run check && npm run prepare:assets && electron-builder --win nsis portable"
   },
   "keywords": [
     "electron",
@@ -30,7 +32,8 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^42.3.2"
+    "electron": "^42.3.2",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35",
@@ -39,5 +42,57 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.0.227",
     "tesseract.js": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.longmindstudy.longlong",
+    "productName": "LongMindStudy-龙龙多模态智能学习伙伴",
+    "directories": {
+      "output": "dist"
+    },
+    "asar": false,
+    "npmRebuild": false,
+    "files": [
+      "package.json",
+      "electron/**/*",
+      "frontend/**/*",
+      "b_qwen_module/**/*",
+      "scripts/**/*",
+      "!frontend/.env",
+      "!**/*.map",
+      "!**/*.log",
+      "!docs/**/*",
+      "!dist/**/*",
+      "!out/**/*",
+      "!.local/**/*"
+    ],
+    "win": {
+      "icon": "frontend/assets/longlong-app-icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "forceCodeSigning": false
+    },
+    "nsis": {
+      "artifactName": "LongMindStudy-${version}-setup-${arch}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LongMindStudy-龙龙多模态智能学习伙伴"
+    },
+    "portable": {
+      "artifactName": "LongMindStudy-${version}-portable-${arch}.${ext}"
+    }
   }
 }

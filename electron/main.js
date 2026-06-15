@@ -23,6 +23,7 @@ const {
 
 const isWindows = process.platform === "win32";
 const appDisplayName = "LongMindStudy-龙龙多模态智能学习伙伴";
+const appIconPath = path.join(__dirname, "..", "frontend", "assets", "longlong-app-icon.ico");
 const appStorageName = "longmindstudy-desktop";
 const maxImportBytes = 80 * 1024 * 1024;
 const supportedExtensions = new Set([".pdf", ".md"]);
@@ -34,6 +35,9 @@ const longlongVoiceStartupTimeoutMs = 30000;
 const longlongStudyCoinSeconds = 10 * 60;
 const longlongDailyCoinCap = 18;
 app.setName(appDisplayName);
+if (isWindows) {
+  app.setAppUserModelId("com.longmindstudy.longlong");
+}
 app.setPath("userData", path.join(app.getPath("appData"), appStorageName));
 const longlongBondLevels = [
   { threshold: 0, name: "初识", detail: "龙龙刚刚探头" },
@@ -1981,6 +1985,7 @@ function createMainWindow() {
     minWidth: 1080,
     minHeight: 760,
     backgroundColor: "#f5f7f3",
+    icon: appIconPath,
     title: appDisplayName,
     show: false,
     titleBarStyle: isWindows ? "default" : "hiddenInset",
@@ -2173,6 +2178,7 @@ function createCompanionWindow() {
     hasShadow: false,
     show: false,
     backgroundColor: "#00000000",
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
